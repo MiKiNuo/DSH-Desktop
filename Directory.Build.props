@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- 本机 .NET SDK 10.0.302 缺少 WorkloadAutoImportPropsLocator /
+         WorkloadManifestTargetsLocator 两个 SDK 目录，开启 workload 解析
+         会以 MSB4276 失败。本项目不使用 .NET Workload，直接关闭解析。 -->
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,25 @@
+root = true
+
+# MiKiNuo.Mvi 0.3.5 包内 analyzers 目录附带的 DOC（强制中文 XML 注释）、
+# CODE、ARCH 规则无程序集名门控且默认 Error，对本仓库不适用，全部关闭。
+# MVI0001-MVI0017（MVI 架构约束）保留默认级别，作为编译期架构执法。
+[*.cs]
+dotnet_diagnostic.DOC0001.severity = none
+dotnet_diagnostic.DOC0002.severity = none
+dotnet_diagnostic.DOC0003.severity = none
+dotnet_diagnostic.DOC0004.severity = none
+dotnet_diagnostic.DOC0005.severity = none
+dotnet_diagnostic.DOC0006.severity = none
+dotnet_diagnostic.DOC0007.severity = none
+dotnet_diagnostic.DOC0008.severity = none
+dotnet_diagnostic.CODE0001.severity = none
+dotnet_diagnostic.CODE0002.severity = none
+dotnet_diagnostic.ARCH0001.severity = none
+dotnet_diagnostic.ARCH0002.severity = none
+dotnet_diagnostic.ARCH0003.severity = none
+dotnet_diagnostic.ARCH0004.severity = none
+dotnet_diagnostic.ARCH0005.severity = none
+dotnet_diagnostic.ARCH0006.severity = none
+dotnet_diagnostic.ARCH0007.severity = none
+dotnet_diagnostic.ARCH0008.severity = none
+dotnet_diagnostic.ARCH0009.severity = none

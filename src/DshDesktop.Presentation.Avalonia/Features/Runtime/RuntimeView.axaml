@@ -1,0 +1,72 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Runtime.RuntimeView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Runtime"
+    x:DataType="vm:RuntimeViewModel">
+    <Border Padding="24">
+        <StackPanel Spacing="16">
+            <TextBlock
+                FontSize="22"
+                FontWeight="SemiBold"
+                Text="Runtime" />
+
+            <Border
+                Background="#7C3AED"
+                CornerRadius="4"
+                Padding="8,2"
+                HorizontalAlignment="Left"
+                IsVisible="{Binding SafeMode}">
+                <TextBlock FontSize="12" Foreground="White" Text="安全模式：自动启动已抑制，可管理插件与配置" />
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock VerticalAlignment="Center" Text="生命周期：" />
+                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Lifecycle}" />
+                <Border
+                    x:Name="HealthBadge"
+                    VerticalAlignment="Center"
+                    CornerRadius="4"
+                    Padding="8,2">
+                    <TextBlock x:Name="HealthBadgeText" FontSize="12" Foreground="White" Text="{Binding Health}" />
+                </Border>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="StageIcon1" Width="18" Text="✓" />
+                    <TextBlock Text="Desktop Ready" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="StageIcon2" Width="18" Text="○" />
+                    <TextBlock Text="启动 DSH 进程" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="StageIcon3" Width="18" Text="○" />
+                    <TextBlock Text="等待 HTTP 就绪" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="StageIcon4" Width="18" Text="○" />
+                    <TextBlock Text="WebView 就绪" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="启动耗时：" />
+                <TextBlock Text="{Binding StartupElapsed, TargetNullValue='—'}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="端口：" />
+                <TextBlock Text="{Binding Port, FallbackValue='—', TargetNullValue='—'}" />
+            </StackPanel>
+            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
+
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Command="{Binding StartRuntimeCommand}" Content="启动 Runtime" />
+                <Button Command="{Binding StopRuntimeCommand}" Content="停止 Runtime" />
+                <Button Command="{Binding EnterSafeModeCommand}" Content="进入安全模式" IsVisible="{Binding !SafeMode}" />
+                <Button Command="{Binding ExitSafeModeCommand}" Content="退出安全模式" IsVisible="{Binding SafeMode}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,0 +1,38 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Diagnostics.DiagnosticsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="clr-namespace:DshDesktop.Domain.Diagnostics;assembly=DshDesktop.Domain"
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Diagnostics"
+    x:DataType="vm:DiagnosticsViewModel">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Padding="16,12">
+            <TextBlock
+                FontSize="22"
+                FontWeight="SemiBold"
+                Text="Diagnostics" />
+        </Border>
+        <ListBox x:Name="EntriesList" Padding="16,0" ItemsSource="{Binding Entries}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="d:DiagnosticEvent">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBlock
+                            Width="95"
+                            FontFamily="Consolas"
+                            Foreground="#6B7280"
+                            Text="{Binding Timestamp, StringFormat='HH:mm:ss.fff'}" />
+                        <TextBlock
+                            Width="85"
+                            Foreground="#9AA4B2"
+                            Text="{Binding Source}" />
+                        <TextBlock
+                            Width="70"
+                            Foreground="#9AA4B2"
+                            Text="{Binding Level}" />
+                        <TextBlock FontFamily="Consolas" Text="{Binding Message}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

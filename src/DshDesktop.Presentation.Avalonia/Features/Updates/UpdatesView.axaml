@@ -1,0 +1,116 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Updates.UpdatesView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:u="clr-namespace:DshDesktop.Domain.Updates;assembly=DshDesktop.Domain"
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Updates"
+    x:DataType="vm:UpdatesViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="22"
+                    FontWeight="SemiBold"
+                    Text="Updates" />
+                <Button
+                    VerticalAlignment="Center"
+                    Command="{Binding CheckUpdatesCommand}"
+                    Content="检查更新" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="#9AA4B2"
+                    Text="{Binding Status}" />
+            </StackPanel>
+
+            <TextBlock Foreground="#EAB308" Text="{Binding PendingOperation}" />
+            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="DSH Runtime" />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <TextBlock VerticalAlignment="Center" Text="{Binding CurrentDshVersion, StringFormat='当前：{0}', FallbackValue='当前：—', TargetNullValue='当前：—'}" />
+                        <TextBlock VerticalAlignment="Center" Foreground="#9AA4B2" Text="{Binding LatestDshVersion, StringFormat='最新（{0} 通道）', FallbackValue='最新：—', TargetNullValue='最新：—'}" />
+                        <Button VerticalAlignment="Center" Click="OnInstallLatestClicked" Content="安装最新版本" />
+                    </StackPanel>
+
+                    <TextBlock Foreground="#9AA4B2" Text="可用 Runtime（激活即切换并重启）：" />
+                    <ItemsControl ItemsSource="{Binding Runtimes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="u:DshRuntimeInfo">
+                                <StackPanel Margin="0,2" Orientation="Horizontal" Spacing="8">
+                                    <TextBlock
+                                        Width="160"
+                                        VerticalAlignment="Center"
+                                        FontFamily="Consolas"
+                                        Text="{Binding Version}" />
+                                    <Border
+                                        VerticalAlignment="Center"
+                                        Background="#1F6FEB"
+                                        CornerRadius="4"
+                                        Padding="6,1"
+                                        IsVisible="{Binding IsBorrowed}">
+                                        <TextBlock FontSize="11" Foreground="White" Text="借用" />
+                                    </Border>
+                                    <Border
+                                        VerticalAlignment="Center"
+                                        Background="#238636"
+                                        CornerRadius="4"
+                                        Padding="6,1"
+                                        IsVisible="{Binding IsActive}">
+                                        <TextBlock FontSize="11" Foreground="White" Text="当前" />
+                                    </Border>
+                                    <Button
+                                        VerticalAlignment="Center"
+                                        Click="OnActivateRuntimeClicked"
+                                        Content="激活"
+                                        IsVisible="{Binding !IsActive}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="插件更新" />
+                    <ItemsControl ItemsSource="{Binding PluginUpdates}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="u:PluginUpdateInfo">
+                                <StackPanel Margin="0,2" Orientation="Horizontal" Spacing="8">
+                                    <TextBlock
+                                        Width="260"
+                                        VerticalAlignment="Center"
+                                        Text="{Binding Name}" />
+                                    <TextBlock
+                                        Width="200"
+                                        VerticalAlignment="Center"
+                                        FontFamily="Consolas"
+                                        Foreground="#9AA4B2"
+                                        Text="{Binding CurrentVersion, StringFormat='{}{0}', FallbackValue=''}" />
+                                    <TextBlock VerticalAlignment="Center" Foreground="#22C55E" Text="{Binding LatestVersion, StringFormat='→ {0}'}" />
+                                    <Button
+                                        VerticalAlignment="Center"
+                                        Click="OnUpdatePluginClicked"
+                                        Content="更新" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

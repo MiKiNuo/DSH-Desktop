@@ -1,0 +1,21 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Workbench.WorkbenchView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:web="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView">
+    <Grid>
+        <web:NativeWebView x:Name="WebViewHost" />
+        <Border x:Name="PlaceholderOverlay" Background="#1F2430">
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="8">
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="Workbench" />
+                <TextBlock Foreground="#9AA4B2" Text="等待 Runtime 就绪…" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
