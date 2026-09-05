@@ -11,6 +11,14 @@ namespace DshDesktop.Tests;
 /// </summary>
 public sealed class PluginOrchestratorTests
 {
+    private static readonly RuntimeLaunchOptions TestOptions = new(
+        "node", "entry.js", null, ".", ".", "127.0.0.1", 0, TimeSpan.FromSeconds(5));
+
+    private static RuntimeLaunchOptions OptionsFactory()
+    {
+        return TestOptions;
+    }
+
     [Test]
     public async Task InstallAsync_WhenInstallFails_RollsBackRestartsAndRethrows()
     {
@@ -21,7 +29,7 @@ public sealed class PluginOrchestratorTests
             pluginManager,
             snapshotter,
             supervisor,
-            () => new RuntimeLaunchOptions("node", "entry.js", null, ".", ".", "127.0.0.1", 0, TimeSpan.FromSeconds(5)),
+            OptionsFactory,
             Serilog.Core.Logger.None);
         var stages = new List<PluginOperationStage>();
         orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
@@ -74,7 +82,7 @@ public sealed class PluginOrchestratorTests
             pluginManager,
             snapshotter,
             supervisor,
-            () => new RuntimeLaunchOptions("node", "entry.js", null, ".", ".", "127.0.0.1", 0, TimeSpan.FromSeconds(5)),
+            OptionsFactory,
             Serilog.Core.Logger.None);
         var stages = new List<PluginOperationStage>();
         orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
@@ -104,7 +112,7 @@ public sealed class PluginOrchestratorTests
             pluginManager,
             snapshotter,
             supervisor,
-            () => new RuntimeLaunchOptions("node", "entry.js", null, ".", ".", "127.0.0.1", 0, TimeSpan.FromSeconds(5)),
+            OptionsFactory,
             Serilog.Core.Logger.None);
 
         await orchestrator.DisableAllThirdPartyAsync(CancellationToken.None);

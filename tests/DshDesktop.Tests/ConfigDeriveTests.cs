@@ -84,4 +84,51 @@ public sealed class ConfigDeriveTests
         await Assert.That(DshDesktopConfigStore.DerivePnpmCjsPath("")).IsNull();
         await Assert.That(DshDesktopConfigStore.DerivePnpmCjsPath("   ")).IsNull();
     }
+
+    [Test]
+    public async Task MigrateLegacyConfigIfNeeded_MovesLegacyFile()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(root);
+            string legacy = Path.Combine(root, "dsh-desktop.config.json");
+            string migrated = Path.Combine(root, "data", "config", "dsh-desktop.config.json");
+            File.WriteAllText(legacy, "{\"nodePath\":\"x\"}");
+
+            DshDesktopConfigStore.MigrateLegacyConfigIfNeeded(legacy, migrated);
+
+            await Assert.That(File.Exists(legacy)).IsFalse();
+            await Assert.That(File.Exists(migrated)).IsTrue();
+            await Assert.That(File.ReadAllText(migrated)).IsEqualTo("{\"nodePath\":\"x\"}");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task MigrateLegacyConfigIfNeeded_NewExists_LeavesLegacyUntouched()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string legacy = Path.Combine(root, "dsh-desktop.config.json");
+            string migrated = Path.Combine(root, "data", "config", "dsh-desktop.config.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(migrated)!);
+            File.WriteAllText(legacy, "old");
+            File.WriteAllText(migrated, "new");
+
+            DshDesktopConfigStore.MigrateLegacyConfigIfNeeded(legacy, migrated);
+
+            // 新位置已有配置时不迁移、不删旧（幂等防守）。
+            await Assert.That(File.ReadAllText(migrated)).IsEqualTo("new");
+            await Assert.That(File.ReadAllText(legacy)).IsEqualTo("old");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
 }

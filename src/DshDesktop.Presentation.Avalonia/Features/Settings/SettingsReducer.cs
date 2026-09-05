@@ -25,21 +25,17 @@ public sealed partial class SettingsReducer
     }
 
     /// <summary>
-    /// 处理修改安全模式意图（乐观更新，持久化经副作用）。
+    /// 处理切换安全模式意图（无载荷翻转——View 不推导目标状态，消 ToggleSwitch 双击分歧窗口；乐观更新）。
     /// </summary>
-    [MviReduce(typeof(SettingsIntent.ChangeSafeMode))]
-    private MviReduceResult<SettingsState, SettingsEffect> HandleChangeSafeMode(
+    [MviReduce(typeof(SettingsIntent.ToggleSafeMode))]
+    private MviReduceResult<SettingsState, SettingsEffect> HandleToggleSafeMode(
         SettingsState state,
-        SettingsIntent.ChangeSafeMode intent)
+        SettingsIntent.ToggleSafeMode intent)
     {
-        if (state.SafeMode == intent.Enabled)
-        {
-            return Unchanged(state);
-        }
-
+        bool target = !state.SafeMode;
         return WithEffect(
-            state with { SafeMode = intent.Enabled, LastError = null },
-            new SettingsEffect.SaveSafeMode(intent.Enabled));
+            state with { SafeMode = target, LastError = null },
+            new SettingsEffect.SaveSafeMode(target));
     }
 
     /// <summary>
@@ -75,7 +71,6 @@ public sealed partial class SettingsReducer
             NodePath = intent.Info.NodePath,
             DshHome = intent.Info.DshHome,
             DataDirectory = intent.Info.DataDirectory,
-            DesktopVersion = intent.Info.DesktopVersion,
             PendingOperation = null,
             LastError = null,
         });

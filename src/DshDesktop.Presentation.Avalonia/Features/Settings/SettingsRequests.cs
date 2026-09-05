@@ -10,14 +10,12 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// <param name="NodePath">node.exe 路径。</param>
 /// <param name="DshHome">DSH_HOME 数据根目录。</param>
 /// <param name="DataDirectory">Desktop 数据根目录。</param>
-/// <param name="DesktopVersion">Desktop 版本（未接通时为 "—"）。</param>
 public sealed record SettingsInfo(
     bool SafeMode,
     string Channel,
     string NodePath,
     string DshHome,
-    string DataDirectory,
-    string DesktopVersion);
+    string DataDirectory);
 
 /// <summary>
 /// 表示获取设置信息的跨层请求（§28 Mediator）。

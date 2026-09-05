@@ -55,10 +55,9 @@ public sealed partial class SettingsViewModel
     public partial string? DataDirectory { get; private set; }
 
     /// <summary>
-    /// 获取 Desktop 版本。
+    /// 获取 Desktop 版本（编译期常量，非状态——§6 不入 State，同 AppShell/Updates 先例）。
     /// </summary>
-    [MviBind(nameof(SettingsState.DesktopVersion), BindingMode = MviBindingMode.OneWay)]
-    public partial string? DesktopVersion { get; private set; }
+    public string DesktopVersion => DesktopInfo.Version;
 
     /// <summary>
     /// 获取进行中的操作描述。
@@ -79,10 +78,10 @@ public sealed partial class SettingsViewModel
     public partial IMviAsyncCommand LoadSettingsCommand { get; private set; }
 
     /// <summary>
-    /// 获取修改安全模式命令（载荷：目标状态）。
+    /// 获取切换安全模式命令（无载荷翻转）。
     /// </summary>
-    [MviCommand(typeof(SettingsIntent.ChangeSafeMode), PayloadType = typeof(bool))]
-    public partial IMviAsyncCommand ChangeSafeModeCommand { get; private set; }
+    [MviCommand(typeof(SettingsIntent.ToggleSafeMode))]
+    public partial IMviAsyncCommand ToggleSafeModeCommand { get; private set; }
 
     /// <summary>
     /// 获取修改 DSH 更新通道命令（载荷：latest / alpha）。

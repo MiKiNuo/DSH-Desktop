@@ -25,15 +25,15 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
 
     private void OnSafeModeToggled(object? sender, RoutedEventArgs args)
     {
-        // ToggleSwitch 点击即翻转本地视觉值；以 State 中的旧值推导目标状态。
-        ViewModel.ChangeSafeModeCommand.Execute(!ViewModel.SafeMode);
+        // 无载荷翻转：目标状态由 Reducer 从 State 推导（消双击视觉/状态分歧窗口）。
+        ViewModel.ToggleSafeModeCommand.Execute(null);
     }
 
     private void OnChannelSelectionChanged(object? sender, SelectionChangedEventArgs args)
     {
         // 守卫：加载回流导致的选中同步不重复落盘。
         if (sender is ComboBox { SelectedItem: string channel }
-            && !string.Equals(channel, ViewModel.Channel, System.StringComparison.Ordinal))
+            && !string.Equals(channel, ViewModel.Channel, StringComparison.Ordinal))
         {
             ViewModel.ChangeChannelCommand.Execute(channel);
         }

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using DshDesktop.Domain.Common;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
 
@@ -47,7 +48,7 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             _webViewReadyLogged = true;
             Serilog.Log.Information(
                 "Runtime.WebView.Ready ElapsedMs={ElapsedMs}",
-                (long)DshDesktop.Domain.Common.StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+                (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
         }
     }
 

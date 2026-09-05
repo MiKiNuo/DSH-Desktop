@@ -47,6 +47,9 @@ public sealed class DshDesktopConfig
     /// <summary>DSH 更新通道（npm dist-tag：latest / alpha）。</summary>
     public string DshChannel { get; set; } = "latest";
 
+    /// <summary>Desktop 更新通道（ADR-0003/Q7-A：首期单通道预留字段，UI 不暴露，机制待启用）。</summary>
+    public string DesktopChannel { get; set; } = "stable";
+
     /// <summary>当前激活的自建 DSH Runtime 版本目录名；null = 借用外部安装（Electron 版）。</summary>
     public string? ActiveDshRuntime { get; set; }
 }
@@ -90,12 +93,7 @@ public static class DshDesktopConfigStore
     /// <returns>配置实例。</returns>
     public static async Task<DshDesktopConfig> LoadOrDetectAsync(CancellationToken cancellationToken = default)
     {
-        // ADR-0003：exe 旁旧配置一次性迁移到数据根（File.Move = 读+写新+删旧的原子等价物，同卷元数据操作）。
-        if (!File.Exists(ConfigPath) && File.Exists(LegacyConfigPath))
-        {
-            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
-            File.Move(LegacyConfigPath, ConfigPath);
-        }
+        MigrateLegacyConfigIfNeeded(LegacyConfigPath, ConfigPath);
 
         if (File.Exists(ConfigPath))
         {
@@ -150,6 +148,19 @@ public static class DshDesktopConfigStore
         await JsonSerializer
             .SerializeAsync(writeStream, config, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// ADR-0003：exe 旁旧配置一次性迁移到数据根（File.Move = 读+写新+删旧的原子等价物，同卷元数据操作）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    internal static void MigrateLegacyConfigIfNeeded(string legacyPath, string configPath)
+    {
+        if (!File.Exists(configPath) && File.Exists(legacyPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+            File.Move(legacyPath, configPath);
+        }
     }
 
     private static DshDesktopConfig Detect()

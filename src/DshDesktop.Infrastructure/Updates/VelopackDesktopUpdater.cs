@@ -58,9 +58,10 @@ public sealed class VelopackDesktopUpdater : IDesktopUpdater
     /// <inheritdoc />
     public async Task DownloadAsync(IProgress<int>? progress, CancellationToken cancellationToken)
     {
+        // 无持有更新时抛错：让 Mediator 调用方走失败回流，避免 UI 的"下载中"悬挂。
         if (_pendingUpdate is null || _manager is null)
         {
-            return;
+            throw new InvalidOperationException("没有已检查到的 Desktop 更新，请先检查更新。");
         }
 
         await _manager.DownloadUpdatesAsync(
@@ -75,7 +76,7 @@ public sealed class VelopackDesktopUpdater : IDesktopUpdater
     {
         if (_pendingUpdate is null || _manager is null)
         {
-            return;
+            throw new InvalidOperationException("没有已下载的 Desktop 更新可应用。");
         }
 
         _logger.Information("Update.Desktop.ApplyRestart {Version}", _pendingUpdate.TargetFullRelease.Version);

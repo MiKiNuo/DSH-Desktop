@@ -39,13 +39,12 @@ jobs:
       - name: AOT warning gate (§49)
         shell: pwsh
         run: |
-          $codes = Select-String -Path publish.log -Pattern 'warning IL\d{4}' -AllMatches |
-            ForEach-Object { [regex]::Match($_.Line, 'warning (IL\d{4})').Groups[1].Value } |
-            Sort-Object -Unique
+          # Q16-A：警告**行数**与基线比对（同码新增也算超限）。
+          $count = (Select-String -Path publish.log -Pattern 'warning IL\d{4}').Count
           $baseline = [int](Get-Content aot-warning-baseline.txt |
             Where-Object { $_ -notmatch '^\s*#' -and $_.Trim().Length -gt 0 } |
             Select-Object -First 1)
-          Write-Host "AOT warning codes: $($codes -join ', ') (distinct=$($codes.Count), baseline=$baseline)"
-          if ($codes.Count -gt $baseline) {
-            throw "AOT 警告超基线：$($codes.Count) > $baseline（新依赖破坏 AOT 兼容性，见 §49）"
+          Write-Host "AOT warnings: $count (baseline=$baseline)"
+          if ($count -gt $baseline) {
+            throw "AOT 警告超基线：$count > $baseline（新依赖破坏 AOT 兼容性，见 §49）"
           }

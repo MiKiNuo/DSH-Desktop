@@ -19,20 +19,23 @@ public sealed class SettingsReducerTests
     }
 
     [Test]
-    public async Task ChangeSafeMode_WhenDifferent_OptimisticUpdateWithEffect()
+    public async Task ToggleSafeMode_FlipsWithPersistEffect()
     {
-        var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ChangeSafeMode(true));
+        var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ToggleSafeMode());
 
         await Assert.That(result.State.SafeMode).IsTrue();
         await Assert.That(result.Effects[0] is SettingsEffect.SaveSafeMode { Enabled: true }).IsTrue();
     }
 
     [Test]
-    public async Task ChangeSafeMode_WhenSame_IsIgnored()
+    public async Task ToggleSafeMode_TwiceFlipsBack()
     {
-        var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ChangeSafeMode(false));
+        SettingsState on = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ToggleSafeMode()).State;
 
-        await Assert.That(result.Effects.Count).IsEqualTo(0);
+        var result = _reducer.Reduce(on, new SettingsIntent.ToggleSafeMode());
+
+        await Assert.That(result.State.SafeMode).IsFalse();
+        await Assert.That(result.Effects[0] is SettingsEffect.SaveSafeMode { Enabled: false }).IsTrue();
     }
 
     [Test]
@@ -60,8 +63,7 @@ public sealed class SettingsReducerTests
             Channel: "alpha",
             NodePath: @"D:\node\node.exe",
             DshHome: @"C:\Data\dsh-home",
-            DataDirectory: @"C:\Data",
-            DesktopVersion: "0.1.0");
+            DataDirectory: @"C:\Data");
         SettingsState busy = SettingsState.Initial with { PendingOperation = "加载设置…" };
 
         var result = _reducer.Reduce(busy, new SettingsIntent.SettingsLoaded(info));
@@ -71,7 +73,6 @@ public sealed class SettingsReducerTests
         await Assert.That(result.State.NodePath).IsEqualTo(@"D:\node\node.exe");
         await Assert.That(result.State.DshHome).IsEqualTo(@"C:\Data\dsh-home");
         await Assert.That(result.State.DataDirectory).IsEqualTo(@"C:\Data");
-        await Assert.That(result.State.DesktopVersion).IsEqualTo("0.1.0");
         await Assert.That(result.State.PendingOperation).IsNull();
     }
 

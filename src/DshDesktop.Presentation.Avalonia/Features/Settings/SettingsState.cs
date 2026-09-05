@@ -10,7 +10,6 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// <param name="NodePath">node.exe 路径（只读）。</param>
 /// <param name="DshHome">DSH_HOME 数据根目录（只读）。</param>
 /// <param name="DataDirectory">Desktop 数据根目录（只读）。</param>
-/// <param name="DesktopVersion">Desktop 版本（只读；占位 "—"，§50 收口任务接通）。</param>
 /// <param name="PendingOperation">进行中的操作描述；null 表示空闲。</param>
 /// <param name="LastError">最近一次错误信息。</param>
 public sealed record SettingsState(
@@ -19,7 +18,6 @@ public sealed record SettingsState(
     string? NodePath,
     string? DshHome,
     string? DataDirectory,
-    string? DesktopVersion,
     string? PendingOperation,
     string? LastError) : IMviState
 {
@@ -27,5 +25,5 @@ public sealed record SettingsState(
     /// 获取初始状态。
     /// </summary>
     public static SettingsState Initial { get; } =
-        new(false, "latest", null, null, null, null, null, null);
+        new(false, "latest", null, null, null, null, null);
 }

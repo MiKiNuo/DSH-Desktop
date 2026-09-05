@@ -13,10 +13,9 @@ public abstract partial record SettingsIntent : IMviIntent
     public sealed partial record LoadSettings : SettingsIntent;
 
     /// <summary>
-    /// 表示修改安全模式意图（乐观更新，持久化失败经 SettingsOperationFailed 回流）。
+    /// 表示切换安全模式意图（无载荷翻转，与 AppShell ToggleSidebar 同先例）。
     /// </summary>
-    /// <param name="Enabled">目标安全模式状态。</param>
-    public sealed partial record ChangeSafeMode(bool Enabled) : SettingsIntent;
+    public sealed partial record ToggleSafeMode : SettingsIntent;
 
     /// <summary>
     /// 表示修改 DSH 更新通道意图（乐观更新）。

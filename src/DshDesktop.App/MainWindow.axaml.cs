@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using DshDesktop.Domain.Common;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Dashboard;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
@@ -60,7 +61,7 @@ public sealed partial class MainWindow : Window
         // §46：Desktop 窗口可见计时（自进程入口起）。
         Serilog.Log.Information(
             "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
-            (long)DshDesktop.Domain.Common.StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+            (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
     }
 
     private void RenderCurrentPage()

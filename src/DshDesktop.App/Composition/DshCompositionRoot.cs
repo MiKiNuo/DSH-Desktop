@@ -226,16 +226,13 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        string dataRoot = Directory.GetParent(_config!.DshHome)!.FullName;
 
-        // Desktop 版本 = 编译期常量（§50）。
         return ValueTask.FromResult(new SettingsInfo(
-            _config.SafeMode,
+            _config!.SafeMode,
             _config.DshChannel,
             _config.NodePath,
             _config.DshHome,
-            dataRoot,
-            DesktopInfo.Version));
+            DshDesktopConfigStore.DataRoot));
     }
 
     private async ValueTask<bool> HandleSetDshChannelAsync(
