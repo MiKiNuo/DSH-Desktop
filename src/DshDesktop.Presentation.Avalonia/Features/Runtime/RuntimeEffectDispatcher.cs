@@ -1,3 +1,4 @@
+using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using MiKiNuo.Mvi.Application.MVI.Effect;
 using MiKiNuo.Mvi.Application.MVI.Mediator;
 using MiKiNuo.Mvi.Domain.MVI.Effect;
@@ -70,6 +71,63 @@ public sealed partial class RuntimeEffectDispatcher
             _ = await _mediator
                 .SendAsync(new StopRuntimeRequest(), cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await DispatchIntentAsync(
+                new RuntimeIntent.RuntimeFailed(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 处理重启 Runtime 副作用：经 Mediator 调用 Supervisor Stop+Start 原子编排，结果回流 Store。
+    /// </summary>
+    [MviEffect(typeof(RuntimeEffect.RestartRuntime))]
+    private async ValueTask HandleRestartRuntime(
+        RuntimeEffect.RestartRuntime effect,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            DshDesktop.Domain.Runtime.RuntimeSnapshot snapshot = await _mediator
+                .SendAsync(new RestartRuntimeRequest(), cancellationToken)
+                .ConfigureAwait(false);
+
+            await DispatchIntentAsync(
+                new RuntimeIntent.RuntimeStarted(
+                    snapshot.ProcessId ?? 0,
+                    snapshot.Port ?? 0,
+                    snapshot.Url ?? string.Empty),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await DispatchIntentAsync(
+                new RuntimeIntent.RuntimeFailed(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 处理编排恢复 Runtime 副作用（ADR-0004 第一段）：经 Mediator 复用 Plugins 路由
+    /// 禁用全部第三方插件；成功回流 RecoverPluginsDisabled（Reducer 迁移 Starting 并复用启动链路），
+    /// 失败回流 RuntimeFailed。
+    /// </summary>
+    [MviEffect(typeof(RuntimeEffect.RecoverRuntime))]
+    private async ValueTask HandleRecoverRuntime(
+        RuntimeEffect.RecoverRuntime effect,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await _mediator
+                .SendAsync(new DisableAllThirdPartyRequest(), cancellationToken)
+                .ConfigureAwait(false);
+
+            await DispatchIntentAsync(
+                new RuntimeIntent.RecoverPluginsDisabled(),
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

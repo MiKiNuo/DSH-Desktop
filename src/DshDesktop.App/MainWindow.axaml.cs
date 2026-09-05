@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
 using Avalonia.Markup.Xaml;
 using DshDesktop.Domain.Common;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
@@ -23,6 +24,9 @@ public sealed partial class MainWindow : Window
     private readonly AppShellViewModel _shellViewModel;
     private readonly IMviResolver _resolver;
     private readonly ContentControl _rootContent;
+    private readonly Ellipse _runtimeStatusDot;
+    private readonly Border _updateBadgeBox;
+    private readonly TextBlock _updateBadgeText;
 
     /// <summary>
     /// 初始化主窗口。
@@ -41,6 +45,12 @@ public sealed partial class MainWindow : Window
         DataContext = _shellViewModel;
         _rootContent = this.FindControl<ContentControl>("RootContent")
             ?? throw new InvalidOperationException("无法找到 RootContent 控件。");
+        _runtimeStatusDot = this.FindControl<Ellipse>("RuntimeStatusDot")
+            ?? throw new InvalidOperationException("无法找到 RuntimeStatusDot 控件。");
+        _updateBadgeBox = this.FindControl<Border>("UpdateBadgeBox")
+            ?? throw new InvalidOperationException("无法找到 UpdateBadgeBox 控件。");
+        _updateBadgeText = this.FindControl<TextBlock>("UpdateBadgeText")
+            ?? throw new InvalidOperationException("无法找到 UpdateBadgeText 控件。");
 
         _shellViewModel.PropertyChanged += (_, args) =>
         {
@@ -48,9 +58,16 @@ public sealed partial class MainWindow : Window
             {
                 RenderCurrentPage();
             }
+            else if (args.PropertyName
+                is nameof(AppShellViewModel.RuntimeIndicator)
+                or nameof(AppShellViewModel.UpdateBadge))
+            {
+                ApplyIndicators();
+            }
         };
 
         RenderCurrentPage();
+        ApplyIndicators();
     }
 
     /// <inheritdoc />
@@ -62,6 +79,19 @@ public sealed partial class MainWindow : Window
         Serilog.Log.Information(
             "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
             (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+    }
+
+    /// <summary>
+    /// 应用侧栏指示器：Runtime 生命周期状态点 + Updates 可用更新数徽标（表现逻辑属于 View）。
+    /// </summary>
+    private void ApplyIndicators()
+    {
+        // 生命周期 → 颜色的映射共享自 Presentation 层（与 Runtime 页同色系）。
+        _runtimeStatusDot.Fill = RuntimeLifecycleBrushes.For(_shellViewModel.RuntimeIndicator);
+
+        int badge = _shellViewModel.UpdateBadge;
+        _updateBadgeBox.IsVisible = badge > 0;
+        _updateBadgeText.Text = badge.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private void RenderCurrentPage()

@@ -39,4 +39,17 @@ public sealed record UpdatesState(
         System.Array.Empty<DshRuntimeInfo>(),
         System.Array.Empty<PluginUpdateInfo>(),
         null, null, null, null);
+
+    /// <summary>
+    /// 获取可用更新总数（AppShell UpdateBadge 投影口径，§22 三来源独立计数）：
+    /// PluginUpdates 每条计 1；Desktop 侧 LatestDesktopVersion 仅在 Velopack 确认有更新时非空
+    /// （当前版本是编译期常量），非空计 1；DSH 侧 LatestDshVersion 是通道最新版本（始终上报），
+    /// 须与当前版本不等才计 1。
+    /// </summary>
+    public int AvailableCount =>
+        PluginUpdates.Count
+        + (LatestDesktopVersion is not null ? 1 : 0)
+        + (LatestDshVersion is not null
+            && CurrentDshVersion is not null
+            && LatestDshVersion != CurrentDshVersion ? 1 : 0);
 }

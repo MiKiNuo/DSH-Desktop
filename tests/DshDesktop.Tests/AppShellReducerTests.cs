@@ -1,3 +1,4 @@
+using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 
 namespace DshDesktop.Tests;
@@ -80,6 +81,24 @@ public sealed class AppShellReducerTests
     {
         var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.ShowSettings());
 
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeIndicatorChanged_ProjectsLifecycle()
+    {
+        var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.RuntimeIndicatorChanged(RuntimeLifecycle.Running));
+
+        await Assert.That(result.State.RuntimeIndicator).IsEqualTo(RuntimeLifecycle.Running);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task UpdateBadgeChanged_ProjectsCount()
+    {
+        var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.UpdateBadgeChanged(4));
+
+        await Assert.That(result.State.UpdateBadge).IsEqualTo(4);
         await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
 }

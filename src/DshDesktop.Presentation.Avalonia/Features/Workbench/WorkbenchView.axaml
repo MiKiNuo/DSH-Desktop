@@ -2,20 +2,67 @@
     x:Class="DshDesktop.Presentation.Avalonia.Features.Workbench.WorkbenchView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:web="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView">
-    <Grid>
-        <web:NativeWebView x:Name="WebViewHost" />
-        <Border x:Name="PlaceholderOverlay" Background="#1F2430">
-            <StackPanel
-                HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="8">
-                <TextBlock
-                    FontSize="18"
-                    FontWeight="SemiBold"
-                    Text="Workbench" />
-                <TextBlock Foreground="#9AA4B2" Text="等待 Runtime 就绪…" />
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Workbench"
+    xmlns:web="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView"
+    x:DataType="vm:WorkbenchViewModel">
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- 工具条：后退/前进/刷新（无地址栏——Session URL 含一次性 token，不暴露编辑，§21 Phase 6 修订）。 -->
+        <Border
+            Grid.Row="0"
+            Background="#252B36"
+            IsEnabled="{Binding RuntimeReady}"
+            Padding="6,4">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button
+                    Click="OnBackClick"
+                    Content="后退"
+                    IsEnabled="{Binding CanGoBack}" />
+                <Button
+                    Click="OnForwardClick"
+                    Content="前进"
+                    IsEnabled="{Binding CanGoForward}" />
+                <Button
+                    Click="OnRefreshClick"
+                    Content="刷新"
+                    IsEnabled="{Binding !Loading}" />
+                <ProgressBar
+                    Width="120"
+                    VerticalAlignment="Center"
+                    IsIndeterminate="True"
+                    IsVisible="{Binding Loading}" />
             </StackPanel>
         </Border>
+        <!-- 页内错误条：导航失败展示 + 重试（§21 Phase 6 修订，不做独立错误页）。 -->
+        <Border
+            Grid.Row="1"
+            Background="#3A2626"
+            IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+            Padding="6,4">
+            <DockPanel>
+                <Button
+                    DockPanel.Dock="Right"
+                    Click="OnRefreshClick"
+                    Content="重试" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="#F0B0B0"
+                    Text="{Binding Error}" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="2">
+            <web:NativeWebView x:Name="WebViewHost" />
+            <Border x:Name="PlaceholderOverlay" Background="#1F2430">
+                <StackPanel
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="8">
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="Workbench" />
+                    <TextBlock Foreground="#9AA4B2" Text="等待 Runtime 就绪…" />
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

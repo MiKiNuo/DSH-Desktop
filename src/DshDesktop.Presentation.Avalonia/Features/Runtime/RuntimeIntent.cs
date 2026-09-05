@@ -19,6 +19,22 @@ public abstract partial record RuntimeIntent : IMviIntent
     public sealed partial record StopRuntime : RuntimeIntent;
 
     /// <summary>
+    /// 表示重启 Runtime 意图（ADR-0004：Stop+Start 原子编排，仅 Running / Failed 合法）。
+    /// </summary>
+    public sealed partial record RestartRuntime : RuntimeIntent;
+
+    /// <summary>
+    /// 表示编排恢复 Runtime 意图（ADR-0004：先禁用全部第三方插件再启动，仅 Failed 合法）。
+    /// </summary>
+    public sealed partial record RecoverRuntime : RuntimeIntent;
+
+    /// <summary>
+    /// 表示恢复第一段（禁用全部第三方插件）已完成的回流意图（ADR-0004：仅 Recovering 合法，
+    /// 迁移到 Starting 并复用启动链路）。
+    /// </summary>
+    public sealed partial record RecoverPluginsDisabled : RuntimeIntent;
+
+    /// <summary>
     /// 表示 Runtime 进程已拉起且 HTTP 就绪的回流意图。
     /// </summary>
     /// <param name="ProcessId">DSH 进程 ID。</param>

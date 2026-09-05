@@ -64,6 +64,137 @@ public sealed class RuntimeReducerTests
     }
 
     [Test]
+    public async Task RestartRuntime_FromRunning_TransitionsToStartingWithEffect()
+    {
+        var result = _reducer.Reduce(RunningState(), new RuntimeIntent.RestartRuntime());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Starting);
+        await Assert.That(result.State.StartupStage).IsEqualTo(RuntimeStartupStage.Validating);
+        await Assert.That(result.State.LastError).IsNull();
+        await Assert.That(result.Effects.Count).IsEqualTo(1);
+        await Assert.That(result.Effects[0] is RuntimeEffect.RestartRuntime).IsTrue();
+    }
+
+    [Test]
+    public async Task RestartRuntime_FromFailed_AllowsRestart()
+    {
+        RuntimeState failed = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Failed };
+
+        var result = _reducer.Reduce(failed, new RuntimeIntent.RestartRuntime());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Starting);
+        await Assert.That(result.Effects.Count).IsEqualTo(1);
+        await Assert.That(result.Effects[0] is RuntimeEffect.RestartRuntime).IsTrue();
+    }
+
+    [Test]
+    [Arguments(RuntimeLifecycle.Stopped)]
+    [Arguments(RuntimeLifecycle.Starting)]
+    [Arguments(RuntimeLifecycle.Stopping)]
+    [Arguments(RuntimeLifecycle.Recovering)]
+    public async Task RestartRuntime_FromOtherLifecycle_IsIgnored(RuntimeLifecycle lifecycle)
+    {
+        RuntimeState state = RuntimeState.Initial with { Lifecycle = lifecycle };
+
+        var result = _reducer.Reduce(state, new RuntimeIntent.RestartRuntime());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(lifecycle);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RecoverRuntime_FromFailed_TransitionsToRecoveringWithEffect()
+    {
+        RuntimeState failed = RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Failed,
+            LastError = "插件导致启动失败",
+        };
+
+        var result = _reducer.Reduce(failed, new RuntimeIntent.RecoverRuntime());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Recovering);
+        await Assert.That(result.State.LastError).IsEqualTo("插件导致启动失败");
+        await Assert.That(result.Effects.Count).IsEqualTo(1);
+        await Assert.That(result.Effects[0] is RuntimeEffect.RecoverRuntime).IsTrue();
+    }
+
+    [Test]
+    [Arguments(RuntimeLifecycle.Stopped)]
+    [Arguments(RuntimeLifecycle.Starting)]
+    [Arguments(RuntimeLifecycle.Running)]
+    [Arguments(RuntimeLifecycle.Stopping)]
+    [Arguments(RuntimeLifecycle.Recovering)]
+    public async Task RecoverRuntime_FromNonFailed_IsIgnored(RuntimeLifecycle lifecycle)
+    {
+        RuntimeState state = RuntimeState.Initial with { Lifecycle = lifecycle };
+
+        var result = _reducer.Reduce(state, new RuntimeIntent.RecoverRuntime());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(lifecycle);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RecoverRuntime_SuccessChain_FailedToRecoveringToStartingToRunning()
+    {
+        // ADR-0004 两段状态机：Failed → Recovering（禁用插件 Effect）
+        // →（禁用成功回流 RecoverPluginsDisabled）→ Starting（复用启动链路）→ Running。
+        RuntimeState failed = RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Failed,
+            LastError = "插件导致启动失败",
+        };
+        var recovering = _reducer.Reduce(failed, new RuntimeIntent.RecoverRuntime());
+
+        var starting = _reducer.Reduce(recovering.State, new RuntimeIntent.RecoverPluginsDisabled());
+
+        await Assert.That(starting.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Starting);
+        await Assert.That(starting.State.StartupStage).IsEqualTo(RuntimeStartupStage.Validating);
+        await Assert.That(starting.Effects.Count).IsEqualTo(1);
+        await Assert.That(starting.Effects[0] is RuntimeEffect.StartRuntime).IsTrue();
+
+        var result = _reducer.Reduce(
+            starting.State,
+            new RuntimeIntent.RuntimeStarted(1234, 5678, "http://127.0.0.1:5678/?token=x"));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Running);
+        await Assert.That(result.State.StartupStage).IsEqualTo(RuntimeStartupStage.Ready);
+    }
+
+    [Test]
+    [Arguments(RuntimeLifecycle.Stopped)]
+    [Arguments(RuntimeLifecycle.Starting)]
+    [Arguments(RuntimeLifecycle.Running)]
+    [Arguments(RuntimeLifecycle.Stopping)]
+    [Arguments(RuntimeLifecycle.Failed)]
+    public async Task RecoverPluginsDisabled_FromNonRecovering_IsIgnored(RuntimeLifecycle lifecycle)
+    {
+        // 恢复第二段回流仅 Recovering 合法，其余状态忽略（防乱序回流污染状态机）。
+        RuntimeState state = RuntimeState.Initial with { Lifecycle = lifecycle };
+
+        var result = _reducer.Reduce(state, new RuntimeIntent.RecoverPluginsDisabled());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(lifecycle);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RecoverRuntime_FailureReflow_BackToFailedKeepingLastError()
+    {
+        // ADR-0004：Recover 再失败回 Failed 且保留 LastError（用户必须能看到恢复失败原因）。
+        RuntimeState failed = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Failed };
+        var recovering = _reducer.Reduce(failed, new RuntimeIntent.RecoverRuntime());
+
+        var result = _reducer.Reduce(
+            recovering.State,
+            new RuntimeIntent.RuntimeFailed("禁用插件后启动仍失败"));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
+        await Assert.That(result.State.LastError).IsEqualTo("禁用插件后启动仍失败");
+    }
+
+    [Test]
     public async Task RuntimeStarted_TransitionsToRunningWithPortAndUrl()
     {
         RuntimeState starting = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Starting };
@@ -107,6 +238,34 @@ public sealed class RuntimeReducerTests
         var result = _reducer.Reduce(starting, new RuntimeIntent.RuntimeExited(null));
 
         await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
+    }
+
+    [Test]
+    public async Task RuntimeExited_WhileRecovering_TreatedAsCrashUsingExitInfo()
+    {
+        // ADR-0004：Recovering 中进程退出 = 恢复再失败 → Failed；无既有错误时用退出信息。
+        RuntimeState recovering = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Recovering };
+
+        var result = _reducer.Reduce(recovering, new RuntimeIntent.RuntimeExited(1));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
+        await Assert.That(result.State.LastError).IsEqualTo("Runtime 意外退出（退出码 1）。");
+    }
+
+    [Test]
+    public async Task RuntimeExited_WhileRecovering_KeepsExistingLastError()
+    {
+        // ADR-0004：Recover 再失败回 Failed 且保留 LastError——既有错误不被退出信息覆盖。
+        RuntimeState recovering = RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Recovering,
+            LastError = "插件导致启动失败",
+        };
+
+        var result = _reducer.Reduce(recovering, new RuntimeIntent.RuntimeExited(1));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
+        await Assert.That(result.State.LastError).IsEqualTo("插件导致启动失败");
     }
 
     [Test]

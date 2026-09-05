@@ -182,8 +182,11 @@ public sealed class PluginOrchestratorTests
     {
         public string? RestoredSnapshotId { get; private set; }
 
+        public int CreateCount { get; private set; }
+
         public Task<string> CreateSnapshotAsync(CancellationToken cancellationToken)
         {
+            CreateCount++;
             return Task.FromResult("snap-1");
         }
 
@@ -228,6 +231,11 @@ public sealed class PluginOrchestratorTests
         {
             StopCount++;
             return Task.CompletedTask;
+        }
+
+        public Task<RuntimeSnapshot> RestartAsync(RuntimeLaunchOptions options, CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException("Fake 不支持 RestartAsync。");
         }
     }
 }

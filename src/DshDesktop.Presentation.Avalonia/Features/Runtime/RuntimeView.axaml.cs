@@ -13,16 +13,13 @@ namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 /// </summary>
 public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 {
-    private static readonly IBrush DoneBrush = new SolidColorBrush(Color.Parse("#22C55E"));
-    private static readonly IBrush ActiveBrush = new SolidColorBrush(Color.Parse("#EAB308"));
-    private static readonly IBrush PendingBrush = new SolidColorBrush(Color.Parse("#6B7280"));
-    private static readonly IBrush FailedBrush = new SolidColorBrush(Color.Parse("#EF4444"));
-
     private readonly TextBlock _stageIcon2;
     private readonly TextBlock _stageIcon3;
     private readonly TextBlock _stageIcon4;
     private readonly TextBlock _stageIcon1;
     private readonly Border _healthBadge;
+    private readonly Button _restartButton;
+    private readonly StackPanel _recoverPanel;
 
     /// <summary>
     /// 初始化 Runtime 视图。
@@ -36,6 +33,10 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
         _stageIcon4 = FindRequiredTextBlock("StageIcon4");
         _healthBadge = this.FindControl<Border>("HealthBadge")
             ?? throw new InvalidOperationException("无法找到 HealthBadge 控件。");
+        _restartButton = this.FindControl<Button>("RestartButton")
+            ?? throw new InvalidOperationException("无法找到 RestartButton 控件。");
+        _recoverPanel = this.FindControl<StackPanel>("RecoverPanel")
+            ?? throw new InvalidOperationException("无法找到 RecoverPanel 控件。");
     }
 
     /// <inheritdoc />
@@ -82,11 +83,15 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 
         IBrush brush = viewModel.Health switch
         {
-            RuntimeHealth.Healthy => DoneBrush,
-            RuntimeHealth.Unresponsive => FailedBrush,
-            _ => PendingBrush,
+            RuntimeHealth.Healthy => RuntimeLifecycleBrushes.Running,
+            RuntimeHealth.Unresponsive => RuntimeLifecycleBrushes.Failed,
+            _ => RuntimeLifecycleBrushes.Stopped,
         };
         _healthBadge.Background = brush;
+
+        // ADR-0004：重启仅 Running / Failed 可用；Failed 时提供"重试启动 / 禁用插件后恢复"两按钮。
+        _restartButton.IsVisible = running || failed;
+        _recoverPanel.IsVisible = failed;
     }
 
     private static void SetRow(TextBlock icon, bool done, bool active, bool failed)
@@ -94,22 +99,22 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
         if (failed)
         {
             icon.Text = "✗";
-            icon.Foreground = FailedBrush;
+            icon.Foreground = RuntimeLifecycleBrushes.Failed;
         }
         else if (done)
         {
             icon.Text = "✓";
-            icon.Foreground = DoneBrush;
+            icon.Foreground = RuntimeLifecycleBrushes.Running;
         }
         else if (active)
         {
             icon.Text = "●";
-            icon.Foreground = ActiveBrush;
+            icon.Foreground = RuntimeLifecycleBrushes.Transition;
         }
         else
         {
             icon.Text = "○";
-            icon.Foreground = PendingBrush;
+            icon.Foreground = RuntimeLifecycleBrushes.Stopped;
         }
     }
 

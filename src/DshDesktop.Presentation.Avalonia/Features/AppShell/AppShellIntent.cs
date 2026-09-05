@@ -1,3 +1,4 @@
+using DshDesktop.Domain.Runtime;
 using MiKiNuo.Mvi.Domain.MVI.Intent;
 
 namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
@@ -46,4 +47,16 @@ public abstract partial record AppShellIntent : IMviIntent
     /// 表示切换侧边栏折叠状态意图。
     /// </summary>
     public sealed partial record ToggleSidebar : AppShellIntent;
+
+    /// <summary>
+    /// 表示 Runtime 生命周期投影变化的回流意图（BindSiblingState 自 RuntimeStore 投影，§11.2）。
+    /// </summary>
+    /// <param name="Lifecycle">最新 Runtime 生命周期。</param>
+    public sealed partial record RuntimeIndicatorChanged(RuntimeLifecycle Lifecycle) : AppShellIntent;
+
+    /// <summary>
+    /// 表示可用更新数投影变化的回流意图（BindSiblingState 自 UpdatesStore 投影，§11.2）。
+    /// </summary>
+    /// <param name="Count">可用更新数。</param>
+    public sealed partial record UpdateBadgeChanged(int Count) : AppShellIntent;
 }

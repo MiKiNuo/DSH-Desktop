@@ -22,11 +22,20 @@
                         FontSize="16"
                         FontWeight="SemiBold"
                         Text="DSH Desktop" />
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowRuntimeCommand}"
-                        Content="Runtime" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Command="{Binding ShowRuntimeCommand}"
+                            Content="Runtime" />
+                        <Ellipse
+                            x:Name="RuntimeStatusDot"
+                            Grid.Column="1"
+                            Width="10"
+                            Height="10"
+                            Margin="6,0,0,0"
+                            VerticalAlignment="Center" />
+                    </Grid>
                     <Button
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Left"
@@ -47,11 +56,27 @@
                         HorizontalContentAlignment="Left"
                         Command="{Binding ShowPluginsCommand}"
                         Content="Plugins" />
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowUpdatesCommand}"
-                        Content="Updates" />
+                    <Grid ColumnDefinitions="*,Auto">
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Command="{Binding ShowUpdatesCommand}"
+                            Content="Updates" />
+                        <Border
+                            x:Name="UpdateBadgeBox"
+                            Grid.Column="1"
+                            Margin="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Background="#22C55E"
+                            CornerRadius="8"
+                            IsVisible="False"
+                            Padding="6,1">
+                            <TextBlock
+                                x:Name="UpdateBadgeText"
+                                FontSize="11"
+                                Foreground="White" />
+                        </Border>
+                    </Grid>
                     <Button
                         HorizontalAlignment="Stretch"
                         HorizontalContentAlignment="Left"

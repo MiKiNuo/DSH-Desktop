@@ -86,6 +86,18 @@ public sealed partial class RuntimeViewModel
     public partial IMviAsyncCommand StopRuntimeCommand { get; private set; }
 
     /// <summary>
+    /// 获取重启 Runtime 命令（Running / Failed 可用）。
+    /// </summary>
+    [MviCommand(typeof(RuntimeIntent.RestartRuntime))]
+    public partial IMviAsyncCommand RestartRuntimeCommand { get; private set; }
+
+    /// <summary>
+    /// 获取禁用插件后恢复 Runtime 命令（Failed 可用）。
+    /// </summary>
+    [MviCommand(typeof(RuntimeIntent.RecoverRuntime))]
+    public partial IMviAsyncCommand RecoverRuntimeCommand { get; private set; }
+
+    /// <summary>
     /// 获取进入安全模式命令。
     /// </summary>
     [MviCommand(typeof(RuntimeIntent.EnterSafeMode))]

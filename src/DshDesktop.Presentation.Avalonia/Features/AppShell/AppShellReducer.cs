@@ -99,4 +99,26 @@ public sealed partial class AppShellReducer
     {
         return Unchanged(state with { SidebarCollapsed = !state.SidebarCollapsed });
     }
+
+    /// <summary>
+    /// 处理 Runtime 生命周期投影变化回流意图（§14：仅投影字段，不保存 Runtime 业务状态）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.RuntimeIndicatorChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleRuntimeIndicatorChanged(
+        AppShellState state,
+        AppShellIntent.RuntimeIndicatorChanged intent)
+    {
+        return Unchanged(state with { RuntimeIndicator = intent.Lifecycle });
+    }
+
+    /// <summary>
+    /// 处理可用更新数投影变化回流意图（§14：仅投影字段，不保存 Updates 业务状态）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.UpdateBadgeChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleUpdateBadgeChanged(
+        AppShellState state,
+        AppShellIntent.UpdateBadgeChanged intent)
+    {
+        return Unchanged(state with { UpdateBadge = intent.Count });
+    }
 }

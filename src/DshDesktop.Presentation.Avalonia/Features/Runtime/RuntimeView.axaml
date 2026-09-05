@@ -64,8 +64,14 @@
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button Command="{Binding StartRuntimeCommand}" Content="启动 Runtime" />
                 <Button Command="{Binding StopRuntimeCommand}" Content="停止 Runtime" />
+                <Button x:Name="RestartButton" Command="{Binding RestartRuntimeCommand}" Content="重启 Runtime" />
                 <Button Command="{Binding EnterSafeModeCommand}" Content="进入安全模式" IsVisible="{Binding !SafeMode}" />
                 <Button Command="{Binding ExitSafeModeCommand}" Content="退出安全模式" IsVisible="{Binding SafeMode}" />
+            </StackPanel>
+
+            <StackPanel x:Name="RecoverPanel" Orientation="Horizontal" Spacing="12">
+                <Button Command="{Binding StartRuntimeCommand}" Content="重试启动" />
+                <Button Command="{Binding RecoverRuntimeCommand}" Content="禁用插件后恢复" />
             </StackPanel>
         </StackPanel>
     </Border>

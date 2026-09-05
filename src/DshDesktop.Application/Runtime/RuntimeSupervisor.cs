@@ -120,6 +120,17 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
             null, null, null, null));
     }
 
+    /// <inheritdoc />
+    public async Task<RuntimeSnapshot> RestartAsync(
+        RuntimeLaunchOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _logger.Information("Runtime.Restart.Begin");
+        await StopAsync(cancellationToken).ConfigureAwait(false);
+        return await StartAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
     private void OnOrchestratorExited(object? sender, RuntimeExitedEventArgs args)
     {
         StopHealthLoop();

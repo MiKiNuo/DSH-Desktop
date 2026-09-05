@@ -28,6 +28,14 @@ public interface IRuntimeSupervisor
     Task StopAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// 重启 Runtime（ADR-0004：Stop+Start 原子编排，先停后启）。
+    /// </summary>
+    /// <param name="options">启动参数。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>就绪后的快照。</returns>
+    Task<RuntimeSnapshot> RestartAsync(RuntimeLaunchOptions options, CancellationToken cancellationToken);
+
+    /// <summary>
     /// 快照变化时触发（阶段推进 / 健康变化 / 启停完成）。
     /// </summary>
     event EventHandler<RuntimeSnapshot>? SnapshotChanged;

@@ -187,6 +187,7 @@ public sealed partial class DshCompositionRoot
 
         mediator.Register<StartRuntimeRequest, RuntimeSnapshot>(HandleStartRuntimeAsync);
         mediator.Register<StopRuntimeRequest, bool>(HandleStopRuntimeAsync);
+        mediator.Register<RestartRuntimeRequest, RuntimeSnapshot>(HandleRestartRuntimeAsync);
         mediator.Register<SetSafeModeRequest, bool>(HandleSetSafeModeAsync);
         mediator.Register<GetPluginListRequest, IReadOnlyList<PluginInfo>>(HandleGetPluginListAsync);
         mediator.Register<SetPluginEnabledRequest, IReadOnlyList<PluginInfo>>(HandleSetPluginEnabledAsync);
@@ -448,6 +449,14 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
         return await _supervisor!.StartAsync(BuildLaunchOptions(), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<RuntimeSnapshot> HandleRestartRuntimeAsync(
+        RestartRuntimeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        return await _supervisor!.RestartAsync(BuildLaunchOptions(), cancellationToken).ConfigureAwait(false);
     }
 
     private RuntimeLaunchOptions BuildLaunchOptions()
