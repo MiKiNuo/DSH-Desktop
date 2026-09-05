@@ -1,0 +1,41 @@
+name: release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Assert tag matches Version (Q15-A)
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME.TrimStart('v')
+          [xml]$props = Get-Content Directory.Build.props
+          $version = ($props.Project.PropertyGroup | Where-Object { $null -ne $_.Version } | Select-Object -First 1).Version
+          Write-Host "tag=$tag version=$version"
+          if ($tag -ne $version) { throw "tag v$tag 与 Directory.Build.props Version=$version 不一致" }
+
+      - name: Native AOT publish (Release + RID => PublishAot)
+        run: dotnet publish src/DshDesktop.App -c Release -r win-x64
+
+      - name: Install vpk
+        run: dotnet tool install --global vpk
+
+      - name: Velopack pack
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          vpk pack --packId DshDesktop --packVersion $version --packDir src/DshDesktop.App/bin/Release/net10.0/win-x64/publish --outputDir releases --mainExe DshDesktop.App.exe
+
+      - name: Upload GitHub Release (Setup.exe + nupkg + RELEASES index)
+        run: vpk upload github --repoUrl https://github.com/MiKiNuo/DSH-Desktop --token ${{ secrets.GITHUB_TOKEN }} --tag ${{ github.ref_name }} --releaseName ${{ github.ref_name }} --publish --outputDir releases
