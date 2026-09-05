@@ -44,6 +44,9 @@ public sealed class DshDesktopConfig
     /// <summary>是否处于安全模式（跨重启持久）：抑制 Runtime 自动启动，仅保留管理界面。</summary>
     public bool SafeMode { get; set; }
 
+    /// <summary>是否启用 Windows 通知（默认开；关闭时崩溃 / 插件回滚事件不发气泡）。</summary>
+    public bool NotificationsEnabled { get; set; } = true;
+
     /// <summary>DSH 更新通道（npm dist-tag：latest / alpha）。</summary>
     public string DshChannel { get; set; } = "latest";
 

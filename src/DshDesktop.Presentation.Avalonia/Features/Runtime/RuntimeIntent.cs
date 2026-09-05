@@ -37,10 +37,10 @@ public abstract partial record RuntimeIntent : IMviIntent
     /// <summary>
     /// 表示 Runtime 进程已拉起且 HTTP 就绪的回流意图。
     /// </summary>
-    /// <param name="ProcessId">DSH 进程 ID。</param>
-    /// <param name="Port">实际监听端口。</param>
+    /// <param name="ProcessId">DSH 进程 ID；快照未携带为 null。</param>
+    /// <param name="Port">实际监听端口；快照未携带为 null。</param>
     /// <param name="Url">Session URL（含 token）。</param>
-    public sealed partial record RuntimeStarted(int ProcessId, int Port, string Url) : RuntimeIntent;
+    public sealed partial record RuntimeStarted(int? ProcessId, int? Port, string Url) : RuntimeIntent;
 
     /// <summary>
     /// 表示 Runtime 启动或运行失败的回流意图。

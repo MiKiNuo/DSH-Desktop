@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using DshDesktop.Application.Diagnostics;
 using DshDesktop.Domain.Runtime;
 using Serilog;
 
@@ -106,7 +107,9 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
     {
         StopHealthLoop();
 
-        if (Current.Lifecycle is RuntimeLifecycle.Running)
+        // Running 与 Starting 中的停止都是编排停止（如应用退出时 Shutdown 无条件 StopAsync），
+        // 先切 Stopping，编排器杀进程触发的退出事件才不会被崩溃守卫误报。
+        if (Current.Lifecycle is RuntimeLifecycle.Running or RuntimeLifecycle.Starting)
         {
             Publish(Current with { Lifecycle = RuntimeLifecycle.Stopping });
         }
@@ -135,6 +138,13 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
     {
         StopHealthLoop();
         _logger.Warning("Runtime.Exit ExitCode={ExitCode}", args.ExitCode);
+
+        // 崩溃结构化事件（Phase 7 Issue 03）：Running/Starting 中收到退出 = 非编排退出。
+        // 主动停止（StopAsync）已先把生命周期切到 Stopping/Stopped，不会误报。
+        if (Current.Lifecycle is RuntimeLifecycle.Running or RuntimeLifecycle.Starting)
+        {
+            _logger.Error(DiagnosticEventNames.RuntimeCrashDetected + " ExitCode={ExitCode}", args.ExitCode);
+        }
 
         // 事实层：进程已不存在。崩溃语义（Failed vs Stopped）由 Reducer 依据
         // MVI 侧生命周期上下文判定（Q7），Supervisor 不重复决策。

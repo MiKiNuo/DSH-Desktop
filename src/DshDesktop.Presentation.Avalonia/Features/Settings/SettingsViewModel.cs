@@ -31,6 +31,12 @@ public sealed partial class SettingsViewModel
     public partial bool SafeMode { get; private set; }
 
     /// <summary>
+    /// 获取是否启用 Windows 通知。
+    /// </summary>
+    [MviBind(nameof(SettingsState.NotificationsEnabled), BindingMode = MviBindingMode.OneWay)]
+    public partial bool NotificationsEnabled { get; private set; }
+
+    /// <summary>
     /// 获取 DSH 更新通道。
     /// </summary>
     [MviBind(nameof(SettingsState.Channel), BindingMode = MviBindingMode.OneWay)]
@@ -82,6 +88,12 @@ public sealed partial class SettingsViewModel
     /// </summary>
     [MviCommand(typeof(SettingsIntent.ToggleSafeMode))]
     public partial IMviAsyncCommand ToggleSafeModeCommand { get; private set; }
+
+    /// <summary>
+    /// 获取切换 Windows 通知命令（无载荷翻转）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.ToggleNotifications))]
+    public partial IMviAsyncCommand ToggleNotificationsCommand { get; private set; }
 
     /// <summary>
     /// 获取修改 DSH 更新通道命令（载荷：latest / alpha）。

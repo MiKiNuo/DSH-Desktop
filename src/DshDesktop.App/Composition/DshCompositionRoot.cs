@@ -1,5 +1,7 @@
+using Avalonia.Controls;
 using DshDesktop.App.Logging;
 using DshDesktop.Application.Diagnostics;
+using DshDesktop.Application.Notifications;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Application.Updates;
@@ -11,6 +13,7 @@ using DshDesktop.Infrastructure.Config;
 using DshDesktop.Infrastructure.Plugins;
 using DshDesktop.Infrastructure.Runtime;
 using DshDesktop.Infrastructure.Updates;
+using DshDesktop.Platform.Windows.Notifications;
 using DshDesktop.Presentation.Avalonia;
 using DshDesktop.Presentation.Avalonia.Composition;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
@@ -45,6 +48,8 @@ public sealed partial class DshCompositionRoot
     private PluginOrchestrator? _pluginOrchestrator;
     private RuntimeRepository? _runtimeRepository;
     private VelopackDesktopUpdater? _desktopUpdater;
+    private BalloonNotificationService? _notificationService;
+    private DiagnosticsNotificationSubscriber? _notificationSubscriber;
 
     /// <summary>
     /// 获取是否处于安全模式（抑制自动启动）。
@@ -88,7 +93,74 @@ public sealed partial class DshCompositionRoot
     /// <returns>主窗口。</returns>
     public MainWindow CreateMainWindow()
     {
-        return new MainWindow(_container.Resolve<AppShellViewModel>(), _container);
+        AppShellViewModel shellViewModel = _container.Resolve<AppShellViewModel>();
+        MainWindow window = new(shellViewModel, _container);
+
+        // Windows 平台集成（Phase 7）：托盘单图标 + 气泡通知（Issue 03/04，图标合并见下）。
+        if (OperatingSystem.IsWindows())
+        {
+            ConfigureTrayIcon(window, shellViewModel);
+        }
+
+        return window;
+    }
+
+    /// <summary>
+    /// 接线托盘图标与气泡通知（Phase 7 Issue 03/04）：托盘静态单图标 + tooltip 投影 Runtime
+    /// 生命周期（复用 AppShell RuntimeIndicator 投影链路）；菜单 = 显示主窗口 / 退出（退出走
+    /// desktop.Exit → Shutdown 现状链路）；气泡订阅诊断事件流，点击仅置前主窗口（Issue 04
+    /// 改为非常驻图标以合并双图标）。
+    /// </summary>
+    private void ConfigureTrayIcon(MainWindow window, AppShellViewModel shellViewModel)
+    {
+        TrayIcon trayIcon = new()
+        {
+            Icon = new WindowIcon(new MemoryStream(ProcessIcon.LoadIcoBytes())),
+            ToolTipText = TrayTooltipText.Format(shellViewModel.RuntimeIndicator),
+        };
+        NativeMenu trayMenu = new();
+        NativeMenuItem showItem = new("显示主窗口");
+        showItem.Click += (_, _) => ShowMainWindow(window);
+        NativeMenuItem exitItem = new("退出");
+        exitItem.Click += (_, _) =>
+            (global::Avalonia.Application.Current?.ApplicationLifetime
+                as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+        trayMenu.Add(showItem);
+        trayMenu.Add(exitItem);
+        trayIcon.Menu = trayMenu;
+        TrayIcon.SetIcons(global::Avalonia.Application.Current!, [trayIcon]);
+
+        shellViewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(AppShellViewModel.RuntimeIndicator))
+            {
+                trayIcon.ToolTipText = TrayTooltipText.Format(shellViewModel.RuntimeIndicator);
+            }
+        };
+
+        _notificationService = new BalloonNotificationService(() => ShowMainWindow(window));
+        _notificationSubscriber = new DiagnosticsNotificationSubscriber(
+            _diagnosticsHub,
+            _notificationService,
+            () => _config?.NotificationsEnabled ?? true);
+    }
+
+    /// <summary>
+    /// 置前主窗口（托盘菜单 / 气泡点击共用；Q2 决策：不导航）。
+    /// </summary>
+    private static void ShowMainWindow(MainWindow window)
+    {
+        if (!window.IsVisible)
+        {
+            window.Show();
+        }
+
+        if (window.WindowState == WindowState.Minimized)
+        {
+            window.WindowState = WindowState.Normal;
+        }
+
+        window.Activate();
     }
 
     /// <summary>
@@ -157,6 +229,8 @@ public sealed partial class DshCompositionRoot
     /// </summary>
     public void Shutdown()
     {
+        _notificationSubscriber?.Dispose();
+        _notificationService?.Dispose();
         _supervisor?.StopAsync(CancellationToken.None).GetAwaiter().GetResult();
         Log.CloseAndFlush();
     }
@@ -200,6 +274,7 @@ public sealed partial class DshCompositionRoot
         mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
         mediator.Register<GetSettingsInfoRequest, SettingsInfo>(HandleGetSettingsInfo);
         mediator.Register<SetDshChannelRequest, bool>(HandleSetDshChannelAsync);
+        mediator.Register<SetNotificationsEnabledRequest, bool>(HandleSetNotificationsEnabledAsync);
         mediator.Register<DownloadAndApplyDesktopUpdateRequest, bool>(HandleDownloadAndApplyDesktopUpdateAsync);
     }
 
@@ -230,10 +305,22 @@ public sealed partial class DshCompositionRoot
 
         return ValueTask.FromResult(new SettingsInfo(
             _config!.SafeMode,
+            _config.NotificationsEnabled,
             _config.DshChannel,
             _config.NodePath,
             _config.DshHome,
             DshDesktopConfigStore.DataRoot));
+    }
+
+    private async ValueTask<bool> HandleSetNotificationsEnabledAsync(
+        SetNotificationsEnabledRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        _config!.NotificationsEnabled = request.Enabled;
+        await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+        Log.Logger.Information("Settings.Notifications {Enabled}", request.Enabled);
+        return true;
     }
 
     private async ValueTask<bool> HandleSetDshChannelAsync(

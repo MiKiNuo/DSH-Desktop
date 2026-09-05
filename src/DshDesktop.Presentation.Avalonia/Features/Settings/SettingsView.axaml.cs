@@ -29,6 +29,12 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
         ViewModel.ToggleSafeModeCommand.Execute(null);
     }
 
+    private void OnNotificationsToggled(object? sender, RoutedEventArgs args)
+    {
+        // 无载荷翻转，同 SafeMode 先例。
+        ViewModel.ToggleNotificationsCommand.Execute(null);
+    }
+
     private void OnChannelSelectionChanged(object? sender, SelectionChangedEventArgs args)
     {
         // 守卫：加载回流导致的选中同步不重复落盘。

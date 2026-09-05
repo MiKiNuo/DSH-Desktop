@@ -19,6 +19,12 @@ public abstract partial record SettingsEffect : IMviEffect
     public sealed partial record SaveSafeMode(bool Enabled) : SettingsEffect;
 
     /// <summary>
+    /// 表示持久化 Windows 通知开关副作用。
+    /// </summary>
+    /// <param name="Enabled">目标通知开关状态。</param>
+    public sealed partial record SaveNotificationsEnabled(bool Enabled) : SettingsEffect;
+
+    /// <summary>
     /// 表示持久化 DSH 更新通道副作用。
     /// </summary>
     /// <param name="Channel">目标通道。</param>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Shell_NotifyIcon 结构体含 fixed 缓冲区 + UnmanagedCallersOnly 函数指针。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DshDesktop.Application\DshDesktop.Application.csproj" />
+  </ItemGroup>
+</Project>

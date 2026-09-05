@@ -18,6 +18,11 @@ public abstract partial record SettingsIntent : IMviIntent
     public sealed partial record ToggleSafeMode : SettingsIntent;
 
     /// <summary>
+    /// 表示切换 Windows 通知意图（无载荷翻转，同 ToggleSafeMode 先例）。
+    /// </summary>
+    public sealed partial record ToggleNotifications : SettingsIntent;
+
+    /// <summary>
     /// 表示修改 DSH 更新通道意图（乐观更新）。
     /// </summary>
     /// <param name="Channel">目标通道（latest / alpha）。</param>

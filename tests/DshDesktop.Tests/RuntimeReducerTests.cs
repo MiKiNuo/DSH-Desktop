@@ -208,6 +208,19 @@ public sealed class RuntimeReducerTests
     }
 
     [Test]
+    public async Task RuntimeStarted_NullProcessIdAndPort_PreservesNullInsteadOfSentinel()
+    {
+        // Phase 7：RuntimeStarted 与 RuntimeSnapshot 类型对齐（int?），空值透传，不得落成 0 哨兵。
+        RuntimeState starting = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Starting };
+
+        var result = _reducer.Reduce(starting, new RuntimeIntent.RuntimeStarted(null, null, "http://127.0.0.1:5678/?token=x"));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Running);
+        await Assert.That(result.State.Port).IsNull();
+        await Assert.That(result.State.Url).IsEqualTo("http://127.0.0.1:5678/?token=x");
+    }
+
+    [Test]
     public async Task RuntimeFailed_TransitionsToFailedWithError()
     {
         RuntimeState starting = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Starting };

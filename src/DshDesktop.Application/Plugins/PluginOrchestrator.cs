@@ -1,3 +1,4 @@
+using DshDesktop.Application.Diagnostics;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
@@ -65,7 +66,9 @@ public sealed class PluginOrchestrator(
         }
         catch (Exception exception)
         {
-            _logger.Warning("Plugin.Install.Rollback {PluginName} {Error}", pluginName ?? source, exception.Message);
+            _logger.Warning(
+                DiagnosticEventNames.PluginInstallRollback + " {PluginName} {Error}",
+                pluginName ?? source, exception.Message);
             await RollbackAsync(snapshotId, pluginName ?? source, exception.Message, cancellationToken)
                 .ConfigureAwait(false);
             throw;
@@ -143,7 +146,9 @@ public sealed class PluginOrchestrator(
             }
             catch (Exception restoreException)
             {
-                _logger.Error("Plugin.Rollback.RestoreFailed {Error}", restoreException.Message);
+                _logger.Error(
+                    DiagnosticEventNames.PluginRollbackPrefix + "RestoreFailed {Error}",
+                    restoreException.Message);
                 Publish(PluginOperationStage.Failed, pluginName,
                     $"{error}（回滚恢复也失败：{restoreException.Message}）");
                 return;
@@ -157,7 +162,9 @@ public sealed class PluginOrchestrator(
         }
         catch (Exception restartException)
         {
-            _logger.Warning("Plugin.Rollback.RestartFailed {Error}", restartException.Message);
+            _logger.Warning(
+                DiagnosticEventNames.PluginRollbackPrefix + "RestartFailed {Error}",
+                restartException.Message);
         }
 
         Publish(PluginOperationStage.Failed, pluginName, error);

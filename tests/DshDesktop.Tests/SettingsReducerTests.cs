@@ -39,6 +39,27 @@ public sealed class SettingsReducerTests
     }
 
     [Test]
+    public async Task ToggleNotifications_FlipsWithPersistEffect()
+    {
+        // 初始投影 true（产品默认开），翻转后落盘 false。
+        var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ToggleNotifications());
+
+        await Assert.That(result.State.NotificationsEnabled).IsFalse();
+        await Assert.That(result.Effects[0] is SettingsEffect.SaveNotificationsEnabled { Enabled: false }).IsTrue();
+    }
+
+    [Test]
+    public async Task ToggleNotifications_TwiceFlipsBack()
+    {
+        SettingsState off = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ToggleNotifications()).State;
+
+        var result = _reducer.Reduce(off, new SettingsIntent.ToggleNotifications());
+
+        await Assert.That(result.State.NotificationsEnabled).IsTrue();
+        await Assert.That(result.Effects[0] is SettingsEffect.SaveNotificationsEnabled { Enabled: true }).IsTrue();
+    }
+
+    [Test]
     public async Task ChangeChannel_WhenDifferent_OptimisticUpdateWithEffect()
     {
         var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.ChangeChannel("alpha"));
@@ -60,6 +81,7 @@ public sealed class SettingsReducerTests
     {
         var info = new SettingsInfo(
             SafeMode: true,
+            NotificationsEnabled: false,
             Channel: "alpha",
             NodePath: @"D:\node\node.exe",
             DshHome: @"C:\Data\dsh-home",
@@ -69,6 +91,7 @@ public sealed class SettingsReducerTests
         var result = _reducer.Reduce(busy, new SettingsIntent.SettingsLoaded(info));
 
         await Assert.That(result.State.SafeMode).IsTrue();
+        await Assert.That(result.State.NotificationsEnabled).IsFalse();
         await Assert.That(result.State.Channel).IsEqualTo("alpha");
         await Assert.That(result.State.NodePath).IsEqualTo(@"D:\node\node.exe");
         await Assert.That(result.State.DshHome).IsEqualTo(@"C:\Data\dsh-home");

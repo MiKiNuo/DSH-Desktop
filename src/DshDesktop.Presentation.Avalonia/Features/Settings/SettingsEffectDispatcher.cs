@@ -68,6 +68,27 @@ public sealed partial class SettingsEffectDispatcher
     }
 
     /// <summary>
+    /// 处理持久化 Windows 通知开关副作用（State 已乐观更新，失败只回报错误）。
+    /// </summary>
+    [MviEffect(typeof(SettingsEffect.SaveNotificationsEnabled))]
+    private async ValueTask HandleSaveNotificationsEnabled(
+        SettingsEffect.SaveNotificationsEnabled effect,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await _mediator
+                .SendAsync(new SetNotificationsEnabledRequest(effect.Enabled), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await DispatchIntentAsync(new SettingsIntent.SettingsOperationFailed(exception.Message), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
     /// 处理持久化 DSH 更新通道副作用（State 已乐观更新，失败只回报错误）。
     /// </summary>
     [MviEffect(typeof(SettingsEffect.SaveChannel))]

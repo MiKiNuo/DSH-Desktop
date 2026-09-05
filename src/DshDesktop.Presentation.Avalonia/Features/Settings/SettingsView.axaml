@@ -33,6 +33,11 @@
                         Click="OnSafeModeToggled"
                         Content="安全模式（抑制 Runtime 自动启动，仅保留管理界面）"
                         IsChecked="{Binding SafeMode}" />
+                    <ToggleSwitch
+                        HorizontalAlignment="Left"
+                        Click="OnNotificationsToggled"
+                        Content="Windows 通知（Runtime 崩溃 / 插件事务回滚时气泡提醒）"
+                        IsChecked="{Binding NotificationsEnabled}" />
                     <StackPanel Orientation="Horizontal" Spacing="12">
                         <TextBlock VerticalAlignment="Center" Text="DSH 更新通道：" />
                         <ComboBox

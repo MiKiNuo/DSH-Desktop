@@ -44,8 +44,8 @@ public sealed partial class RuntimeEffectDispatcher
 
             await DispatchIntentAsync(
                 new RuntimeIntent.RuntimeStarted(
-                    snapshot.ProcessId ?? 0,
-                    snapshot.Port ?? 0,
+                    snapshot.ProcessId,
+                    snapshot.Port,
                     snapshot.Url ?? string.Empty),
                 cancellationToken).ConfigureAwait(false);
         }
@@ -96,8 +96,8 @@ public sealed partial class RuntimeEffectDispatcher
 
             await DispatchIntentAsync(
                 new RuntimeIntent.RuntimeStarted(
-                    snapshot.ProcessId ?? 0,
-                    snapshot.Port ?? 0,
+                    snapshot.ProcessId,
+                    snapshot.Port,
                     snapshot.Url ?? string.Empty),
                 cancellationToken).ConfigureAwait(false);
         }

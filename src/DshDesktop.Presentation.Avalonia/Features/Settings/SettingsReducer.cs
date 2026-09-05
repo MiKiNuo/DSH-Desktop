@@ -39,6 +39,20 @@ public sealed partial class SettingsReducer
     }
 
     /// <summary>
+    /// 处理切换 Windows 通知意图（无载荷翻转，同 ToggleSafeMode 先例；乐观更新）。
+    /// </summary>
+    [MviReduce(typeof(SettingsIntent.ToggleNotifications))]
+    private MviReduceResult<SettingsState, SettingsEffect> HandleToggleNotifications(
+        SettingsState state,
+        SettingsIntent.ToggleNotifications intent)
+    {
+        bool target = !state.NotificationsEnabled;
+        return WithEffect(
+            state with { NotificationsEnabled = target, LastError = null },
+            new SettingsEffect.SaveNotificationsEnabled(target));
+    }
+
+    /// <summary>
     /// 处理修改 DSH 更新通道意图（乐观更新）。
     /// </summary>
     [MviReduce(typeof(SettingsIntent.ChangeChannel))]
@@ -67,6 +81,7 @@ public sealed partial class SettingsReducer
         return Unchanged(state with
         {
             SafeMode = intent.Info.SafeMode,
+            NotificationsEnabled = intent.Info.NotificationsEnabled,
             Channel = intent.Info.Channel,
             NodePath = intent.Info.NodePath,
             DshHome = intent.Info.DshHome,
