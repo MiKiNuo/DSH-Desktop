@@ -68,6 +68,28 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
+    /// 处理导航到 Dashboard 页意图。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.ShowDashboard))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleShowDashboard(
+        AppShellState state,
+        AppShellIntent.ShowDashboard intent)
+    {
+        return Unchanged(state with { CurrentPage = ShellPage.Dashboard });
+    }
+
+    /// <summary>
+    /// 处理导航到 Settings 页意图。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.ShowSettings))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleShowSettings(
+        AppShellState state,
+        AppShellIntent.ShowSettings intent)
+    {
+        return Unchanged(state with { CurrentPage = ShellPage.Settings });
+    }
+
+    /// <summary>
     /// 处理切换侧边栏折叠状态意图。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.ToggleSidebar))]

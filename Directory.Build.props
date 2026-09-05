@@ -4,5 +4,8 @@
          WorkloadManifestTargetsLocator 两个 SDK 目录，开启 workload 解析
          会以 MSB4276 失败。本项目不使用 .NET Workload，直接关闭解析。 -->
     <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+    <!-- Desktop 版本号唯一来源（Q15-A）：release.yml 断言 git tag 与此一致；
+         经 Presentation.Avalonia 的生成 target 编译为常量供 UI 展示。 -->
+    <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>

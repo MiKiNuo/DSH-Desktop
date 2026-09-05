@@ -1,10 +1,13 @@
-﻿<Solution>
+<Solution>
   <Folder Name="/src/">
     <Project Path="src\DshDesktop.Domain\DshDesktop.Domain.csproj" Type="C#" />
     <Project Path="src\DshDesktop.Application\DshDesktop.Application.csproj" Type="C#" />
     <Project Path="src\DshDesktop.Infrastructure\DshDesktop.Infrastructure.csproj" Type="C#" />
     <Project Path="src\DshDesktop.Presentation.Avalonia\DshDesktop.Presentation.Avalonia.csproj" Type="C#" />
     <Project Path="src\DshDesktop.App\DshDesktop.App.csproj" Type="C#" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests\DshDesktop.Tests\DshDesktop.Tests.csproj" Type="C#" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />

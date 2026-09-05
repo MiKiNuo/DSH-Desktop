@@ -13,6 +13,11 @@ public abstract partial record AppShellIntent : IMviIntent
     public sealed partial record ShowRuntime : AppShellIntent;
 
     /// <summary>
+    /// 表示导航到 Dashboard 页意图。
+    /// </summary>
+    public sealed partial record ShowDashboard : AppShellIntent;
+
+    /// <summary>
     /// 表示导航到 Workbench 页意图。
     /// </summary>
     public sealed partial record ShowWorkbench : AppShellIntent;
@@ -31,6 +36,11 @@ public abstract partial record AppShellIntent : IMviIntent
     /// 表示导航到 Updates 页意图。
     /// </summary>
     public sealed partial record ShowUpdates : AppShellIntent;
+
+    /// <summary>
+    /// 表示导航到 Settings 页意图。
+    /// </summary>
+    public sealed partial record ShowSettings : AppShellIntent;
 
     /// <summary>
     /// 表示切换侧边栏折叠状态意图。

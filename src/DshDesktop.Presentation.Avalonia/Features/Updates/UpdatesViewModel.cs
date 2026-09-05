@@ -96,4 +96,9 @@ public sealed partial class UpdatesViewModel
     /// </summary>
     [MviCommand(typeof(UpdatesIntent.UpdatePlugin), PayloadType = typeof(string))]
     public partial IMviAsyncCommand UpdatePluginCommand { get; private set; }
+
+    /// <summary>
+    /// 获取 Desktop 当前版本（编译期常量，非状态；§50 三套版本展示，最新版 5b 接通）。
+    /// </summary>
+    public string DesktopVersion => DesktopInfo.Version;
 }

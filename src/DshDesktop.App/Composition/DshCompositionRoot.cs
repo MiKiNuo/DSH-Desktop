@@ -11,11 +11,13 @@ using DshDesktop.Infrastructure.Config;
 using DshDesktop.Infrastructure.Plugins;
 using DshDesktop.Infrastructure.Runtime;
 using DshDesktop.Infrastructure.Updates;
+using DshDesktop.Presentation.Avalonia;
 using DshDesktop.Presentation.Avalonia.Composition;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
 using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
+using DshDesktop.Presentation.Avalonia.Features.Settings;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Mediator;
 using MiKiNuo.Mvi.Application.MVI.Store;
@@ -192,6 +194,36 @@ public sealed partial class DshCompositionRoot
         mediator.Register<InstallDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleInstallDshRuntimeAsync);
         mediator.Register<ActivateDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleActivateDshRuntimeAsync);
         mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
+        mediator.Register<GetSettingsInfoRequest, SettingsInfo>(HandleGetSettingsInfo);
+        mediator.Register<SetDshChannelRequest, bool>(HandleSetDshChannelAsync);
+    }
+
+    private ValueTask<SettingsInfo> HandleGetSettingsInfo(
+        GetSettingsInfoRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        string dataRoot = Directory.GetParent(_config!.DshHome)!.FullName;
+
+        // Desktop 版本 = 编译期常量（§50）。
+        return ValueTask.FromResult(new SettingsInfo(
+            _config.SafeMode,
+            _config.DshChannel,
+            _config.NodePath,
+            _config.DshHome,
+            dataRoot,
+            DesktopInfo.Version));
+    }
+
+    private async ValueTask<bool> HandleSetDshChannelAsync(
+        SetDshChannelRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        _config!.DshChannel = request.Channel;
+        await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+        Log.Logger.Information("Settings.DshChannel {Channel}", request.Channel);
+        return true;
     }
 
     private async ValueTask<CheckUpdatesResponse> HandleCheckUpdatesAsync(

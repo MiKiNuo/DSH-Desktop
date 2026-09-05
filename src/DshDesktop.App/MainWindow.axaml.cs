@@ -1,9 +1,11 @@
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
+using DshDesktop.Presentation.Avalonia.Features.Dashboard;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
 using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
+using DshDesktop.Presentation.Avalonia.Features.Settings;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using DshDesktop.Presentation.Avalonia.Features.Workbench;
 using MiKiNuo.Mvi.Application.DI;
@@ -50,14 +52,27 @@ public sealed partial class MainWindow : Window
         RenderCurrentPage();
     }
 
+    /// <inheritdoc />
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+
+        // §46：Desktop 窗口可见计时（自进程入口起）。
+        Serilog.Log.Information(
+            "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
+            (long)DshDesktop.Domain.Common.StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+    }
+
     private void RenderCurrentPage()
     {
         Control view = _shellViewModel.CurrentPage switch
         {
+            ShellPage.Dashboard => CreateView<DashboardView, RuntimeViewModel>(),
             ShellPage.Workbench => CreateView<WorkbenchView, WorkbenchViewModel>(),
             ShellPage.Diagnostics => CreateView<DiagnosticsView, DiagnosticsViewModel>(),
             ShellPage.Plugins => CreateView<PluginsView, PluginsViewModel>(),
             ShellPage.Updates => CreateView<UpdatesView, UpdatesViewModel>(),
+            ShellPage.Settings => CreateView<SettingsView, SettingsViewModel>(),
             _ => CreateView<RuntimeView, RuntimeViewModel>(),
         };
 
@@ -69,6 +84,14 @@ public sealed partial class MainWindow : Window
             IMviStore<PluginsState, PluginsIntent, PluginsEffect> store =
                 _resolver.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
             _ = store.DispatchAsync(new PluginsIntent.LoadPlugins());
+        }
+
+        // 进入 Settings 页即加载设置（同 Plugins 先例）。
+        if (_shellViewModel.CurrentPage is ShellPage.Settings)
+        {
+            IMviStore<SettingsState, SettingsIntent, SettingsEffect> store =
+                _resolver.Resolve<IMviStore<SettingsState, SettingsIntent, SettingsEffect>>();
+            _ = store.DispatchAsync(new SettingsIntent.LoadSettings());
         }
     }
 

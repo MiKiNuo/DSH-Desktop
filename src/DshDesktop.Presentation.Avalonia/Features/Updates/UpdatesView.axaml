@@ -33,6 +33,21 @@
                 BorderThickness="1"
                 CornerRadius="8">
                 <StackPanel Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="Desktop" />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <TextBlock VerticalAlignment="Center" Text="{Binding DesktopVersion, StringFormat='当前：{0}'}" />
+                        <TextBlock VerticalAlignment="Center" Foreground="#9AA4B2" Text="自更新将在下一迭代接通（ADR-0003）" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="10">
                     <TextBlock FontSize="16" FontWeight="SemiBold" Text="DSH Runtime" />
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <TextBlock VerticalAlignment="Center" Text="{Binding CurrentDshVersion, StringFormat='当前：{0}', FallbackValue='当前：—', TargetNullValue='当前：—'}" />

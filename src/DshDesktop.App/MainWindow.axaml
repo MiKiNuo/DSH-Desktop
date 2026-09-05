@@ -15,38 +15,56 @@
             MinWidth="180"
             Padding="12"
             Background="#161B22">
-            <StackPanel Spacing="8">
+            <Grid RowDefinitions="*,Auto">
+                <StackPanel Grid.Row="0" Spacing="8">
+                    <TextBlock
+                        Margin="4,0,0,8"
+                        FontSize="16"
+                        FontWeight="SemiBold"
+                        Text="DSH Desktop" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowRuntimeCommand}"
+                        Content="Runtime" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowDashboardCommand}"
+                        Content="Dashboard" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowWorkbenchCommand}"
+                        Content="Workbench" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowDiagnosticsCommand}"
+                        Content="Diagnostics" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowPluginsCommand}"
+                        Content="Plugins" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowUpdatesCommand}"
+                        Content="Updates" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Left"
+                        Command="{Binding ShowSettingsCommand}"
+                        Content="Settings" />
+                </StackPanel>
                 <TextBlock
-                    Margin="4,0,0,8"
-                    FontSize="16"
-                    FontWeight="SemiBold"
-                    Text="DSH Desktop" />
-                <Button
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
-                    Command="{Binding ShowRuntimeCommand}"
-                    Content="Runtime" />
-                <Button
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
-                    Command="{Binding ShowWorkbenchCommand}"
-                    Content="Workbench" />
-                <Button
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
-                    Command="{Binding ShowDiagnosticsCommand}"
-                    Content="Diagnostics" />
-                <Button
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
-                    Command="{Binding ShowPluginsCommand}"
-                    Content="Plugins" />
-                <Button
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Left"
-                    Command="{Binding ShowUpdatesCommand}"
-                    Content="Updates" />
-            </StackPanel>
+                    Grid.Row="1"
+                    Margin="4,8,0,0"
+                    FontSize="11"
+                    Foreground="#6E7681"
+                    Text="{Binding DesktopVersion, StringFormat='v{0}'}" />
+            </Grid>
         </Border>
         <ContentControl Grid.Column="1" x:Name="RootContent" />
     </Grid>

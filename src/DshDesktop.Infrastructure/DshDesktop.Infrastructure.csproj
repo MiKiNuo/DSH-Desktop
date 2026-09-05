@@ -10,4 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DshDesktop.Application\DshDesktop.Application.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="DshDesktop.Tests" />
+  </ItemGroup>
 </Project>

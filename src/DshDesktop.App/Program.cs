@@ -14,6 +14,8 @@ internal static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // 静态初始化是惰性的：入口即触发，让 §46 计时从进程入口起跑。
+        _ = DshDesktop.Domain.Common.StartupTimer.SinceProcessStart;
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 

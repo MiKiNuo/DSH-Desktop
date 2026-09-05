@@ -44,6 +44,12 @@ public sealed partial class AppShellViewModel
     public partial IMviAsyncCommand ShowRuntimeCommand { get; private set; }
 
     /// <summary>
+    /// 获取导航到 Dashboard 页命令。
+    /// </summary>
+    [MviCommand(typeof(AppShellIntent.ShowDashboard))]
+    public partial IMviAsyncCommand ShowDashboardCommand { get; private set; }
+
+    /// <summary>
     /// 获取导航到 Workbench 页命令。
     /// </summary>
     [MviCommand(typeof(AppShellIntent.ShowWorkbench))]
@@ -68,8 +74,19 @@ public sealed partial class AppShellViewModel
     public partial IMviAsyncCommand ShowUpdatesCommand { get; private set; }
 
     /// <summary>
+    /// 获取导航到 Settings 页命令。
+    /// </summary>
+    [MviCommand(typeof(AppShellIntent.ShowSettings))]
+    public partial IMviAsyncCommand ShowSettingsCommand { get; private set; }
+
+    /// <summary>
     /// 获取切换侧边栏折叠状态命令。
     /// </summary>
     [MviCommand(typeof(AppShellIntent.ToggleSidebar))]
     public partial IMviAsyncCommand ToggleSidebarCommand { get; private set; }
+
+    /// <summary>
+    /// 获取 Desktop 版本（编译期常量，非状态；§50 侧栏常显）。
+    /// </summary>
+    public string DesktopVersion => DesktopInfo.Version;
 }

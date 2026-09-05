@@ -68,4 +68,13 @@ public sealed partial class WorkbenchViewModel
         RuntimeReady = running;
         DshUrl = running ? runtimeState.Url : null;
     }
+
+    /// <summary>
+    /// 上报 WebView 导航完成（View → Intent，§5 规则 1）。
+    /// </summary>
+    /// <param name="url">完成地址。</param>
+    public void NotifyNavigationCompleted(string url)
+    {
+        _ = DispatchAsync(new WorkbenchIntent.NavigationCompleted(url));
+    }
 }

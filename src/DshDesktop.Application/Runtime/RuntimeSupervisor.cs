@@ -62,7 +62,8 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
 
         Progress<RuntimeStartupStage> progress = new(stage =>
         {
-            _logger.Debug("Runtime.Start.Stage {Stage}", stage);
+            // §46：阶段切换带相对耗时（自 Start.Begin 起算）。
+            _logger.Debug("Runtime.Start.Stage {Stage} ElapsedMs={ElapsedMs}", stage, (long)stopwatch.ElapsedMilliseconds);
             Publish(Current with { StartupStage = stage });
         });
 

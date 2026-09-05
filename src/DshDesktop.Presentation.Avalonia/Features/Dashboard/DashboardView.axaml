@@ -1,0 +1,45 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Dashboard.DashboardView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Runtime;assembly=DshDesktop.Presentation.Avalonia"
+    x:DataType="vm:RuntimeViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <TextBlock FontSize="22" FontWeight="SemiBold" Text="Dashboard" />
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="Runtime" />
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <TextBlock VerticalAlignment="Center" Text="{Binding Lifecycle, StringFormat='状态：{0}'}" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding Health, StringFormat='健康：{0}'}" />
+                        <TextBlock VerticalAlignment="Center" Text="{Binding Port, StringFormat='端口：{0}', FallbackValue='端口：—', TargetNullValue='端口：—'}" />
+                        <TextBlock VerticalAlignment="Center" Foreground="#9AA4B2" Text="{Binding StartupElapsed, StringFormat='启动耗时：{0}', FallbackValue='启动耗时：—', TargetNullValue='启动耗时：—'}" />
+                    </StackPanel>
+                    <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="10">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="快捷操作" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button Command="{Binding StartRuntimeCommand}" Content="启动 Runtime" />
+                        <Button Command="{Binding StopRuntimeCommand}" Content="停止 Runtime" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -179,8 +179,9 @@ public static class DshDesktopConfigStore
     /// <summary>
     /// 推导 npm-cli.js：node 二进制旁的 node_modules/npm（系统 node 自带；
     /// vendored node 纯二进制包不含 npm，回退到 PATH 上的系统 node）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
     /// </summary>
-    private static string? DeriveNpmCjsPath(string? nodePath)
+    internal static string? DeriveNpmCjsPath(string? nodePath)
     {
         if (!string.IsNullOrWhiteSpace(nodePath)
             && File.Exists(nodePath)
@@ -217,8 +218,9 @@ public static class DshDesktopConfigStore
 
     /// <summary>
     /// 从 DSH 入口路径推导 vendored pnpm.cjs（@deepseek-ai/dsh/lib/bin.js → node_modules/pnpm/bin/pnpm.cjs）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
     /// </summary>
-    private static string? DerivePnpmCjsPath(string? dshEntryPath)
+    internal static string? DerivePnpmCjsPath(string? dshEntryPath)
     {
         if (string.IsNullOrWhiteSpace(dshEntryPath))
         {

@@ -8,6 +8,9 @@ public enum ShellPage
     /// <summary>Runtime 页。</summary>
     Runtime,
 
+    /// <summary>Dashboard 页（Runtime 投影 + 快捷操作，§26）。</summary>
+    Dashboard,
+
     /// <summary>Workbench 页。</summary>
     Workbench,
 
@@ -19,4 +22,7 @@ public enum ShellPage
 
     /// <summary>Updates 页。</summary>
     Updates,
+
+    /// <summary>Settings 页。</summary>
+    Settings,
 }

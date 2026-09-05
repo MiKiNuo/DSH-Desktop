@@ -1,0 +1,64 @@
+<UserControl
+    x:Class="DshDesktop.Presentation.Avalonia.Features.Settings.SettingsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Settings"
+    x:DataType="vm:SettingsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock
+                    VerticalAlignment="Center"
+                    FontSize="22"
+                    FontWeight="SemiBold"
+                    Text="Settings" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="#9AA4B2"
+                    Text="{Binding PendingOperation}" />
+            </StackPanel>
+
+            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="12">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="通用" />
+                    <ToggleSwitch
+                        HorizontalAlignment="Left"
+                        Click="OnSafeModeToggled"
+                        Content="安全模式（抑制 Runtime 自动启动，仅保留管理界面）"
+                        IsChecked="{Binding SafeMode}" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <TextBlock VerticalAlignment="Center" Text="DSH 更新通道：" />
+                        <ComboBox
+                            x:Name="ChannelBox"
+                            MinWidth="120"
+                            VerticalAlignment="Center"
+                            SelectionChanged="OnChannelSelectionChanged"
+                            SelectedItem="{Binding Channel}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border
+                Padding="16"
+                Background="#161B22"
+                BorderBrush="#30363D"
+                BorderThickness="1"
+                CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="环境信息" />
+                    <TextBlock Foreground="#9AA4B2" Text="{Binding DesktopVersion, StringFormat='Desktop 版本：{0}', FallbackValue='Desktop 版本：—', TargetNullValue='Desktop 版本：—'}" />
+                    <TextBlock Foreground="#9AA4B2" Text="{Binding NodePath, StringFormat='Node 路径：{0}', FallbackValue='Node 路径：—', TargetNullValue='Node 路径：—'}" TextWrapping="Wrap" />
+                    <TextBlock Foreground="#9AA4B2" Text="{Binding DshHome, StringFormat='DSH_HOME：{0}', FallbackValue='DSH_HOME：—', TargetNullValue='DSH_HOME：—'}" TextWrapping="Wrap" />
+                    <TextBlock Foreground="#9AA4B2" Text="{Binding DataDirectory, StringFormat='数据目录：{0}', FallbackValue='数据目录：—', TargetNullValue='数据目录：—'}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

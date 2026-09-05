@@ -14,4 +14,18 @@
     <ProjectReference Include="..\DshDesktop.Application\DshDesktop.Application.csproj" />
     <ProjectReference Include="..\DshDesktop.Domain\DshDesktop.Domain.csproj" />
   </ItemGroup>
+  <!-- 编译期把版本号烘焙为常量（§50）：Native AOT 下不依赖程序集 attribute 反射。 -->
+  <Target Name="GenerateDesktopInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_DesktopInfoPath>$(IntermediateOutputPath)DesktopInfo.g.cs</_DesktopInfoPath>
+    </PropertyGroup>
+    <WriteLinesToFile
+        File="$(_DesktopInfoPath)"
+        Lines="namespace DshDesktop.Presentation.Avalonia%3B&#xA;&#xA;// Generated at build time from $(Version) (Directory.Build.props).&#xA;public static class DesktopInfo&#xA;{&#xA;    public const string Version = &quot;$(Version)&quot;%3B&#xA;}"
+        Overwrite="true"
+        WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_DesktopInfoPath)" />
+    </ItemGroup>
+  </Target>
 </Project>

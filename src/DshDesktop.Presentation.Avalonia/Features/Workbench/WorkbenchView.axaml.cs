@@ -26,6 +26,29 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             ?? throw new InvalidOperationException("无法找到 WebViewHost 控件。");
         _placeholderOverlay = this.FindControl<Border>("PlaceholderOverlay")
             ?? throw new InvalidOperationException("无法找到 PlaceholderOverlay 控件。");
+
+        // lambda 订阅以回避事件参数类型依赖（包 API 表面，编译器推断）。
+        _webViewHost.NavigationCompleted += (_, _) => OnNavigationCompleted();
+    }
+
+    private bool _webViewReadyLogged;
+
+    private void OnNavigationCompleted()
+    {
+        if (_navigatedUrl is not null)
+        {
+            ViewModel.NotifyNavigationCompleted(_navigatedUrl);
+        }
+
+        // §46：WebView 首次导航完成即 WebView Ready（自进程入口起算；失败导航的虚报接受，
+        // NavigationFailed 机制留待需要时接线）。
+        if (!_webViewReadyLogged)
+        {
+            _webViewReadyLogged = true;
+            Serilog.Log.Information(
+                "Runtime.WebView.Ready ElapsedMs={ElapsedMs}",
+                (long)DshDesktop.Domain.Common.StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+        }
     }
 
     /// <inheritdoc />
