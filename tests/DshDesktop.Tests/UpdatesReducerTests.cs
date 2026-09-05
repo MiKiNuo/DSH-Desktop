@@ -25,7 +25,7 @@ public sealed class UpdatesReducerTests
         var response = new CheckUpdatesResponse(
             "0.1.2", "0.1.2",
             [new DshRuntimeInfo("0.1.2", true, false)],
-            []);
+            [], null);
 
         var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
 
@@ -39,7 +39,7 @@ public sealed class UpdatesReducerTests
         var response = new CheckUpdatesResponse(
             "0.1.2", "0.1.2",
             [new DshRuntimeInfo("0.1.2", true, false)],
-            [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")]);
+            [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")], null);
 
         var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
 
@@ -53,7 +53,7 @@ public sealed class UpdatesReducerTests
         var response = new CheckUpdatesResponse(
             "0.1.3", "0.1.2",
             [new DshRuntimeInfo("0.1.2", true, false)],
-            []);
+            [], null);
 
         var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
 
@@ -64,7 +64,7 @@ public sealed class UpdatesReducerTests
     public async Task CheckUpdatesCompleted_CurrentDshUnknown_ReturnsIdle()
     {
         // 借用安装的版本未知时（null），无法判定差异，不误报有更新。
-        var response = new CheckUpdatesResponse("0.1.3", null, [], []);
+        var response = new CheckUpdatesResponse("0.1.3", null, [], [], null);
 
         var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
 
@@ -128,6 +128,50 @@ public sealed class UpdatesReducerTests
         await Assert.That(result.State.Status).IsEqualTo(UpdateStatus.Failed);
         await Assert.That(result.State.PendingOperation).IsNull();
         await Assert.That(result.State.LastError).IsEqualTo("npm 查询失败");
+    }
+
+    [Test]
+    public async Task CheckUpdatesCompleted_DesktopUpdateAvailable_WritesLatestDesktopVersion()
+    {
+        var response = new CheckUpdatesResponse(
+            "0.1.2", "0.1.2",
+            [new DshRuntimeInfo("0.1.2", true, false)],
+            [], "0.2.0");
+
+        var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
+
+        await Assert.That(result.State.LatestDesktopVersion).IsEqualTo("0.2.0");
+    }
+
+    [Test]
+    public async Task DownloadAndApplyDesktopUpdate_WhenUpdateAvailable_DeclaresEffect()
+    {
+        UpdatesState available = UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" };
+
+        var result = _reducer.Reduce(available, new UpdatesIntent.DownloadAndApplyDesktopUpdate());
+
+        await Assert.That(result.State.PendingOperation).IsNotNull();
+        await Assert.That(result.Effects[0] is UpdatesEffect.DownloadAndApplyDesktopUpdate).IsTrue();
+    }
+
+    [Test]
+    public async Task DownloadAndApplyDesktopUpdate_WhenNoUpdate_IsIgnored()
+    {
+        var result = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.DownloadAndApplyDesktopUpdate());
+
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+        await Assert.That(result.State.PendingOperation).IsNull();
+    }
+
+    [Test]
+    public async Task DesktopDownloadProgress_UpdatesProgressAndPendingText()
+    {
+        UpdatesState downloading = UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" };
+
+        var result = _reducer.Reduce(downloading, new UpdatesIntent.DesktopDownloadProgress(42));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsEqualTo(42);
+        await Assert.That(result.State.PendingOperation).IsNotNull();
     }
 
     private static UpdatesState CheckingState()

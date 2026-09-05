@@ -46,7 +46,46 @@ public sealed partial class UpdatesReducer
             CurrentDshVersion = result.CurrentDshVersion,
             Runtimes = result.Runtimes,
             PluginUpdates = result.PluginUpdates,
+            LatestDesktopVersion = result.LatestDesktopVersion,
             LastError = null,
+        });
+    }
+
+    /// <summary>
+    /// 处理下载并应用 Desktop 更新意图（ADR-0003：无更新时忽略）。
+    /// </summary>
+    [MviReduce(typeof(UpdatesIntent.DownloadAndApplyDesktopUpdate))]
+    private MviReduceResult<UpdatesState, UpdatesEffect> HandleDownloadAndApplyDesktopUpdate(
+        UpdatesState state,
+        UpdatesIntent.DownloadAndApplyDesktopUpdate intent)
+    {
+        if (state.LatestDesktopVersion is null)
+        {
+            return Unchanged(state);
+        }
+
+        return WithEffect(
+            state with
+            {
+                PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}…",
+                DesktopDownloadProgress = 0,
+                LastError = null,
+            },
+            new UpdatesEffect.DownloadAndApplyDesktopUpdate());
+    }
+
+    /// <summary>
+    /// 处理 Desktop 更新下载进度回流意图。
+    /// </summary>
+    [MviReduce(typeof(UpdatesIntent.DesktopDownloadProgress))]
+    private MviReduceResult<UpdatesState, UpdatesEffect> HandleDesktopDownloadProgress(
+        UpdatesState state,
+        UpdatesIntent.DesktopDownloadProgress intent)
+    {
+        return Unchanged(state with
+        {
+            DesktopDownloadProgress = intent.Percent,
+            PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}（{intent.Percent}%）…",
         });
     }
 

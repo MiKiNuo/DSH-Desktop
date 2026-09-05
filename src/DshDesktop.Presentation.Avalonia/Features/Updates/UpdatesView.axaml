@@ -36,8 +36,14 @@
                     <TextBlock FontSize="16" FontWeight="SemiBold" Text="Desktop" />
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <TextBlock VerticalAlignment="Center" Text="{Binding DesktopVersion, StringFormat='当前：{0}'}" />
-                        <TextBlock VerticalAlignment="Center" Foreground="#9AA4B2" Text="自更新将在下一迭代接通（ADR-0003）" />
+                        <TextBlock VerticalAlignment="Center" Foreground="#22C55E" Text="{Binding LatestDesktopVersion, StringFormat='→ {0}'}" />
+                        <Button
+                            VerticalAlignment="Center"
+                            Command="{Binding DownloadAndApplyDesktopUpdateCommand}"
+                            Content="下载并重启更新"
+                            IsVisible="{Binding LatestDesktopVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
+                    <TextBlock Foreground="#9AA4B2" Text="自更新经 Velopack（ADR-0003）；未安装形态不显示更新按钮" />
                 </StackPanel>
             </Border>
 

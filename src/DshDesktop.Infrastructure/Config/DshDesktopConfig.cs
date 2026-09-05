@@ -59,15 +59,43 @@ public sealed class DshDesktopConfig
 public sealed partial class DshConfigJsonContext : JsonSerializerContext;
 
 /// <summary>
-/// 表示配置的加载、自动探测与回写（Q2 决策：exe 旁文件，缺失时探测并回写）。
+/// 表示配置的加载、自动探测与回写（Q2 决策：配置文件持久化 + 缺失时探测并回写）。
 /// </summary>
 public static class DshDesktopConfigStore
 {
     /// <summary>
-    /// 获取配置文件路径（exe 旁）。
+    /// 获取数据根目录（ADR-0003 判定规则：Velopack 布局下 exe 父目录名为 current →
+    /// 上上级为安装根，数据根 = 安装根\data；否则为开发期，回退 %LOCALAPPDATA%\DshDesktop\data）。
+    /// </summary>
+    public static string DataRoot { get; } = ResolveDataRoot();
+
+    /// <summary>
+    /// 获取配置文件路径（ADR-0003：数据根 config 子目录——exe 旁会随 Velopack 更新被替换，§39）。
     /// </summary>
     public static string ConfigPath { get; } =
+        Path.Combine(DataRoot, "config", "dsh-desktop.config.json");
+
+    /// <summary>
+    /// 旧版配置路径（exe 旁），仅用于一次性迁移。
+    /// </summary>
+    private static string LegacyConfigPath { get; } =
         Path.Combine(AppContext.BaseDirectory, "dsh-desktop.config.json");
+
+    private static string ResolveDataRoot()
+    {
+        string baseDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+        DirectoryInfo? parent = Directory.GetParent(baseDir);
+        if (parent is not null
+            && string.Equals(parent.Name, "current", StringComparison.OrdinalIgnoreCase)
+            && parent.Parent is { } installRoot)
+        {
+            return Path.Combine(installRoot.FullName, "data");
+        }
+
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DshDesktop", "data");
+    }
 
     /// <summary>
     /// 加载配置；文件不存在时自动探测并回写。
@@ -76,6 +104,13 @@ public static class DshDesktopConfigStore
     /// <returns>配置实例。</returns>
     public static async Task<DshDesktopConfig> LoadOrDetectAsync(CancellationToken cancellationToken = default)
     {
+        // ADR-0003：exe 旁旧配置一次性迁移到数据根（File.Move = 读+写新+删旧的原子等价物，同卷元数据操作）。
+        if (!File.Exists(ConfigPath) && File.Exists(LegacyConfigPath))
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
+            File.Move(LegacyConfigPath, ConfigPath);
+        }
+
         if (File.Exists(ConfigPath))
         {
             DshDesktopConfig? loaded;
@@ -133,9 +168,7 @@ public static class DshDesktopConfigStore
 
     private static DshDesktopConfig Detect()
     {
-        string dshHome = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DshDesktop", "data", "dsh-home");
+        string dshHome = Path.Combine(DataRoot, "dsh-home");
 
         string? resourcesDir = FindElectronResourcesDir();
 

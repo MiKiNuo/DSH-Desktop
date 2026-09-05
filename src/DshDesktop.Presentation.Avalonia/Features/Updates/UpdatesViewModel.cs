@@ -98,7 +98,25 @@ public sealed partial class UpdatesViewModel
     public partial IMviAsyncCommand UpdatePluginCommand { get; private set; }
 
     /// <summary>
-    /// 获取 Desktop 当前版本（编译期常量，非状态；§50 三套版本展示，最新版 5b 接通）。
+    /// 获取 Desktop 当前版本（编译期常量，非状态；§50 三套版本展示）。
     /// </summary>
     public string DesktopVersion => DesktopInfo.Version;
+
+    /// <summary>
+    /// 获取最新 Desktop 版本；无更新或未安装形态为 null。
+    /// </summary>
+    [MviBind(nameof(UpdatesState.LatestDesktopVersion), BindingMode = MviBindingMode.OneWay)]
+    public partial string? LatestDesktopVersion { get; private set; }
+
+    /// <summary>
+    /// 获取 Desktop 更新下载进度（0-100）；未在下载为 null。
+    /// </summary>
+    [MviBind(nameof(UpdatesState.DesktopDownloadProgress), BindingMode = MviBindingMode.OneWay)]
+    public partial int? DesktopDownloadProgress { get; private set; }
+
+    /// <summary>
+    /// 获取下载并应用 Desktop 更新命令。
+    /// </summary>
+    [MviCommand(typeof(UpdatesIntent.DownloadAndApplyDesktopUpdate))]
+    public partial IMviAsyncCommand DownloadAndApplyDesktopUpdateCommand { get; private set; }
 }

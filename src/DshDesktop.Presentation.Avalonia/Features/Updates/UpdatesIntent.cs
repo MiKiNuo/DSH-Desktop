@@ -48,4 +48,15 @@ public abstract partial record UpdatesIntent : IMviIntent
     /// </summary>
     /// <param name="Error">错误信息。</param>
     public sealed partial record UpdatesOperationFailed(string Error) : UpdatesIntent;
+
+    /// <summary>
+    /// 表示下载并应用 Desktop 更新意图（ADR-0003：用户确认后下载并重启）。
+    /// </summary>
+    public sealed partial record DownloadAndApplyDesktopUpdate : UpdatesIntent;
+
+    /// <summary>
+    /// 表示 Desktop 更新下载进度的回流意图。
+    /// </summary>
+    /// <param name="Percent">进度（0-100）。</param>
+    public sealed partial record DesktopDownloadProgress(int Percent) : UpdatesIntent;
 }

@@ -10,11 +10,13 @@ namespace DshDesktop.Presentation.Avalonia.Features.Updates;
 /// <param name="CurrentDshVersion">当前激活的 DSH 版本。</param>
 /// <param name="Runtimes">可用 Runtime 列表。</param>
 /// <param name="PluginUpdates">可更新的插件列表。</param>
+/// <param name="LatestDesktopVersion">最新 Desktop 版本；无更新或未安装形态为 null。</param>
 public sealed record CheckUpdatesResponse(
     string? LatestDshVersion,
     string? CurrentDshVersion,
     IReadOnlyList<DshRuntimeInfo> Runtimes,
-    IReadOnlyList<PluginUpdateInfo> PluginUpdates);
+    IReadOnlyList<PluginUpdateInfo> PluginUpdates,
+    string? LatestDesktopVersion);
 
 /// <summary>
 /// 表示检查更新的跨层请求（§28 Mediator）。
@@ -40,3 +42,8 @@ public sealed record ActivateDshRuntimeRequest(string Version)
 /// </summary>
 /// <param name="Name">插件包名。</param>
 public sealed record UpdatePluginRequest(string Name) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示下载并应用最近检查到的 Desktop 更新（应用后进程重启，不返回）。
+/// </summary>
+public sealed record DownloadAndApplyDesktopUpdateRequest : IMviRequest<bool>;

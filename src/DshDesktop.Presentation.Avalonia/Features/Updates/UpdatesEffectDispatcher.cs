@@ -115,4 +115,25 @@ public sealed partial class UpdatesEffectDispatcher
                 .ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// 处理下载并应用 Desktop 更新副作用（应用后进程重启，无完成回流）。
+    /// </summary>
+    [MviEffect(typeof(UpdatesEffect.DownloadAndApplyDesktopUpdate))]
+    private async ValueTask HandleDownloadAndApplyDesktopUpdate(
+        UpdatesEffect.DownloadAndApplyDesktopUpdate effect,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await _mediator
+                .SendAsync(new DownloadAndApplyDesktopUpdateRequest(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 }

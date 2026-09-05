@@ -44,6 +44,7 @@ public sealed partial class DshCompositionRoot
     private PluginProfileRepository? _pluginRepository;
     private PluginOrchestrator? _pluginOrchestrator;
     private RuntimeRepository? _runtimeRepository;
+    private VelopackDesktopUpdater? _desktopUpdater;
 
     /// <summary>
     /// 获取是否处于安全模式（抑制自动启动）。
@@ -61,9 +62,8 @@ public sealed partial class DshCompositionRoot
     {
         ArgumentNullException.ThrowIfNull(uiDispatcher);
 
-        string logDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DshDesktop", "data", "logs");
+        // 日志目录统一走数据根（ADR-0003：Velopack 安装后落到 <安装根>\data\logs）。
+        string logDirectory = Path.Combine(DshDesktopConfigStore.DataRoot, "logs");
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File(
@@ -129,6 +129,9 @@ public sealed partial class DshCompositionRoot
             _config.NodePath,
             _config.NpmCjsPath,
             _config.DshEntryPath);
+
+        // Velopack 自更新适配器（ADR-0003；未安装形态 no-op，不依赖 config）。
+        _desktopUpdater = new VelopackDesktopUpdater(Log.Logger);
 
         RegisterRoutes();
         _supervisor.SnapshotChanged += OnRuntimeSnapshotChanged;
@@ -196,6 +199,26 @@ public sealed partial class DshCompositionRoot
         mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
         mediator.Register<GetSettingsInfoRequest, SettingsInfo>(HandleGetSettingsInfo);
         mediator.Register<SetDshChannelRequest, bool>(HandleSetDshChannelAsync);
+        mediator.Register<DownloadAndApplyDesktopUpdateRequest, bool>(HandleDownloadAndApplyDesktopUpdateAsync);
+    }
+
+    private async ValueTask<bool> HandleDownloadAndApplyDesktopUpdateAsync(
+        DownloadAndApplyDesktopUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        var progress = new Progress<int>(percent =>
+        {
+            IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> store =
+                _container.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
+            _ = store.DispatchAsync(new UpdatesIntent.DesktopDownloadProgress(percent));
+        });
+
+        await _desktopUpdater!.DownloadAsync(progress, cancellationToken).ConfigureAwait(false);
+
+        // 应用并重启：进程退出，此行正常路径不返回之后的托管逻辑（§22 三套版本独立）。
+        _desktopUpdater.ApplyAndRestart();
+        return true;
     }
 
     private ValueTask<SettingsInfo> HandleGetSettingsInfo(
@@ -243,6 +266,18 @@ public sealed partial class DshCompositionRoot
             Log.Logger.Warning("Update.Check.DshFailed {Error}", exception.Message);
         }
 
+        // Desktop 自更新检查（ADR-0003：失败不阻塞 DSH/插件检查）。
+        string? latestDesktop = null;
+        try
+        {
+            latestDesktop = (await _desktopUpdater!.CheckForUpdatesAsync(cancellationToken)
+                .ConfigureAwait(false))?.Version;
+        }
+        catch (Exception exception)
+        {
+            Log.Logger.Debug("Update.Check.DesktopSkipped {Error}", exception.Message);
+        }
+
         IReadOnlyList<PluginInfo> plugins = await _pluginRepository!.ListPluginsAsync(cancellationToken)
             .ConfigureAwait(false);
         List<PluginUpdateInfo> pluginUpdates = [];
@@ -260,7 +295,7 @@ public sealed partial class DshCompositionRoot
             .ListRuntimesAsync(_config!.ActiveDshRuntime, cancellationToken).ConfigureAwait(false);
         string? currentDsh = runtimes.FirstOrDefault(r => r.IsActive)?.Version;
 
-        return new CheckUpdatesResponse(latestDsh, currentDsh, runtimes, pluginUpdates);
+        return new CheckUpdatesResponse(latestDsh, currentDsh, runtimes, pluginUpdates, latestDesktop);
     }
 
     private async ValueTask<IReadOnlyList<DshRuntimeInfo>> HandleInstallDshRuntimeAsync(
