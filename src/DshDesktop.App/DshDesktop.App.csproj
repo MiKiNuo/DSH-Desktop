@@ -6,6 +6,11 @@
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
+  <!-- §31 修订（Q6-A）：Release + 指定 RID 即 AOT（dotnet publish -c Release -r win-x64）；
+       无 RID 的 Release 构建不触发 AOT（AOT 必须有 RID，避免 dotnet build -c Release 炸掉）。 -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release' and '$(RuntimeIdentifier)' != ''">
+    <PublishAot>true</PublishAot>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
