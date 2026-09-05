@@ -11,20 +11,23 @@ DSH 的跨平台桌面宿主：Avalonia 12 + MiKiNuo.MVI + .NET 10。
 
 ```
 src/
-├── DshDesktop.Domain/                  纯业务模型（RuntimeLifecycle 等）
-├── DshDesktop.Application/             编排层接口（IRuntimeOrchestrator，Phase 1 最小边界）
-├── DshDesktop.Infrastructure/          OS / 进程 / 文件 / HTTP 适配器（Phase 1b 填充）
-├── DshDesktop.Presentation.Avalonia/   MVI Features（AppShell / Runtime / Workbench）
+├── DshDesktop.Domain/                  纯业务模型（RuntimeLifecycle、StartupTimer 等）
+├── DshDesktop.Application/             编排层（Supervisor / PluginOrchestrator / 端口）
+├── DshDesktop.Infrastructure/          OS / 进程 / 文件 / HTTP / Velopack 适配器
+├── DshDesktop.Presentation.Avalonia/   MVI Features（AppShell / Runtime / Dashboard / Workbench / Plugins / Updates / Diagnostics / Settings）
 └── DshDesktop.App/                     引导：Program / App / MainWindow / 组合根
+tests/
+└── DshDesktop.Tests/                   TUnit（Reducer 纯函数 + 编排 Fake 路径）
 ```
 
 依赖方向：App → Presentation / Infrastructure → Application → Domain（单向）。
 
-## 构建
+## 构建与测试
 
 ```powershell
 dotnet restore DshDesktop.slnx
 dotnet build DshDesktop.slnx
+dotnet test tests/DshDesktop.Tests
 dotnet run --project src/DshDesktop.App
 ```
 
@@ -32,15 +35,18 @@ dotnet run --project src/DshDesktop.App
 .NET SDK 缺少 workload locator SDK 目录，开启时 restore 会以 MSB4276 失败；
 本项目不使用 .NET Workload。
 
-## Native AOT 冒烟
+## Native AOT 发布
+
+Release + 指定 RID 即 Native AOT（§31 修订，无需显式参数）：
 
 ```powershell
-dotnet publish src/DshDesktop.App -c Release -r win-x64 -p:PublishAot=true
+dotnet publish src/DshDesktop.App -c Release -r win-x64
 ```
 
 ## 运行配置
 
-首次启动时在 exe 旁生成 `dsh-desktop.config.json`（自动探测结果，可手改）：
+首次启动时生成 `%LOCALAPPDATA%\DshDesktop\data\config\dsh-desktop.config.json`
+（自动探测结果，可手改；exe 旁旧位置文件启动时一次性迁移至此，ADR-0003）：
 
 - `nodePath` / `dshEntryPath` / `harnessNodeEntryPath`：默认指向本机 Electron 版 DSH Desktop 的 vendored 运行时（扫描所有固定盘的 `Program Files\DSH Desktop\resources`）
 - `dshHome`：`%LOCALAPPDATA%\DshDesktop\data\dsh-home`（独立数据目录，与 Electron 版隔离）
@@ -58,5 +64,4 @@ dotnet publish src/DshDesktop.App -c Release -r win-x64 -p:PublishAot=true
 - [x] Phase 3a：插件清单与管控（列表/禁用/启用/卸载，纯文件级，DSH 不启动也可用）+ 安全模式（降级管理台，跨重启持久）+ 官方核心插件只读守卫
 - [x] Phase 3b：插件安装事务（§19 全链路实测：快照→停→装→校验→启→健康→提交；坏插件触发回滚→恢复→重启）+ 一键全禁第三方并启动恢复动作 + 清单快照（`data/backups/`，留 5 份）
 - [x] Phase 4：Update Center（DSH Runtime 自建 side-by-side 安装/激活/回退 + 插件更新检查与事务更新；npm 安装器；latest/alpha 通道）。已知限制：Runtime 升级可能破坏旧版第三方插件（实测 alpha.1→alpha.5 时 dsh-better-sidebar 不兼容），用安全模式/全禁恢复
-- [ ] Phase 5：Desktop 更新（Velopack）+ Native AOT Release + CI/CD
-- [ ] Phase 5：Native AOT Release + CI/CD + Velopack
+- [x] Phase 5：TUnit 测试（50 项）+ Dashboard/Settings 最小版 + §50 三套版本展示 + §46 启动计时实测 + config 迁数据根 + Velopack Desktop 自更新（GitHub Releases）+ Release 条件化 AOT + ci.yml（build/test + AOT 警告门禁）+ release.yml（tag → AOT → vpk → GitHub Release，本地安装实测通过）

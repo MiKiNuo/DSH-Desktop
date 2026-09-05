@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          vpk pack --packId DshDesktop --packVersion $version --packDir src/DshDesktop.App/bin/Release/net10.0/win-x64/publish --outputDir releases --mainExe DshDesktop.App.exe
+          vpk pack --packId DSH-Desktop --packVersion $version --packDir src/DshDesktop.App/bin/Release/net10.0/win-x64/publish --outputDir releases --mainExe DshDesktop.App.exe
 
       - name: Upload GitHub Release (Setup.exe + nupkg + RELEASES index)
         run: vpk upload github --repoUrl https://github.com/MiKiNuo/DSH-Desktop --token ${{ secrets.GITHUB_TOKEN }} --tag ${{ github.ref_name }} --releaseName ${{ github.ref_name }} --publish --outputDir releases
