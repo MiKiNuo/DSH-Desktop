@@ -136,6 +136,7 @@ public sealed partial class RuntimeReducer
         {
             Lifecycle = RuntimeLifecycle.Running,
             StartupStage = RuntimeStartupStage.Ready,
+            ProcessId = intent.ProcessId,
             Port = intent.Port,
             Url = intent.Url,
             LastError = null,
@@ -176,6 +177,7 @@ public sealed partial class RuntimeReducer
             {
                 Lifecycle = RuntimeLifecycle.Failed,
                 Health = RuntimeHealth.Unknown,
+                ProcessId = null,
                 Port = null,
                 Url = null,
                 LastError = $"Runtime 意外退出（退出码 {exitCodeText}）。",
@@ -189,6 +191,7 @@ public sealed partial class RuntimeReducer
             {
                 Lifecycle = RuntimeLifecycle.Failed,
                 Health = RuntimeHealth.Unknown,
+                ProcessId = null,
                 Port = null,
                 Url = null,
                 LastError = state.LastError ?? $"Runtime 意外退出（退出码 {exitCodeText}）。",
@@ -200,6 +203,7 @@ public sealed partial class RuntimeReducer
             Lifecycle = RuntimeLifecycle.Stopped,
             Health = RuntimeHealth.Unknown,
             StartupStage = RuntimeStartupStage.None,
+            ProcessId = null,
             Port = null,
             Url = null,
         });
@@ -265,5 +269,87 @@ public sealed partial class RuntimeReducer
         RuntimeIntent.RuntimeOperationFailed intent)
     {
         return Unchanged(state with { LastError = intent.Error });
+    }
+
+    // ===== Phase 8 Issue 04：启动与恢复策略三开关（照 Settings ToggleSafeMode 先例：无载荷翻转 + 乐观更新 + 持久化副作用） =====
+
+    /// <summary>
+    /// 处理切换"关闭窗口后保持 DSH Runtime"意图（ADR-0005）。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.ToggleKeepRuntimeOnClose))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleToggleKeepRuntimeOnClose(
+        RuntimeState state,
+        RuntimeIntent.ToggleKeepRuntimeOnClose intent)
+    {
+        bool target = !state.KeepRuntimeOnClose;
+        return WithEffect(
+            state with { KeepRuntimeOnClose = target },
+            new RuntimeEffect.SaveKeepRuntimeOnClose(target));
+    }
+
+    /// <summary>
+    /// 处理切换"异常启动自动进入安全模式"意图（ADR-0004 修订注）。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.ToggleAutoSafeModeOnFailure))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleToggleAutoSafeModeOnFailure(
+        RuntimeState state,
+        RuntimeIntent.ToggleAutoSafeModeOnFailure intent)
+    {
+        bool target = !state.AutoSafeModeOnFailure;
+        return WithEffect(
+            state with { AutoSafeModeOnFailure = target },
+            new RuntimeEffect.SaveAutoSafeModeOnFailure(target));
+    }
+
+    /// <summary>
+    /// 处理切换"启动时检查网络更新"意图（§34 修订注）。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.ToggleCheckUpdatesOnStartup))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleToggleCheckUpdatesOnStartup(
+        RuntimeState state,
+        RuntimeIntent.ToggleCheckUpdatesOnStartup intent)
+    {
+        bool target = !state.CheckUpdatesOnStartup;
+        return WithEffect(
+            state with { CheckUpdatesOnStartup = target },
+            new RuntimeEffect.SaveCheckUpdatesOnStartup(target));
+    }
+
+    /// <summary>
+    /// 处理策略开关持久化值加载回流意图（config 为权威源，覆盖 Initial 默认值）。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.PoliciesLoaded))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandlePoliciesLoaded(
+        RuntimeState state,
+        RuntimeIntent.PoliciesLoaded intent)
+    {
+        return Unchanged(state with
+        {
+            KeepRuntimeOnClose = intent.KeepRuntimeOnClose,
+            AutoSafeModeOnFailure = intent.AutoSafeModeOnFailure,
+            CheckUpdatesOnStartup = intent.CheckUpdatesOnStartup,
+        });
+    }
+
+    /// <summary>
+    /// 处理运行环境信息已探测回流意图。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.EnvironmentLoaded))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleEnvironmentLoaded(
+        RuntimeState state,
+        RuntimeIntent.EnvironmentLoaded intent)
+    {
+        return Unchanged(state with { Environment = intent.Environment });
+    }
+
+    /// <summary>
+    /// 处理 DSH 版本投影变化回流意图（§11.2 兄弟 Store 只读投影）。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.DshVersionChanged))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleDshVersionChanged(
+        RuntimeState state,
+        RuntimeIntent.DshVersionChanged intent)
+    {
+        return Unchanged(state with { DshVersion = intent.Version });
     }
 }

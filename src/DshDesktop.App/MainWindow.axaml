@@ -9,88 +9,214 @@
     Height="800"
     MinWidth="960"
     MinHeight="600">
-    <Grid ColumnDefinitions="Auto,*">
-        <Border
-            Grid.Column="0"
-            MinWidth="180"
-            Padding="12"
-            Background="#161B22">
-            <Grid RowDefinitions="*,Auto">
-                <StackPanel Grid.Row="0" Spacing="8">
-                    <TextBlock
-                        Margin="4,0,0,8"
-                        FontSize="16"
-                        FontWeight="SemiBold"
-                        Text="DSH Desktop" />
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Button
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Left"
-                            Command="{Binding ShowRuntimeCommand}"
-                            Content="Runtime" />
-                        <Ellipse
-                            x:Name="RuntimeStatusDot"
-                            Grid.Column="1"
-                            Width="10"
-                            Height="10"
-                            Margin="6,0,0,0"
-                            VerticalAlignment="Center" />
-                    </Grid>
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowDashboardCommand}"
-                        Content="Dashboard" />
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowWorkbenchCommand}"
-                        Content="Workbench" />
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowDiagnosticsCommand}"
-                        Content="Diagnostics" />
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowPluginsCommand}"
-                        Content="Plugins" />
-                    <Grid ColumnDefinitions="*,Auto">
-                        <Button
-                            HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Left"
-                            Command="{Binding ShowUpdatesCommand}"
-                            Content="Updates" />
-                        <Border
-                            x:Name="UpdateBadgeBox"
-                            Grid.Column="1"
-                            Margin="6,0,0,0"
-                            VerticalAlignment="Center"
-                            Background="#22C55E"
-                            CornerRadius="8"
-                            IsVisible="False"
-                            Padding="6,1">
-                            <TextBlock
-                                x:Name="UpdateBadgeText"
-                                FontSize="11"
-                                Foreground="White" />
+    <!--
+      应用壳（Phase 8 Issue 02，视觉基准 docs/DSH-Desktop-UI-Prototype.html）：
+      218px 侧栏（品牌 + Workspace/Management/System 三组导航 + runtime-mini）
+      + 58px 顶栏（页标题/副标题 + 进入工作台）+ 内容区 + 27px 状态栏 + toast 浮层。
+      不做窄窗折叠（Q4 决策：YAGNI）；导航全走 AppShell Intent（MVI §14）。
+    -->
+    <Grid>
+        <Grid ColumnDefinitions="218,*">
+            <!-- ===== 侧栏 ===== -->
+            <Border Classes="sidebar" Grid.Column="0">
+                <Grid RowDefinitions="Auto,*">
+                    <StackPanel Grid.Row="0">
+                        <Border Classes="brand">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Border Classes="brand-mark">
+                                    <TextBlock Classes="brand-mark-text" Text="D" />
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Classes="brand-title" Text="DSH Desktop" />
+                                    <TextBlock Classes="brand-sub" Text="Stable Runtime Host" />
+                                </StackPanel>
+                            </StackPanel>
                         </Border>
+
+                        <TextBlock Classes="nav-label" Text="WORKSPACE" />
+                        <!-- 导航按钮文案以 ShellPageText.Title 为单一映射源（Phase 8 评审 F14）；此处 Text 仅为设计期占位。 -->
+                        <Button
+                            x:Name="NavDashboard"
+                            Classes="nav-btn"
+                            Command="{Binding ShowDashboardCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="⌂" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="概览" />
+                            </Grid>
+                        </Button>
+                        <Button
+                            x:Name="NavWorkbench"
+                            Classes="nav-btn"
+                            Command="{Binding ShowWorkbenchCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="✦" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="DSH 工作台" />
+                            </Grid>
+                        </Button>
+
+                        <TextBlock Classes="nav-label" Text="MANAGEMENT" />
+                        <Button
+                            x:Name="NavPlugins"
+                            Classes="nav-btn"
+                            Command="{Binding ShowPluginsCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="⬡" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="插件管理" />
+                            </Grid>
+                        </Button>
+                        <Button
+                            x:Name="NavRuntime"
+                            Classes="nav-btn"
+                            Command="{Binding ShowRuntimeCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="◈" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="运行环境" />
+                            </Grid>
+                        </Button>
+                        <Button
+                            x:Name="NavUpdates"
+                            Classes="nav-btn"
+                            Command="{Binding ShowUpdatesCommand}">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <TextBlock Classes="nav-icon" Text="↻" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="更新中心" />
+                                <Border
+                                    x:Name="UpdatesBadgeBox"
+                                    Classes="nav-badge"
+                                    Grid.Column="2"
+                                    IsVisible="False">
+                                    <TextBlock x:Name="UpdatesBadgeText" />
+                                </Border>
+                            </Grid>
+                        </Button>
+                        <Button
+                            x:Name="NavDiagnostics"
+                            Classes="nav-btn"
+                            Command="{Binding ShowDiagnosticsCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="⌁" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="诊断中心" />
+                            </Grid>
+                        </Button>
+
+                        <TextBlock Classes="nav-label" Text="SYSTEM" />
+                        <Button
+                            x:Name="NavSettings"
+                            Classes="nav-btn"
+                            Command="{Binding ShowSettingsCommand}">
+                            <Grid ColumnDefinitions="Auto,*">
+                                <TextBlock Classes="nav-icon" Text="⚙" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="设置" />
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- runtime-mini：Runtime 状态点+Lifecycle / Desktop 版本 / DSH 版本（全为现有投影） -->
+                    <Border
+                        Classes="runtime-mini"
+                        Grid.Row="1"
+                        VerticalAlignment="Bottom">
+                        <StackPanel Spacing="7">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <StackPanel Orientation="Horizontal">
+                                    <Ellipse
+                                        x:Name="MiniStatusDot"
+                                        Width="7"
+                                        Height="7"
+                                        Margin="0,0,6,0"
+                                        VerticalAlignment="Center" />
+                                    <TextBlock Classes="runtime-mini-text" Text="DSH Runtime" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Classes="runtime-mini-text"
+                                    FontWeight="Bold"
+                                    Text="{Binding RuntimeLifecycleText}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="runtime-mini-text" Text="Desktop" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Classes="runtime-mini-text"
+                                    Text="{Binding DesktopVersion, StringFormat='v{0}'}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="runtime-mini-text" Text="DSH" />
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Classes="runtime-mini-text"
+                                    Text="{Binding DshVersion, FallbackValue='—', TargetNullValue='—'}" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ===== 工作区：顶栏 + 内容 + 状态栏 ===== -->
+            <Grid Grid.Column="1" RowDefinitions="58,*,27">
+                <Border Classes="topbar" Grid.Row="0">
+                    <Grid>
+                        <StackPanel
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                            <TextBlock Classes="page-title" Text="{Binding PageTitle}" />
+                            <TextBlock Classes="page-desc" Text="{Binding PageSubtitle}" />
+                        </StackPanel>
+                        <!-- Q3 决策：顶栏右侧仅"进入工作台"，不做"重启 DSH"。 -->
+                        <Button
+                            Classes="btn primary"
+                            HorizontalAlignment="Right"
+                            Command="{Binding ShowWorkbenchCommand}"
+                            Content="进入工作台" />
                     </Grid>
-                    <Button
-                        HorizontalAlignment="Stretch"
-                        HorizontalContentAlignment="Left"
-                        Command="{Binding ShowSettingsCommand}"
-                        Content="Settings" />
-                </StackPanel>
-                <TextBlock
-                    Grid.Row="1"
-                    Margin="4,8,0,0"
-                    FontSize="11"
-                    Foreground="#6E7681"
-                    Text="{Binding DesktopVersion, StringFormat='v{0}'}" />
+                </Border>
+
+                <ContentControl
+                    x:Name="RootContent"
+                    Grid.Row="1" />
+
+                <Border Classes="statusbar" Grid.Row="2">
+                    <DockPanel>
+                        <TextBlock
+                            Classes="statusbar-text"
+                            DockPanel.Dock="Right"
+                            Text="{Binding DesktopVersion, StringFormat='Desktop {0}'}" />
+                        <StackPanel Orientation="Horizontal" Spacing="14">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse
+                                    x:Name="StatusBarDot"
+                                    Width="7"
+                                    Height="7"
+                                    VerticalAlignment="Center" />
+                                <TextBlock
+                                    Classes="statusbar-text"
+                                    Text="{Binding RuntimeLifecycleText, StringFormat='DSH {0}'}" />
+                            </StackPanel>
+                            <TextBlock
+                                Classes="statusbar-text"
+                                Text="{Binding RuntimeProcessId, StringFormat='PID {0}', FallbackValue='PID —', TargetNullValue='PID —'}" />
+                            <TextBlock
+                                Classes="statusbar-text"
+                                Text="{Binding RuntimePort, StringFormat='Port {0}', FallbackValue='Port —', TargetNullValue='Port —'}" />
+                            <TextBlock
+                                Classes="statusbar-text"
+                                Text="{Binding StartupElapsedText, StringFormat='Startup {0}'}" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
             </Grid>
+        </Grid>
+
+        <!-- ===== toast 浮层（右下角，自动消隐；供后续 issue 复用 MainWindow.ShowToast） ===== -->
+        <Border
+            x:Name="ToastBox"
+            Classes="toast"
+            Margin="0,0,18,42"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            IsHitTestVisible="False"
+            IsVisible="False">
+            <TextBlock x:Name="ToastText" />
         </Border>
-        <ContentControl Grid.Column="1" x:Name="RootContent" />
     </Grid>
 </Window>

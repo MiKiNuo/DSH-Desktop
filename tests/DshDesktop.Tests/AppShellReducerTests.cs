@@ -11,6 +11,16 @@ public sealed class AppShellReducerTests
     private readonly AppShellReducer _reducer = new();
 
     [Test]
+    public async Task Initial_DefaultsToDashboard()
+    {
+        // Phase 8 Issue 02：默认页从 Runtime 改为概览（原型 dashboard）。
+        await Assert.That(AppShellState.Initial.CurrentPage).IsEqualTo(ShellPage.Dashboard);
+        await Assert.That(AppShellState.Initial.RuntimeProcessId).IsNull();
+        await Assert.That(AppShellState.Initial.RuntimePort).IsNull();
+        await Assert.That(AppShellState.Initial.DshVersion).IsNull();
+    }
+
+    [Test]
     public async Task ShowRuntime_NavigatesToRuntime()
     {
         var result = _reducer.Reduce(AppShellState.Initial with { CurrentPage = ShellPage.Plugins }, new AppShellIntent.ShowRuntime());
@@ -99,6 +109,42 @@ public sealed class AppShellReducerTests
         var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.UpdateBadgeChanged(4));
 
         await Assert.That(result.State.UpdateBadge).IsEqualTo(4);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeEndpointChanged_ProjectsProcessIdAndPort()
+    {
+        // Phase 8 Issue 02：状态栏 PID / Port 投影（BindSiblingState 自 RuntimeStore，§11.2）。
+        var result = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.RuntimeEndpointChanged(16428, 3080));
+
+        await Assert.That(result.State.RuntimeProcessId).IsEqualTo(16428);
+        await Assert.That(result.State.RuntimePort).IsEqualTo(3080);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeEndpointChanged_AllowsNull_WhenStopped()
+    {
+        var result = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.RuntimeEndpointChanged(null, null));
+
+        await Assert.That(result.State.RuntimeProcessId).IsNull();
+        await Assert.That(result.State.RuntimePort).IsNull();
+    }
+
+    [Test]
+    public async Task DshVersionChanged_ProjectsVersion()
+    {
+        // Phase 8 Issue 02：侧栏 runtime-mini 的 DSH 版本投影（自 UpdatesStore.CurrentDshVersion）。
+        var result = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.DshVersionChanged("0.1.0-rc.12"));
+
+        await Assert.That(result.State.DshVersion).IsEqualTo("0.1.0-rc.12");
         await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
 }

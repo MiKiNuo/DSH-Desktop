@@ -1,6 +1,7 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using DshDesktop.App.Composition;
+using DshDesktop.Application.Updates;
 using MiKiNuo.Mvi.Platforms.Avalonia.Threading;
 
 namespace DshDesktop.App;
@@ -44,13 +45,27 @@ public sealed partial class App : global::Avalonia.Application
         try
         {
             await _compositionRoot!.InitializeRuntimeAsync().ConfigureAwait(false);
+
+            // §34 修订注（Phase 8 Issue 04，评审 F2 语义修复）：两个时机独立——启动时开 =
+            // 启动早期即检查（config 已载、Runtime 自举前，不等 UI Ready）；后台开 = UI Ready 后检查。
+            UpdateCheckPlan plan = UpdateCheckSchedule.Plan(
+                _compositionRoot.CheckUpdatesOnStartup, _compositionRoot.BackgroundUpdateCheckEnabled);
+            if (plan.AtStartup)
+            {
+                _ = _compositionRoot.BackgroundCheckUpdatesAsync();
+            }
+
             if (!_compositionRoot.IsSafeMode)
             {
                 await _compositionRoot.AutoStartRuntimeAsync().ConfigureAwait(false);
             }
 
-            // §34：网络更新检查放后台任务（UI 就绪后）。
-            _ = _compositionRoot.BackgroundCheckUpdatesAsync();
+            // Phase 8 Issue 05：后台检查更新（默认开）——bootstrap 全程后台、窗口已可见，即"UI Ready 后"
+            // 语义；启动早期已检查过则本次不重复发起。
+            if (plan.AfterUiReady)
+            {
+                _ = _compositionRoot.BackgroundCheckUpdatesAsync();
+            }
         }
         catch (Exception exception)
         {

@@ -4,75 +4,195 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Runtime"
     x:DataType="vm:RuntimeViewModel">
-    <Border Padding="24">
-        <StackPanel Spacing="16">
-            <TextBlock
-                FontSize="22"
-                FontWeight="SemiBold"
-                Text="Runtime" />
+    <!--
+      Runtime 页（Phase 8 Issue 04，视觉基准 docs/DSH-Desktop-UI-Prototype.html runtime section）：
+      状态机卡（eyebrow + 状态行 + 六态 pills + 重启/停止）+ 运行环境 KV 卡 + 启动与恢复策略卡。
+      Failed 恢复面板（ADR-0004）并入状态机卡；pills 高亮与图标着色在 code-behind。
+    -->
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="14">
+            <Grid ColumnDefinitions="1.2*,0.8*">
+                <!-- ===== 状态机卡 ===== -->
+                <Border Classes="card" Padding="18">
+                    <StackPanel Spacing="12">
+                        <TextBlock Classes="eyebrow" Text="DSH RUNTIME STATE MACHINE" />
 
-            <Border
-                Background="#7C3AED"
-                CornerRadius="4"
-                Padding="8,2"
-                HorizontalAlignment="Left"
-                IsVisible="{Binding SafeMode}">
-                <TextBlock FontSize="12" Foreground="White" Text="安全模式：自动启动已抑制，可管理插件与配置" />
-            </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Border Classes="ready-icon" Width="34" Height="34" CornerRadius="17">
+                                <TextBlock x:Name="LifecycleIconText" Text="○" />
+                            </Border>
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock
+                                    Classes="hero-title"
+                                    FontSize="18"
+                                    Text="{Binding Lifecycle}" />
+                                <TextBlock Classes="hero-sub" Text="{Binding StatusSubtitle}" />
+                            </StackPanel>
+                        </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock VerticalAlignment="Center" Text="生命周期：" />
-                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{Binding Lifecycle}" />
-                <Border
-                    x:Name="HealthBadge"
-                    VerticalAlignment="Center"
-                    CornerRadius="4"
-                    Padding="8,2">
-                    <TextBlock x:Name="HealthBadgeText" FontSize="12" Foreground="White" Text="{Binding Health}" />
+                        <WrapPanel>
+                            <Border x:Name="PillStopped" Classes="state-pill">
+                                <TextBlock Text="Stopped" />
+                            </Border>
+                            <Border x:Name="PillStarting" Classes="state-pill">
+                                <TextBlock Text="Starting" />
+                            </Border>
+                            <Border x:Name="PillRunning" Classes="state-pill">
+                                <TextBlock Text="Running" />
+                            </Border>
+                            <Border x:Name="PillStopping" Classes="state-pill">
+                                <TextBlock Text="Stopping" />
+                            </Border>
+                            <Border x:Name="PillFailed" Classes="state-pill">
+                                <TextBlock Text="Failed" />
+                            </Border>
+                            <Border x:Name="PillRecovering" Classes="state-pill">
+                                <TextBlock Text="Recovering" />
+                            </Border>
+                        </WrapPanel>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Classes="btn"
+                                Command="{Binding RestartRuntimeCommand}"
+                                Content="重启 Runtime" />
+                            <Button
+                                Classes="btn danger"
+                                Command="{Binding StopRuntimeCommand}"
+                                Content="停止 DSH" />
+                        </StackPanel>
+
+                        <Border
+                            Classes="tag info"
+                            HorizontalAlignment="Left"
+                            IsVisible="{Binding SafeMode}">
+                            <TextBlock Text="安全模式：自动启动已抑制，可管理插件与配置" />
+                        </Border>
+
+                        <!-- ADR-0004：Failed 恢复面板（并入状态机卡），仅 Failed 可见。 -->
+                        <StackPanel x:Name="RecoverPanel" Orientation="Horizontal" Spacing="8">
+                            <Button
+                                Classes="btn"
+                                Command="{Binding StartRuntimeCommand}"
+                                Content="重试启动" />
+                            <Button
+                                Classes="btn"
+                                Command="{Binding RecoverRuntimeCommand}"
+                                Content="禁用插件后恢复" />
+                        </StackPanel>
+                    </StackPanel>
                 </Border>
-            </StackPanel>
 
-            <StackPanel Spacing="6">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock x:Name="StageIcon1" Width="18" Text="✓" />
-                    <TextBlock Text="Desktop Ready" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock x:Name="StageIcon2" Width="18" Text="○" />
-                    <TextBlock Text="启动 DSH 进程" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock x:Name="StageIcon3" Width="18" Text="○" />
-                    <TextBlock Text="等待 HTTP 就绪" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock x:Name="StageIcon4" Width="18" Text="○" />
-                    <TextBlock Text="WebView 就绪" />
-                </StackPanel>
-            </StackPanel>
+                <!-- ===== 运行环境 KV 卡 ===== -->
+                <Border Classes="card" Grid.Column="1">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Classes="card-head" Grid.Row="0">
+                            <TextBlock Classes="card-title" Text="运行环境" />
+                        </Border>
+                        <Border Classes="card-body" Grid.Row="1">
+                            <Grid
+                                ColumnDefinitions="96,*"
+                                RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                                RowSpacing="9">
+                                <TextBlock Classes="kv-key" Grid.Row="0" Text="Desktop" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="0"
+                                    Grid.Column="1"
+                                    Text="{Binding DesktopVersion}" />
+                                <TextBlock Classes="kv-key" Grid.Row="1" Text="DSH" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    Text="{Binding DshVersion, FallbackValue='—', TargetNullValue='—'}" />
+                                <TextBlock Classes="kv-key" Grid.Row="2" Text="Node.js" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="2"
+                                    Grid.Column="1"
+                                    Text="{Binding NodeVersionText}" />
+                                <TextBlock Classes="kv-key" Grid.Row="3" Text="WebView2" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="3"
+                                    Grid.Column="1"
+                                    Text="{Binding WebView2VersionText}" />
+                                <TextBlock Classes="kv-key" Grid.Row="4" Text="DSH_HOME" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="4"
+                                    Grid.Column="1"
+                                    Text="{Binding DshHomeText}" />
+                                <TextBlock Classes="kv-key" Grid.Row="5" Text="Profile" />
+                                <TextBlock
+                                    Classes="kv-value"
+                                    Grid.Row="5"
+                                    Grid.Column="1"
+                                    Text="{Binding ProfileNameText}" />
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
 
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="启动耗时：" />
-                <TextBlock Text="{Binding StartupElapsed, TargetNullValue='—'}" />
-            </StackPanel>
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock Text="端口：" />
-                <TextBlock Text="{Binding Port, FallbackValue='—', TargetNullValue='—'}" />
-            </StackPanel>
-            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
-
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <Button Command="{Binding StartRuntimeCommand}" Content="启动 Runtime" />
-                <Button Command="{Binding StopRuntimeCommand}" Content="停止 Runtime" />
-                <Button x:Name="RestartButton" Command="{Binding RestartRuntimeCommand}" Content="重启 Runtime" />
-                <Button Command="{Binding EnterSafeModeCommand}" Content="进入安全模式" IsVisible="{Binding !SafeMode}" />
-                <Button Command="{Binding ExitSafeModeCommand}" Content="退出安全模式" IsVisible="{Binding SafeMode}" />
-            </StackPanel>
-
-            <StackPanel x:Name="RecoverPanel" Orientation="Horizontal" Spacing="12">
-                <Button Command="{Binding StartRuntimeCommand}" Content="重试启动" />
-                <Button Command="{Binding RecoverRuntimeCommand}" Content="禁用插件后恢复" />
-            </StackPanel>
+            <!-- ===== 启动与恢复策略卡 ===== -->
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Classes="card-head" Grid.Row="0">
+                        <StackPanel>
+                            <TextBlock Classes="card-title" Text="启动与恢复策略" />
+                            <TextBlock Classes="card-subtitle" Text="这些能力由 Avalonia Desktop 管理，不依赖 DSH Web UI" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="card-body" Grid.Row="1">
+                        <StackPanel>
+                            <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="关闭窗口后保持 DSH Runtime" />
+                                        <TextBlock Classes="switch-desc" Text="开启后关窗不杀 Runtime 进程；当前版本下次启动仍会重建会话（重接管尚未实现）" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        Classes="switch"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="OnKeepRuntimeOnCloseToggled"
+                                        IsChecked="{Binding KeepRuntimeOnClose}" />
+                                </Grid>
+                            </Border>
+                            <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="异常启动自动进入安全模式" />
+                                        <TextBlock Classes="switch-desc" Text="连续启动失败后暂时禁用第三方插件" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        Classes="switch"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="OnAutoSafeModeOnFailureToggled"
+                                        IsChecked="{Binding AutoSafeModeOnFailure}" />
+                                </Grid>
+                            </Border>
+                            <Border Classes="switch-row">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="启动时检查网络更新" />
+                                        <TextBlock Classes="switch-desc" Text="建议关闭：更新检查应在 UI 就绪后异步执行" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        Classes="switch"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="OnCheckUpdatesOnStartupToggled"
+                                        IsChecked="{Binding CheckUpdatesOnStartup}" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
         </StackPanel>
-    </Border>
+    </ScrollViewer>
 </UserControl>

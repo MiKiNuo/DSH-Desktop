@@ -26,7 +26,7 @@ public sealed record RuntimeLaunchOptions(
     string Host,
     int Port,
     TimeSpan StartupTimeout,
-    IProgress<DshDesktop.Domain.Runtime.RuntimeStartupStage>? Progress = null);
+    IProgress<RuntimeStartupSignal>? Progress = null);
 
 /// <summary>
 /// 表示 Runtime 进程已拉起且 HTTP 就绪的结果。

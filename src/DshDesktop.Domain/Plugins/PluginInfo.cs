@@ -7,8 +7,10 @@ namespace DshDesktop.Domain.Plugins;
 /// <param name="Version">已安装的真实版本（node_modules/&lt;pkg&gt;/package.json）。</param>
 /// <param name="IsCore">是否官方核心插件（@deepseek-ai/* scope 或 dshmarket）。核心插件只读。</param>
 /// <param name="Enabled">是否启用（在 dsh.profile.bundles 数组中）。</param>
+/// <param name="Description">插件描述（node_modules/&lt;pkg&gt;/package.json 的 description；无则空串）。</param>
 public sealed record PluginInfo(
     string Name,
     string Version,
     bool IsCore,
-    bool Enabled);
+    bool Enabled,
+    string Description);

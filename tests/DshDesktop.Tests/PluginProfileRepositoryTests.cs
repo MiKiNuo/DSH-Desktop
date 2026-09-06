@@ -114,6 +114,26 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         await Assert.That(patch.Contains("name: dsh-foo\n")).IsFalse(); // 该插件条目已清（注意 dsh-foo2 是不同条目）
     }
 
+    [Test]
+    public async Task ListPluginsAsync_ReadsDescriptionFromInstalledManifest()
+    {
+        // Phase 8 评审 F3（Spec a.1）：description 读自 node_modules/<pkg>/package.json，缺失为空串。
+        SeedProfile(dependencies: ["dsh-foo", "dsh-bar"], bundles: ["dsh-foo", "dsh-bar"]);
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-bar"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-foo", "package.json"),
+            "{\"version\":\"2.0.0\",\"description\":\"侧栏增强\"}");
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-bar", "package.json"),
+            "{\"version\":\"1.0.0\"}");
+        var repository = new PluginProfileRepository(ProfileDir, "node", null);
+
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(plugins.Single(p => p.Name == "dsh-foo").Description).IsEqualTo("侧栏增强");
+        await Assert.That(plugins.Single(p => p.Name == "dsh-bar").Description).IsEqualTo("");
+    }
+
     /// <summary>
     /// 造最小 Profile：package.json（dependencies + bundles）与 node_modules 目录骨架。
     /// </summary>

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using DshDesktop.Domain.Runtime;
@@ -9,16 +10,13 @@ using MiKiNuo.Mvi.Presentation.Disposables;
 namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 
 /// <summary>
-/// 表示 Runtime 视图：阶段清单与健康徽章由 View 依据 State 投影计算（表现逻辑属于 View）。
+/// 表示 Runtime 视图（Phase 8 Issue 04）：六态 pills 高亮、状态图标着色与 Failed 恢复面板
+/// 显隐由 View 依据 State 投影计算（表现逻辑属于 View）。
 /// </summary>
 public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 {
-    private readonly TextBlock _stageIcon2;
-    private readonly TextBlock _stageIcon3;
-    private readonly TextBlock _stageIcon4;
-    private readonly TextBlock _stageIcon1;
-    private readonly Border _healthBadge;
-    private readonly Button _restartButton;
+    private readonly IReadOnlyDictionary<RuntimeLifecycle, Border> _pills;
+    private readonly TextBlock _lifecycleIconText;
     private readonly StackPanel _recoverPanel;
 
     /// <summary>
@@ -27,14 +25,17 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     public RuntimeView()
     {
         AvaloniaXamlLoader.Load(this);
-        _stageIcon1 = FindRequiredTextBlock("StageIcon1");
-        _stageIcon2 = FindRequiredTextBlock("StageIcon2");
-        _stageIcon3 = FindRequiredTextBlock("StageIcon3");
-        _stageIcon4 = FindRequiredTextBlock("StageIcon4");
-        _healthBadge = this.FindControl<Border>("HealthBadge")
-            ?? throw new InvalidOperationException("无法找到 HealthBadge 控件。");
-        _restartButton = this.FindControl<Button>("RestartButton")
-            ?? throw new InvalidOperationException("无法找到 RestartButton 控件。");
+        _pills = new Dictionary<RuntimeLifecycle, Border>
+        {
+            [RuntimeLifecycle.Stopped] = FindRequiredBorder("PillStopped"),
+            [RuntimeLifecycle.Starting] = FindRequiredBorder("PillStarting"),
+            [RuntimeLifecycle.Running] = FindRequiredBorder("PillRunning"),
+            [RuntimeLifecycle.Stopping] = FindRequiredBorder("PillStopping"),
+            [RuntimeLifecycle.Failed] = FindRequiredBorder("PillFailed"),
+            [RuntimeLifecycle.Recovering] = FindRequiredBorder("PillRecovering"),
+        };
+        _lifecycleIconText = this.FindControl<TextBlock>("LifecycleIconText")
+            ?? throw new InvalidOperationException("无法找到 LifecycleIconText 控件。");
         _recoverPanel = this.FindControl<StackPanel>("RecoverPanel")
             ?? throw new InvalidOperationException("无法找到 RecoverPanel 控件。");
     }
@@ -46,10 +47,7 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 
         PropertyChangedEventHandler handler = (_, args) =>
         {
-            if (args.PropertyName
-                is nameof(RuntimeViewModel.Lifecycle)
-                or nameof(RuntimeViewModel.StartupStage)
-                or nameof(RuntimeViewModel.Health))
+            if (args.PropertyName is nameof(RuntimeViewModel.Lifecycle))
             {
                 ApplyIndicators(viewModel);
             }
@@ -61,66 +59,62 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
         ApplyIndicators(viewModel);
     }
 
+    /// <summary>
+    /// 应用状态机指示：当前态 pill 高亮（原型 .state-pill.on）、图标着色（与壳状态点同色系）、
+    /// Failed 恢复面板显隐（ADR-0004）。
+    /// </summary>
     private void ApplyIndicators(RuntimeViewModel viewModel)
     {
-        bool failed = viewModel.Lifecycle is RuntimeLifecycle.Failed;
-        bool running = viewModel.Lifecycle is RuntimeLifecycle.Running;
-        bool starting = viewModel.Lifecycle is RuntimeLifecycle.Starting;
-        RuntimeStartupStage stage = viewModel.StartupStage;
+        RuntimeLifecycle lifecycle = viewModel.Lifecycle;
 
-        SetRow(_stageIcon1, done: true, active: false, failed: false);
-        SetRow(
-            _stageIcon2,
-            done: running || stage >= RuntimeStartupStage.WaitingReady,
-            active: starting && stage <= RuntimeStartupStage.Spawning,
-            failed: failed && stage < RuntimeStartupStage.WaitingReady);
-        SetRow(
-            _stageIcon3,
-            done: running,
-            active: starting && stage is RuntimeStartupStage.WaitingReady,
-            failed: failed && stage is >= RuntimeStartupStage.WaitingReady and < RuntimeStartupStage.Ready);
-        SetRow(_stageIcon4, done: running, active: false, failed: false);
-
-        IBrush brush = viewModel.Health switch
+        foreach ((RuntimeLifecycle pillLifecycle, Border pill) in _pills)
         {
-            RuntimeHealth.Healthy => RuntimeLifecycleBrushes.Running,
-            RuntimeHealth.Unresponsive => RuntimeLifecycleBrushes.Failed,
-            _ => RuntimeLifecycleBrushes.Stopped,
+            if (pillLifecycle == lifecycle)
+            {
+                if (!pill.Classes.Contains("on"))
+                {
+                    pill.Classes.Add("on");
+                }
+            }
+            else
+            {
+                pill.Classes.Remove("on");
+            }
+        }
+
+        (string glyph, IBrush brush) = lifecycle switch
+        {
+            RuntimeLifecycle.Running => ("✓", RuntimeLifecycleBrushes.Running),
+            RuntimeLifecycle.Failed => ("✗", RuntimeLifecycleBrushes.Failed),
+            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering =>
+                ("●", RuntimeLifecycleBrushes.Transition),
+            _ => ("○", RuntimeLifecycleBrushes.Stopped),
         };
-        _healthBadge.Background = brush;
+        _lifecycleIconText.Text = glyph;
+        _lifecycleIconText.Foreground = brush;
 
-        // ADR-0004：重启仅 Running / Failed 可用；Failed 时提供"重试启动 / 禁用插件后恢复"两按钮。
-        _restartButton.IsVisible = running || failed;
-        _recoverPanel.IsVisible = failed;
+        _recoverPanel.IsVisible = lifecycle is RuntimeLifecycle.Failed;
     }
 
-    private static void SetRow(TextBlock icon, bool done, bool active, bool failed)
+    private void OnKeepRuntimeOnCloseToggled(object? sender, RoutedEventArgs args)
     {
-        if (failed)
-        {
-            icon.Text = "✗";
-            icon.Foreground = RuntimeLifecycleBrushes.Failed;
-        }
-        else if (done)
-        {
-            icon.Text = "✓";
-            icon.Foreground = RuntimeLifecycleBrushes.Running;
-        }
-        else if (active)
-        {
-            icon.Text = "●";
-            icon.Foreground = RuntimeLifecycleBrushes.Transition;
-        }
-        else
-        {
-            icon.Text = "○";
-            icon.Foreground = RuntimeLifecycleBrushes.Stopped;
-        }
+        // 无载荷翻转：目标状态由 Reducer 从 State 推导（同 Settings ToggleSafeMode 先例）。
+        ViewModel.ToggleKeepRuntimeOnCloseCommand.Execute(null);
     }
 
-    private TextBlock FindRequiredTextBlock(string name)
+    private void OnAutoSafeModeOnFailureToggled(object? sender, RoutedEventArgs args)
     {
-        return this.FindControl<TextBlock>(name)
+        ViewModel.ToggleAutoSafeModeOnFailureCommand.Execute(null);
+    }
+
+    private void OnCheckUpdatesOnStartupToggled(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.ToggleCheckUpdatesOnStartupCommand.Execute(null);
+    }
+
+    private Border FindRequiredBorder(string name)
+    {
+        return this.FindControl<Border>(name)
             ?? throw new InvalidOperationException($"无法找到 {name} 控件。");
     }
 }

@@ -52,7 +52,7 @@ public sealed class PluginsReducerTests
             Operation = new PluginOperation(PluginOperationStage.Installing, "dsh-foo", null),
             LastError = "旧错误",
         };
-        IReadOnlyList<PluginInfo> plugins = [new PluginInfo("dsh-foo", "1.0.0", false, true)];
+        IReadOnlyList<PluginInfo> plugins = [new PluginInfo("dsh-foo", "1.0.0", false, true, "")];
 
         var result = _reducer.Reduce(busy, new PluginsIntent.PluginsLoaded(plugins));
 
@@ -111,14 +111,6 @@ public sealed class PluginsReducerTests
     }
 
     [Test]
-    public async Task DisableAllThirdParty_DeclaresEffect()
-    {
-        var result = _reducer.Reduce(PluginsState.Initial, new PluginsIntent.DisableAllThirdParty());
-
-        await Assert.That(result.Effects[0] is PluginsEffect.DisableAllThirdParty).IsTrue();
-    }
-
-    [Test]
     public async Task PluginOperationChanged_InFlight_KeepsPendingText()
     {
         var operation = new PluginOperation(PluginOperationStage.StartingRuntime, "dsh-foo", null);
@@ -149,5 +141,28 @@ public sealed class PluginsReducerTests
 
         await Assert.That(result.State.PendingOperation).IsNull();
         await Assert.That(result.State.LastError).IsEqualTo("卸载失败");
+    }
+
+    // ===== Phase 8 评审 F3（Spec a.1）：可更新投影 + 行内更新 =====
+
+    [Test]
+    public async Task UpdatePlugin_DeclaresUpdateEffect()
+    {
+        var result = _reducer.Reduce(PluginsState.Initial, new PluginsIntent.UpdatePlugin("dsh-foo"));
+
+        await Assert.That(result.State.PendingOperation).IsEqualTo("更新 dsh-foo…");
+        await Assert.That(result.Effects[0] is PluginsEffect.UpdatePlugin { Name: "dsh-foo" }).IsTrue();
+    }
+
+    [Test]
+    public async Task UpdatablePluginsChanged_ProjectsNamesWithoutEffects()
+    {
+        var result = _reducer.Reduce(
+            PluginsState.Initial,
+            new PluginsIntent.UpdatablePluginsChanged(["dsh-foo", "dsh-bar"]));
+
+        await Assert.That(result.State.UpdatablePlugins.Count).IsEqualTo(2);
+        await Assert.That(result.State.UpdatablePlugins[0]).IsEqualTo("dsh-foo");
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
 }

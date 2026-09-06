@@ -26,6 +26,17 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
 
     private CancellationTokenSource? _healthLoopSource;
 
+    // §46 阶段计时的结构化副本（Phase 8 Issue 03：Dashboard 启动 timeline 数据源）。
+    private readonly List<StartupStageTiming> _stageTimings = [];
+
+    /// <summary>
+    /// 获取最近一次启动的阶段累计计时（自 Start.Begin 起算，单调不减）。
+    /// </summary>
+    public IReadOnlyList<StartupStageTiming> LastStartupStageTimings
+    {
+        get { lock (_sync) { return [.. _stageTimings]; } }
+    }
+
     /// <summary>
     /// 初始化 Runtime 监管器。
     /// </summary>
@@ -60,12 +71,28 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
         ArgumentNullException.ThrowIfNull(options);
         Stopwatch stopwatch = Stopwatch.StartNew();
         _logger.Information("Runtime.Start.Begin");
-
-        Progress<RuntimeStartupStage> progress = new(stage =>
+        lock (_sync)
         {
-            // §46：阶段切换带相对耗时（自 Start.Begin 起算）。
-            _logger.Debug("Runtime.Start.Stage {Stage} ElapsedMs={ElapsedMs}", stage, (long)stopwatch.ElapsedMilliseconds);
-            Publish(Current with { StartupStage = stage });
+            _stageTimings.Clear();
+        }
+
+        // 同步 IProgress（替代 Progress<T> 的线程池投递）：结构化阶段计时必须与 Ready 标记严格有序，
+        // 异步投递会让 Ready 抢跑在 Spawning/WaitingReady 之前（Phase 8 Issue 03 实测竞态）。
+        IProgress<RuntimeStartupSignal> progress = new SynchronousStageProgress(signal =>
+        {
+            // §46：阶段切换带相对耗时（自 Start.Begin 起算）；同步保留结构化副本供 Dashboard 投影。
+            _logger.Debug("Runtime.Start.Stage {Stage} ElapsedMs={ElapsedMs}", signal, (long)stopwatch.ElapsedMilliseconds);
+            lock (_sync)
+            {
+                _stageTimings.Add(new StartupStageTiming(signal, stopwatch.Elapsed));
+            }
+
+            // HttpProbing 是纯计时标记（Phase 8 Issue 03；F16 起为 Application 信号，不再是 Domain 阶段），
+            // 不进入快照状态机（Runtime 页阶段语义不变）。
+            if (signal is not RuntimeStartupSignal.HttpProbing)
+            {
+                Publish(Current with { StartupStage = ToStage(signal) });
+            }
         });
 
         Publish(Current with
@@ -86,6 +113,10 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
             "Runtime.Start.Ready ElapsedMs={ElapsedMs} Port={Port}",
             (long)stopwatch.ElapsedMilliseconds,
             result.Port);
+        lock (_sync)
+        {
+            _stageTimings.Add(new StartupStageTiming(RuntimeStartupSignal.Ready, stopwatch.Elapsed));
+        }
         RuntimeSnapshot ready = Current with
         {
             Lifecycle = RuntimeLifecycle.Running,
@@ -132,6 +163,34 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
         _logger.Information("Runtime.Restart.Begin");
         await StopAsync(cancellationToken).ConfigureAwait(false);
         return await StartAsync(options, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 重接管存活的 Runtime（ADR-0005，Phase 8 Issue 04）：不拉起新进程，
+    /// 直接发布 Running 快照并接管健康监管（5s 轮询）。
+    /// </summary>
+    /// <remarks>
+    /// 接管后无进程句柄退出事件（进程非本实例拉起），崩溃检测退化为健康轮询无响应；
+    /// Url 为无 token 基址，仅作健康探测，不可用于工作台导航。
+    /// </remarks>
+    /// <param name="processId">存活 Runtime 进程 ID。</param>
+    /// <param name="port">监听端口。</param>
+    /// <param name="host">监听地址。</param>
+    /// <returns>接管后的快照。</returns>
+    public RuntimeSnapshot AdoptRunning(int processId, int port, string host)
+    {
+        _logger.Information("Runtime.Reattach.Adopted Pid={ProcessId} Port={Port}", processId, port);
+        RuntimeSnapshot adopted = new(
+            RuntimeLifecycle.Running,
+            RuntimeHealth.Healthy,
+            RuntimeStartupStage.Ready,
+            null,
+            processId,
+            port,
+            $"http://{host}:{port}/");
+        Publish(adopted);
+        StartHealthLoop();
+        return adopted;
     }
 
     private void OnOrchestratorExited(object? sender, RuntimeExitedEventArgs args)
@@ -231,5 +290,32 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
         }
 
         SnapshotChanged?.Invoke(this, snapshot);
+    }
+
+    /// <summary>
+    /// 进度信号 → Domain 状态机阶段（HttpProbing 无对应阶段，调用方已先排除）。
+    /// </summary>
+    private static RuntimeStartupStage ToStage(RuntimeStartupSignal signal)
+    {
+        return signal switch
+        {
+            RuntimeStartupSignal.Validating => RuntimeStartupStage.Validating,
+            RuntimeStartupSignal.Spawning => RuntimeStartupStage.Spawning,
+            RuntimeStartupSignal.WaitingReady => RuntimeStartupStage.WaitingReady,
+            _ => RuntimeStartupStage.Ready,
+        };
+    }
+
+    /// <summary>
+    /// 表示同步回传的阶段进度（保证计时记录与 Publish 按 Report 顺序立即执行）。
+    /// </summary>
+    private sealed class SynchronousStageProgress(Action<RuntimeStartupSignal> onReport)
+        : IProgress<RuntimeStartupSignal>
+    {
+        /// <inheritdoc />
+        public void Report(RuntimeStartupSignal value)
+        {
+            onReport(value);
+        }
     }
 }

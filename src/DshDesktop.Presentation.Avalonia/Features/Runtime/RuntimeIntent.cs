@@ -82,4 +82,42 @@ public abstract partial record RuntimeIntent : IMviIntent
     /// </summary>
     /// <param name="Error">错误信息。</param>
     public sealed partial record RuntimeOperationFailed(string Error) : RuntimeIntent;
+
+    /// <summary>
+    /// 表示切换"关闭窗口后保持 DSH Runtime"意图（ADR-0005；无载荷翻转，同 Settings ToggleSafeMode 先例）。
+    /// </summary>
+    public sealed partial record ToggleKeepRuntimeOnClose : RuntimeIntent;
+
+    /// <summary>
+    /// 表示切换"异常启动自动进入安全模式"意图（ADR-0004 修订注；无载荷翻转）。
+    /// </summary>
+    public sealed partial record ToggleAutoSafeModeOnFailure : RuntimeIntent;
+
+    /// <summary>
+    /// 表示切换"启动时检查网络更新"意图（§34 修订注；无载荷翻转）。
+    /// </summary>
+    public sealed partial record ToggleCheckUpdatesOnStartup : RuntimeIntent;
+
+    /// <summary>
+    /// 表示三个策略开关的持久化值已加载的回流意图（组合根初始化时发，config 为权威源）。
+    /// </summary>
+    /// <param name="KeepRuntimeOnClose">关闭窗口后保持 Runtime。</param>
+    /// <param name="AutoSafeModeOnFailure">异常启动自动进入安全模式。</param>
+    /// <param name="CheckUpdatesOnStartup">启动时检查网络更新。</param>
+    public sealed partial record PoliciesLoaded(
+        bool KeepRuntimeOnClose,
+        bool AutoSafeModeOnFailure,
+        bool CheckUpdatesOnStartup) : RuntimeIntent;
+
+    /// <summary>
+    /// 表示运行环境信息已探测的回流意图（组合根初始化时发）。
+    /// </summary>
+    /// <param name="Environment">运行环境信息。</param>
+    public sealed partial record EnvironmentLoaded(RuntimeEnvironmentInfo Environment) : RuntimeIntent;
+
+    /// <summary>
+    /// 表示 DSH 版本投影变化的回流意图（自 UpdatesStore.CurrentDshVersion，§11.2）。
+    /// </summary>
+    /// <param name="Version">当前 DSH 版本；未知为 null。</param>
+    public sealed partial record DshVersionChanged(string? Version) : RuntimeIntent;
 }

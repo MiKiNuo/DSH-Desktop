@@ -164,6 +164,62 @@ public sealed class RuntimeSupervisorTests
             .IsFalse();
     }
 
+    [Test]
+    public async Task StartAsync_RecordsStructuredStageTimings()
+    {
+        // Phase 8 Issue 03：§46 Runtime.Start.Stage 计时除日志外保留结构化副本，
+        // 供 Dashboard 启动 timeline 投影（以 TaskCompletionSource 等待 Ready 快照，防进度回调竞态）。
+        var orchestrator = new FakeRuntimeOrchestrator();
+        var supervisor = new RuntimeSupervisor(orchestrator, Serilog.Core.Logger.None);
+        var timingsReady = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        supervisor.SnapshotChanged += (_, snapshot) =>
+        {
+            if (snapshot.StartupStage is RuntimeStartupStage.Ready)
+            {
+                timingsReady.TrySetResult();
+            }
+        };
+
+        RuntimeSnapshot snapshot = await supervisor.StartAsync(Options, CancellationToken.None);
+        await timingsReady.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        IReadOnlyList<StartupStageTiming> timings = supervisor.LastStartupStageTimings;
+        await Assert.That(timings.Count >= 2).IsTrue();
+        await Assert.That(timings[0].Stage).IsEqualTo(RuntimeStartupSignal.Spawning);
+        await Assert.That(timings[^1].Stage).IsEqualTo(RuntimeStartupSignal.Ready);
+        await Assert.That(timings[^1].Elapsed).IsEqualTo(snapshot.StartupElapsed!.Value);
+
+        // 累计耗时单调不减。
+        for (int i = 1; i < timings.Count; i++)
+        {
+            await Assert.That(timings[i].Elapsed >= timings[i - 1].Elapsed).IsTrue();
+        }
+
+        await supervisor.StopAsync(CancellationToken.None); // 停健康循环，防后台泄漏
+    }
+
+    [Test]
+    public async Task AdoptRunning_PublishesRunningSnapshotWithoutSpawning()
+    {
+        // ADR-0005（Phase 8 Issue 04）：重接管存活 Runtime —— 直接发布 Running 快照并接管
+        // 健康监管，不拉起新进程。
+        var orchestrator = new FakeRuntimeOrchestrator();
+        var supervisor = new RuntimeSupervisor(orchestrator, Serilog.Core.Logger.None);
+
+        RuntimeSnapshot snapshot = supervisor.AdoptRunning(4321, 5678, "127.0.0.1");
+
+        await Assert.That(snapshot.Lifecycle).IsEqualTo(RuntimeLifecycle.Running);
+        await Assert.That(snapshot.Health).IsEqualTo(RuntimeHealth.Healthy);
+        await Assert.That(snapshot.StartupStage).IsEqualTo(RuntimeStartupStage.Ready);
+        await Assert.That(snapshot.ProcessId).IsEqualTo(4321);
+        await Assert.That(snapshot.Port).IsEqualTo(5678);
+        await Assert.That(snapshot.Url).IsEqualTo("http://127.0.0.1:5678/");
+        await Assert.That(orchestrator.StartCount).IsEqualTo(0);
+
+        await supervisor.StopAsync(CancellationToken.None); // 停健康循环，防后台泄漏
+    }
+
     private static Serilog.ILogger CreateLogger(CollectingSink sink)
     {
         return new Serilog.LoggerConfiguration().WriteTo.Sink(sink).CreateLogger();
@@ -203,7 +259,7 @@ public sealed class RuntimeSupervisorTests
         {
             StartCount++;
             Calls.Add("start");
-            options.Progress?.Report(RuntimeStartupStage.Spawning);
+            options.Progress?.Report(RuntimeStartupSignal.Spawning);
             return StartAsyncHandler?.Invoke()
                 ?? Task.FromResult(StartHandler?.Invoke(options) ?? DefaultResult);
         }

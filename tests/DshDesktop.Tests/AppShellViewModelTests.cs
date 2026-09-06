@@ -19,6 +19,83 @@ namespace DshDesktop.Tests;
 public sealed class AppShellViewModelTests
 {
     [Test]
+    public async Task PageTitleAndSubtitle_TrackCurrentPage()
+    {
+        // Phase 8 Issue 02：顶栏标题/副标题由 ViewModel 投影（映射见 ShellPageText），不硬编码在 View。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
+
+        // 初始页 = 概览（AppShellState.Initial）。
+        await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Dashboard);
+        await Assert.That(viewModel.PageTitle).IsEqualTo("概览");
+        await Assert.That(viewModel.PageSubtitle).IsEqualTo("DSH Desktop 运行状态与快捷入口");
+
+        await shellStore.DispatchAsync(new AppShellIntent.ShowSettings());
+
+        await Assert.That(viewModel.PageTitle).IsEqualTo("设置");
+        await Assert.That(viewModel.PageSubtitle).IsEqualTo("数据目录、桌面行为与更新策略");
+    }
+
+    [Test]
+    public async Task RuntimeEndpoint_TracksRuntimeStore()
+    {
+        // Phase 8 Issue 02：状态栏 PID / Port 经 BindSiblingState 投影（§11.2）。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
+
+        await Assert.That(viewModel.RuntimeProcessId).IsNull();
+        await Assert.That(viewModel.RuntimePort).IsNull();
+
+        runtimeStore.Push(RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Running,
+            ProcessId = 16428,
+            Port = 3080,
+        });
+
+        await Assert.That(viewModel.RuntimeProcessId).IsEqualTo(16428);
+        await Assert.That(viewModel.RuntimePort).IsEqualTo(3080);
+        await Assert.That(shellStore.CurrentState.RuntimeProcessId).IsEqualTo(16428);
+        await Assert.That(shellStore.CurrentState.RuntimePort).IsEqualTo(3080);
+    }
+
+    [Test]
+    public async Task DshVersion_TracksUpdatesStore()
+    {
+        // Phase 8 Issue 02：runtime-mini 的 DSH 版本投影自 UpdatesStore.CurrentDshVersion。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
+
+        await Assert.That(viewModel.DshVersion).IsNull();
+
+        updatesStore.Push(UpdatesState.Initial with { CurrentDshVersion = "0.1.0-rc.12" });
+
+        await Assert.That(viewModel.DshVersion).IsEqualTo("0.1.0-rc.12");
+        await Assert.That(shellStore.CurrentState.DshVersion).IsEqualTo("0.1.0-rc.12");
+    }
+
+    [Test]
+    public async Task RuntimeLifecycleText_FollowsIndicator()
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
+
+        await Assert.That(viewModel.RuntimeLifecycleText).IsEqualTo("已停止");
+
+        runtimeStore.Push(RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Running });
+
+        await Assert.That(viewModel.RuntimeLifecycleText).IsEqualTo("运行中");
+    }
+
+    [Test]
     public async Task RuntimeIndicator_TracksRuntimeStore()
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);

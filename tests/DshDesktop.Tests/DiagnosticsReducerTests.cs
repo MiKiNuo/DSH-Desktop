@@ -50,6 +50,32 @@ public sealed class DiagnosticsReducerTests
         await Assert.That(result.State.Entries[999].Message).IsEqualTo("新");
     }
 
+    [Test]
+    public async Task RunDiagnosis_DeclaresEffect()
+    {
+        var result = _reducer.Reduce(DiagnosticsState.Initial, new DiagnosticsIntent.RunDiagnosis());
+
+        await Assert.That(result.Effects[0] is DiagnosticsEffect.RunDiagnosis).IsTrue();
+    }
+
+    [Test]
+    public async Task ExportDiagnosticsBundle_DeclaresEffectWithPath()
+    {
+        var result = _reducer.Reduce(
+            DiagnosticsState.Initial, new DiagnosticsIntent.ExportDiagnosticsBundle(@"C:\Temp\diag.zip"));
+
+        await Assert.That(
+            result.Effects[0] is DiagnosticsEffect.ExportBundle { DestinationPath: @"C:\Temp\diag.zip" }).IsTrue();
+    }
+
+    [Test]
+    public async Task OpenLogsDirectory_DeclaresEffect()
+    {
+        var result = _reducer.Reduce(DiagnosticsState.Initial, new DiagnosticsIntent.OpenLogsDirectory());
+
+        await Assert.That(result.Effects[0] is DiagnosticsEffect.OpenLogsDirectory).IsTrue();
+    }
+
     private static DiagnosticEvent Event(string message)
     {
         return new DiagnosticEvent(

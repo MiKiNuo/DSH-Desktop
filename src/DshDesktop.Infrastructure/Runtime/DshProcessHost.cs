@@ -89,7 +89,7 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
             }
         };
 
-        options.Progress?.Report(DshDesktop.Domain.Runtime.RuntimeStartupStage.Spawning);
+        options.Progress?.Report(RuntimeStartupSignal.Spawning);
 
         try
         {
@@ -106,7 +106,7 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        options.Progress?.Report(DshDesktop.Domain.Runtime.RuntimeStartupStage.WaitingReady);
+        options.Progress?.Report(RuntimeStartupSignal.WaitingReady);
 
         using CancellationTokenSource timeoutSource =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -117,6 +117,9 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
             string url = await launch.ReadyUrl.Task
                 .WaitAsync(timeoutSource.Token)
                 .ConfigureAwait(false);
+
+            // stdout 就绪行 = DSH / Profile / Plugins 就绪；此后仅剩 HTTP 探测（Phase 8 Issue 03 计时标记）。
+            options.Progress?.Report(RuntimeStartupSignal.HttpProbing);
 
             await WaitHttpReadyAsync(url, timeoutSource.Token).ConfigureAwait(false);
             return new RuntimeStartResult(process.Id, port, url);

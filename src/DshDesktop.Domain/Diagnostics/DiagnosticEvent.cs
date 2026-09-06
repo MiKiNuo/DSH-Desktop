@@ -29,6 +29,9 @@ public enum DiagnosticLevel
     /// <summary>信息。</summary>
     Info,
 
+    /// <summary>成功（操作/检查完成确认；Phase 8 评审 F10：替代消息 ✓ 前缀嗅探，使着色走显式级别）。</summary>
+    Success,
+
     /// <summary>警告。</summary>
     Warning,
 

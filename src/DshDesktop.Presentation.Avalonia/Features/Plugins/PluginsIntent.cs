@@ -37,9 +37,16 @@ public abstract partial record PluginsIntent : IMviIntent
     public sealed partial record InstallPlugin(string Source) : PluginsIntent;
 
     /// <summary>
-    /// 表示禁用全部第三方插件意图（Q6 恢复动作）。
+    /// 表示更新插件意图（Phase 8 评审 F3：行内"更新"按钮，走现有 UpdatePlugin 链路）。
     /// </summary>
-    public sealed partial record DisableAllThirdParty : PluginsIntent;
+    /// <param name="Name">插件包名。</param>
+    public sealed partial record UpdatePlugin(string Name) : PluginsIntent;
+
+    /// <summary>
+    /// 表示可更新插件名投影变化的回流意图（BindSiblingState 自 UpdatesStore.PluginUpdates，§11.2）。
+    /// </summary>
+    /// <param name="Names">可更新插件包名列表。</param>
+    public sealed partial record UpdatablePluginsChanged(IReadOnlyList<string> Names) : PluginsIntent;
 
     /// <summary>
     /// 表示安装事务阶段推进的回流意图（§20 状态机）。

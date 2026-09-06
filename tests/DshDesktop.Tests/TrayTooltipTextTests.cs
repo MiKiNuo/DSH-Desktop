@@ -25,4 +25,20 @@ public sealed class TrayTooltipTextTests
     {
         await Assert.That(TrayTooltipText.Format((RuntimeLifecycle)999)).IsEqualTo("DSH Desktop — 已停止");
     }
+
+    // ===== Phase 8 评审 F12：FormatStartupElapsed 自 ShellStatusText 收编（壳状态栏 / Dashboard 共用） =====
+
+    [Test]
+    public async Task FormatStartupElapsed_TwoDecimalsWithSecondsUnit()
+    {
+        await Assert.That(TrayTooltipText.FormatStartupElapsed(TimeSpan.FromMilliseconds(1823)))
+            .IsEqualTo("1.82s");
+    }
+
+    [Test]
+    public async Task FormatStartupElapsed_SubSecond_KeepsTwoDecimals()
+    {
+        await Assert.That(TrayTooltipText.FormatStartupElapsed(TimeSpan.FromMilliseconds(350)))
+            .IsEqualTo("0.35s");
+    }
 }

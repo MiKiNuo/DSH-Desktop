@@ -1,0 +1,661 @@
+<!--
+  DSH Desktop 暗色主题（Phase 8 Issue 02）。
+  视觉基准：docs/DSH-Desktop-UI-Prototype.html 的 :root 色板与 class 语义；
+  颜色 / 字号 / 圆角集中在此字典，各 Feature 视图按 Classes 引用，禁止散落硬编码。
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <!-- ===== 色板（原型 :root 逐色对应） ===== -->
+        <SolidColorBrush x:Key="DshBgBrush" Color="#07101f" />
+        <SolidColorBrush x:Key="DshPanelBrush" Color="#0b1424" />
+        <SolidColorBrush x:Key="DshPanel2Brush" Color="#0e192b" />
+        <SolidColorBrush x:Key="DshBorderBrush" Color="#1e2c42" />
+        <SolidColorBrush x:Key="DshBorder2Brush" Color="#18263a" />
+        <SolidColorBrush x:Key="DshTextBrush" Color="#e9eef7" />
+        <SolidColorBrush x:Key="DshMutedBrush" Color="#8493aa" />
+        <SolidColorBrush x:Key="DshMuted2Brush" Color="#607089" />
+        <SolidColorBrush x:Key="DshBlueBrush" Color="#5f8cff" />
+        <SolidColorBrush x:Key="DshGreenBrush" Color="#38c793" />
+        <SolidColorBrush x:Key="DshYellowBrush" Color="#f4b955" />
+        <SolidColorBrush x:Key="DshRedBrush" Color="#ef6673" />
+        <SolidColorBrush x:Key="DshPurpleBrush" Color="#9b7cff" />
+
+        <!-- ===== 壳结构色（原型 sidebar / topbar / statusbar / nav） ===== -->
+        <SolidColorBrush x:Key="DshSidebarBrush" Color="#091321" />
+        <SolidColorBrush x:Key="DshStatusbarBrush" Color="#081321" />
+        <SolidColorBrush x:Key="DshNavTextBrush" Color="#8f9db1" />
+        <SolidColorBrush x:Key="DshNavHoverBgBrush" Color="#0d192a" />
+        <SolidColorBrush x:Key="DshNavHoverTextBrush" Color="#dce6f5" />
+        <SolidColorBrush x:Key="DshNavActiveBgBrush" Color="#11213a" />
+        <SolidColorBrush x:Key="DshNavActiveBorderBrush" Color="#203655" />
+        <SolidColorBrush x:Key="DshNavActiveTextBrush" Color="#eef4ff" />
+        <SolidColorBrush x:Key="DshNavLabelBrush" Color="#53647d" />
+        <SolidColorBrush x:Key="DshNavBadgeBgBrush" Color="#22395f" />
+        <SolidColorBrush x:Key="DshNavBadgeTextBrush" Color="#9db7ff" />
+        <SolidColorBrush x:Key="DshRuntimeMiniBgBrush" Color="#0b1727" />
+
+        <!-- ===== 按钮族（原型 .btn / .primary / .danger） ===== -->
+        <SolidColorBrush x:Key="DshBtnBgBrush" Color="#101c2e" />
+        <SolidColorBrush x:Key="DshBtnTextBrush" Color="#b8c5d8" />
+        <SolidColorBrush x:Key="DshBtnHoverBgBrush" Color="#14223a" />
+        <SolidColorBrush x:Key="DshBtnHoverBorderBrush" Color="#314766" />
+        <SolidColorBrush x:Key="DshBtnPrimaryBgBrush" Color="#4f78e8" />
+        <SolidColorBrush x:Key="DshBtnPrimaryBorderBrush" Color="#5f87f3" />
+        <SolidColorBrush x:Key="DshBtnDangerBgBrush" Color="#1f151d" />
+        <SolidColorBrush x:Key="DshBtnDangerBorderBrush" Color="#4d2b36" />
+        <SolidColorBrush x:Key="DshBtnDangerTextBrush" Color="#ff9aa5" />
+
+        <!-- ===== tag 族（原型 .tag / .warn / .info） ===== -->
+        <SolidColorBrush x:Key="DshTagBgBrush" Color="#12271f" />
+        <SolidColorBrush x:Key="DshTagBorderBrush" Color="#1d4637" />
+        <SolidColorBrush x:Key="DshTagTextBrush" Color="#6fd7b1" />
+        <SolidColorBrush x:Key="DshTagWarnBgBrush" Color="#2a2111" />
+        <SolidColorBrush x:Key="DshTagWarnBorderBrush" Color="#57441c" />
+        <SolidColorBrush x:Key="DshTagWarnTextBrush" Color="#e9bd67" />
+        <SolidColorBrush x:Key="DshTagInfoBgBrush" Color="#14243d" />
+        <SolidColorBrush x:Key="DshTagInfoBorderBrush" Color="#263e66" />
+        <SolidColorBrush x:Key="DshTagInfoTextBrush" Color="#91adff" />
+
+        <!-- ===== switch 开关（原型 .switch / .on） ===== -->
+        <SolidColorBrush x:Key="DshSwitchOffBrush" Color="#24324a" />
+        <SolidColorBrush x:Key="DshSwitchThumbOffBrush" Color="#7b899e" />
+        <SolidColorBrush x:Key="DshSwitchOnBrush" Color="#416ede" />
+
+        <!-- ===== Runtime 页（原型 .state-pill / .kv，Phase 8 Issue 04） ===== -->
+        <SolidColorBrush x:Key="DshStatePillBgBrush" Color="#0c1727" />
+        <SolidColorBrush x:Key="DshStatePillOnBgBrush" Color="#13294a" />
+        <SolidColorBrush x:Key="DshStatePillOnBorderBrush" Color="#315ba5" />
+        <SolidColorBrush x:Key="DshStatePillOnTextBrush" Color="#a8beff" />
+        <SolidColorBrush x:Key="DshKvValueBrush" Color="#bac6d8" />
+        <SolidColorBrush x:Key="DshRowSeparatorBrush" Color="#142238" />
+
+        <!-- ===== toast（原型 .toast） ===== -->
+        <SolidColorBrush x:Key="DshToastBgBrush" Color="#13243c" />
+        <SolidColorBrush x:Key="DshToastBorderBrush" Color="#29446c" />
+        <SolidColorBrush x:Key="DshToastTextBrush" Color="#cbd7e9" />
+
+        <!-- ===== Settings 页（原型 .path-value，Phase 8 Issue 05） ===== -->
+        <SolidColorBrush x:Key="DshPathValueBgBrush" Color="#091525" />
+        <SolidColorBrush x:Key="DshPathValueTextBrush" Color="#9baac0" />
+
+        <!-- ===== Plugins / Diagnostics 页（原型 .search / table / .diag-console，Phase 8 Issue 06） ===== -->
+        <SolidColorBrush x:Key="DshSearchBgBrush" Color="#0b1626" />
+        <SolidColorBrush x:Key="DshPluginNameBrush" Color="#dce5f1" />
+        <SolidColorBrush x:Key="DshTableCellBrush" Color="#b8c5d8" />
+        <SolidColorBrush x:Key="DshDiagConsoleBgBrush" Color="#06101d" />
+        <SolidColorBrush x:Key="DshDiagConsoleBorderBrush" Color="#16263c" />
+        <SolidColorBrush x:Key="DshLogTextBrush" Color="#8ea0ba" />
+        <SolidColorBrush x:Key="DshLogOkBrush" Color="#65d8b0" />
+        <SolidColorBrush x:Key="DshLogBlueBrush" Color="#88a7ff" />
+        <SolidColorBrush x:Key="DshLogWarnBrush" Color="#e9bd67" />
+
+        <!-- ===== Dashboard 页（就绪行图标底色 tint，Phase 8 评审 F6：自 code-behind 收编） ===== -->
+        <SolidColorBrush x:Key="DshDashIconTintRunningBrush" Color="#2638c793" />
+        <SolidColorBrush x:Key="DshDashIconTintTransitionBrush" Color="#26f4b955" />
+        <SolidColorBrush x:Key="DshDashIconTintFailedBrush" Color="#26ef6673" />
+        <SolidColorBrush x:Key="DshDashIconTintStoppedBrush" Color="#268493aa" />
+
+        <!-- ===== 字号梯度（原型 body 13px 基准） ===== -->
+        <x:Double x:Key="DshFontSizeCaption">9</x:Double>
+        <x:Double x:Key="DshFontSizeSmall">10</x:Double>
+        <x:Double x:Key="DshFontSizeBodySmall">11</x:Double>
+        <x:Double x:Key="DshFontSizeBody">13</x:Double>
+        <x:Double x:Key="DshFontSizeTitle">14</x:Double>
+        <x:Double x:Key="DshFontSizeHero">21</x:Double>
+
+        <!-- ===== 圆角梯度（原型 8~12px） ===== -->
+        <CornerRadius x:Key="DshRadiusSmall">8</CornerRadius>
+        <CornerRadius x:Key="DshRadiusBadge">9</CornerRadius>
+        <CornerRadius x:Key="DshRadiusMedium">10</CornerRadius>
+        <CornerRadius x:Key="DshRadiusCard">11</CornerRadius>
+        <CornerRadius x:Key="DshRadiusPill">12</CornerRadius>
+    </Styles.Resources>
+
+    <!-- ===== 全局基底：背景 / 前景 / 字体（Window 级设置，靠属性继承下传，
+         保证未改造的 Feature 视图不裸奔，且不破坏按钮族的前景继承） ===== -->
+    <Style Selector="Window">
+        <Setter Property="Background" Value="{DynamicResource DshBgBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshTextBrush}" />
+        <Setter Property="FontFamily" Value="Inter,Segoe UI,Microsoft YaHei" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
+    </Style>
+
+    <!-- ===== 侧栏（原型 .sidebar / .brand / .nav-*） ===== -->
+    <Style Selector="Border.sidebar">
+        <Setter Property="Background" Value="{DynamicResource DshSidebarBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,0" />
+        <Setter Property="Padding" Value="12,18,12,14" />
+    </Style>
+    <Style Selector="Border.brand">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="9,0,9,15" />
+        <Setter Property="Margin" Value="0,0,0,8" />
+        <Setter Property="Height" Value="46" />
+    </Style>
+    <Style Selector="Border.brand-mark">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusBadge}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background">
+            <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#6a91ff" Offset="0" />
+                <GradientStop Color="#3f67d9" Offset="1" />
+            </LinearGradientBrush>
+        </Setter>
+    </Style>
+    <Style Selector="TextBlock.brand-mark-text">
+        <Setter Property="FontWeight" Value="ExtraBold" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.brand-title">
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.brand-sub">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    </Style>
+    <Style Selector="TextBlock.nav-label">
+        <Setter Property="Padding" Value="10,13,10,7" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavLabelBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Button.nav-btn">
+        <Setter Property="Height" Value="40" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="Margin" Value="0,0,0,3" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavTextBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.nav-btn:pointerover">
+        <Setter Property="Background" Value="{DynamicResource DshNavHoverBgBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavHoverTextBrush}" />
+    </Style>
+    <Style Selector="Button.nav-btn.active">
+        <Setter Property="Background" Value="{DynamicResource DshNavActiveBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshNavActiveBorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavActiveTextBrush}" />
+    </Style>
+    <Style Selector="TextBlock.nav-icon">
+        <Setter Property="Width" Value="20" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.nav-badge">
+        <Setter Property="MinWidth" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Padding" Value="5,0" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusBadge}" />
+        <Setter Property="Background" Value="{DynamicResource DshNavBadgeBgBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.nav-badge TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshNavBadgeTextBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.runtime-mini">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource DshRuntimeMiniBgBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusMedium}" />
+        <Setter Property="Padding" Value="10" />
+    </Style>
+    <Style Selector="TextBlock.runtime-mini-text">
+        <Setter Property="Foreground" Value="{DynamicResource DshMutedBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ===== 顶栏（原型 .topbar / .page-title / .page-desc） ===== -->
+    <Style Selector="Border.topbar">
+        <Setter Property="Height" Value="58" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Background" Value="#F0081721" />
+        <Setter Property="Padding" Value="22,0" />
+    </Style>
+    <Style Selector="TextBlock.page-title">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeTitle}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.page-desc">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="Margin" Value="8,0,0,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ===== 按钮族（原型 .btn / .primary / .danger / .ghost / .small） ===== -->
+    <Style Selector="Button.btn">
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DshBtnBgBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshBtnTextBrush}" />
+        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.btn:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBtnHoverBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DshBtnHoverBgBrush}" />
+    </Style>
+    <Style Selector="Button.btn.primary">
+        <Setter Property="Background" Value="{DynamicResource DshBtnPrimaryBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBtnPrimaryBorderBrush}" />
+        <Setter Property="Foreground" Value="#ffffff" />
+    </Style>
+    <Style Selector="Button.btn.danger">
+        <Setter Property="Background" Value="{DynamicResource DshBtnDangerBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBtnDangerBorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshBtnDangerTextBrush}" />
+    </Style>
+    <Style Selector="Button.btn.ghost">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.btn.small">
+        <Setter Property="MinHeight" Value="29" />
+        <Setter Property="Padding" Value="9,0" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    </Style>
+
+    <!-- ===== 卡片族（原型 .card / .card-head / .card-title / .card-subtitle / .card-body） ===== -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource DshPanelBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusCard}" />
+    </Style>
+    <Style Selector="Border.card-head">
+        <Setter Property="Padding" Value="15,13" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+    </Style>
+    <Style Selector="TextBlock.card-title">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="TextBlock.card-subtitle">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+    <Style Selector="Border.card-body">
+        <Setter Property="Padding" Value="15,14" />
+    </Style>
+
+    <!-- ===== tag 族（原型 .tag 绿 / .warn 黄 / .info 蓝） ===== -->
+    <Style Selector="Border.tag">
+        <Setter Property="Height" Value="21" />
+        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusMedium}" />
+        <Setter Property="Background" Value="{DynamicResource DshTagBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshTagBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.tag TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshTagTextBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.tag.warn">
+        <Setter Property="Background" Value="{DynamicResource DshTagWarnBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshTagWarnBorderBrush}" />
+    </Style>
+    <Style Selector="Border.tag.warn TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshTagWarnTextBrush}" />
+    </Style>
+    <Style Selector="Border.tag.info">
+        <Setter Property="Background" Value="{DynamicResource DshTagInfoBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshTagInfoBorderBrush}" />
+    </Style>
+    <Style Selector="Border.tag.info TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshTagInfoTextBrush}" />
+    </Style>
+
+    <!-- ===== switch 开关（原型 .switch：38x22 滑轨 + 圆形滑块；滑块位移由 ToggleSwitch
+         模板部件 PART_MovingKnobs 的控件逻辑驱动，本主题只负责配色） ===== -->
+    <Style Selector="ToggleSwitch.switch">
+        <Setter Property="MinWidth" Value="38" />
+        <Setter Property="MinHeight" Value="22" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border
+                    x:Name="Track"
+                    Width="38"
+                    Height="22"
+                    Padding="2"
+                    Background="{DynamicResource DshSwitchOffBrush}"
+                    CornerRadius="{DynamicResource DshRadiusPill}">
+                    <Panel x:Name="PART_MovingKnobs" HorizontalAlignment="Left">
+                        <Ellipse
+                            x:Name="Thumb"
+                            Width="18"
+                            Height="18"
+                            Fill="{DynamicResource DshSwitchThumbOffBrush}" />
+                    </Panel>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="ToggleSwitch.switch:checked /template/ Border#Track">
+        <Setter Property="Background" Value="{DynamicResource DshSwitchOnBrush}" />
+    </Style>
+    <Style Selector="ToggleSwitch.switch:checked /template/ Ellipse#Thumb">
+        <Setter Property="Fill" Value="#ffffff" />
+    </Style>
+
+    <!-- ===== Runtime 页（原型 .state-pill / .kv / .switch-row，Phase 8 Issue 04） ===== -->
+    <Style Selector="Border.state-pill">
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource DshStatePillBgBrush}" />
+        <Setter Property="Margin" Value="0,0,7,7" />
+    </Style>
+    <Style Selector="Border.state-pill TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshMutedBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+    </Style>
+    <Style Selector="Border.state-pill.on">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshStatePillOnBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DshStatePillOnBgBrush}" />
+    </Style>
+    <Style Selector="Border.state-pill.on TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshStatePillOnTextBrush}" />
+    </Style>
+    <Style Selector="TextBlock.kv-key">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    </Style>
+    <Style Selector="TextBlock.kv-value">
+        <Setter Property="Foreground" Value="{DynamicResource DshKvValueBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.switch-title">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.switch-desc">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="Margin" Value="0,3,0,0" />
+    </Style>
+    <Style Selector="Border.switch-row">
+        <Setter Property="Padding" Value="0,12" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshRowSeparatorBrush}" />
+    </Style>
+
+    <!-- ===== Settings 页（原型 .path-value：等宽路径框 + 省略号截断，Phase 8 Issue 05） ===== -->
+    <Style Selector="Border.path-value">
+        <Setter Property="Padding" Value="11,9" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource DshPathValueBgBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.path-value">
+        <Setter Property="Foreground" Value="{DynamicResource DshPathValueTextBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <!-- ===== Plugins / Diagnostics 页（原型 .toolbar / .search / table / .diag-console，
+         Phase 8 Issue 06） ===== -->
+    <Style Selector="StackPanel.toolbar">
+        <Setter Property="Spacing" Value="8" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+    <Style Selector="TextBox.search">
+        <Setter Property="MinWidth" Value="220" />
+        <Setter Property="MaxWidth" Value="390" />
+        <Setter Property="MinHeight" Value="34" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DshSearchBgBrush}" />
+        <Setter Property="Padding" Value="11,0" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.table-head">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.table-head">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="0,10" />
+    </Style>
+    <Style Selector="Border.table-row">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshRowSeparatorBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="0,11" />
+    </Style>
+    <Style Selector="TextBlock.plugin-name">
+        <Setter Property="Foreground" Value="{DynamicResource DshPluginNameBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.table-cell">
+        <Setter Property="Foreground" Value="{DynamicResource DshTableCellBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.diag-console">
+        <Setter Property="Background" Value="{DynamicResource DshDiagConsoleBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshDiagConsoleBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusBadge}" />
+        <Setter Property="Padding" Value="13" />
+        <Setter Property="MinHeight" Value="240" />
+    </Style>
+    <Style Selector="ListBox.diag-console">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox.diag-console ListBoxItem">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
+    <Style Selector="ListBox.diag-console ListBoxItem:pointerover">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ListBox.diag-console ListBoxItem:selected">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="TextBlock.log-line">
+        <Setter Property="FontFamily" Value="Cascadia Code,Consolas" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshLogTextBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.log-ts">
+        <Setter Property="FontFamily" Value="Cascadia Code,Consolas" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshLogBlueBrush}" />
+    </Style>
+    <Style Selector="TextBlock.log-line.log-ok">
+        <Setter Property="Foreground" Value="{DynamicResource DshLogOkBrush}" />
+    </Style>
+    <Style Selector="TextBlock.log-line.log-warn">
+        <Setter Property="Foreground" Value="{DynamicResource DshLogWarnBrush}" />
+    </Style>
+    <Style Selector="TextBlock.log-line.log-err">
+        <Setter Property="Foreground" Value="{DynamicResource DshRedBrush}" />
+    </Style>
+
+    <!-- ===== 状态栏（原型 .statusbar：27px 高，9px 静音文本） ===== -->
+    <Style Selector="Border.statusbar">
+        <Setter Property="Height" Value="27" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="BorderThickness" Value="0,1,0,0" />
+        <Setter Property="Background" Value="{DynamicResource DshStatusbarBrush}" />
+        <Setter Property="Padding" Value="12,0" />
+    </Style>
+    <Style Selector="TextBlock.statusbar-text">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ===== toast 浮层（原型 .toast：右下角，显隐由壳 View 控制透明度） ===== -->
+    <Style Selector="Border.toast">
+        <Setter Property="Padding" Value="12,10" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusBadge}" />
+        <Setter Property="Background" Value="{DynamicResource DshToastBgBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshToastBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BoxShadow" Value="0 12 34 0 #3D000000" />
+    </Style>
+    <Style Selector="Border.toast TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshToastTextBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    </Style>
+
+    <!-- ===== Dashboard（原型 .hero / .eyebrow / .ready-* / .metric / .stat / .timeline / .activity，
+         Phase 8 Issue 03） ===== -->
+    <Style Selector="Border.hero-main">
+        <Setter Property="Padding" Value="22" />
+    </Style>
+    <Style Selector="TextBlock.eyebrow">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+    <Style Selector="Border.ready-icon">
+        <Setter Property="Width" Value="26" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="CornerRadius" Value="13" />
+        <Setter Property="Background" Value="#2638c793" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.ready-icon TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource DshGreenBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.hero-title">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeHero}" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.hero-sub">
+        <Setter Property="Foreground" Value="{DynamicResource DshMutedBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.health-status">
+        <Setter Property="Foreground" Value="{DynamicResource DshGreenBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.metric-label">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.metric-value">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.stat-label">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    </Style>
+    <Style Selector="TextBlock.stat-value">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Margin" Value="0,4" />
+    </Style>
+    <Style Selector="TextBlock.stat-foot">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+    </Style>
+    <Style Selector="TextBlock.timeline-check">
+        <Setter Property="Foreground" Value="{DynamicResource DshGreenBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.timeline-name">
+        <Setter Property="Foreground" Value="{DynamicResource DshMutedBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.timeline-time">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="TextAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.activity-title">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style Selector="TextBlock.activity-time">
+        <Setter Property="Foreground" Value="{DynamicResource DshMuted2Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+    </Style>
+    <!-- 条形（原型 .bar / .timeline-line）：6px 圆角轨道 + 左对齐填充；
+         填充宽度由 ProgressBar 控件逻辑按 Value/Maximum 驱动 PART_Indicator。 -->
+    <Style Selector="ProgressBar.bar">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Background" Value="#12203a" />
+        <Setter Property="Foreground" Value="{DynamicResource DshBlueBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border
+                    x:Name="PART_Track"
+                    Background="{TemplateBinding Background}"
+                    ClipToBounds="True"
+                    CornerRadius="3">
+                    <Border
+                        x:Name="PART_Indicator"
+                        HorizontalAlignment="Left"
+                        Background="{TemplateBinding Foreground}"
+                        CornerRadius="3" />
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+</Styles>

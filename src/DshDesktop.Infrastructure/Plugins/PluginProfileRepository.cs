@@ -31,11 +31,13 @@ public sealed class PluginProfileRepository(
         {
             foreach ((string name, JsonNode? _) in dependencies)
             {
+                (string version, string description) = ReadInstalledInfo(name);
                 plugins.Add(new PluginInfo(
                     name,
-                    ReadInstalledVersion(name),
+                    version,
                     IsCore(name),
-                    bundles.Contains(name)));
+                    bundles.Contains(name),
+                    description));
             }
         }
 
@@ -260,16 +262,21 @@ public sealed class PluginProfileRepository(
         return bundles;
     }
 
-    private string ReadInstalledVersion(string name)
+    /// <summary>
+    /// 读取已安装插件的版本与描述（node_modules/&lt;pkg&gt;/package.json 一次读；缺文件/缺字段给占位/空串）。
+    /// </summary>
+    private (string Version, string Description) ReadInstalledInfo(string name)
     {
         string packageJsonPath = Path.Combine(profileDir, "node_modules", name, "package.json");
         if (!File.Exists(packageJsonPath))
         {
-            return "未安装";
+            return ("未安装", string.Empty);
         }
 
         JsonNode? node = JsonNode.Parse(File.ReadAllText(packageJsonPath));
-        return node?["version"]?.GetValue<string>() ?? "未知";
+        return (
+            node?["version"]?.GetValue<string>() ?? "未知",
+            node?["description"]?.GetValue<string>() ?? string.Empty);
     }
 
     private void CleanPatchEntries(string name)

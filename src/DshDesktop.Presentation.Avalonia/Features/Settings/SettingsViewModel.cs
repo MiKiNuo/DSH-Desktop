@@ -61,6 +61,42 @@ public sealed partial class SettingsViewModel
     public partial string? DataDirectory { get; private set; }
 
     /// <summary>
+    /// 获取插件目录。
+    /// </summary>
+    [MviBind(nameof(SettingsState.PluginsDirectory), BindingMode = MviBindingMode.OneWay)]
+    public partial string? PluginsDirectory { get; private set; }
+
+    /// <summary>
+    /// 获取 DSH Runtime 目录。
+    /// </summary>
+    [MviBind(nameof(SettingsState.DshRuntimeDirectory), BindingMode = MviBindingMode.OneWay)]
+    public partial string? DshRuntimeDirectory { get; private set; }
+
+    /// <summary>
+    /// 获取是否"关闭窗口最小化到托盘"。
+    /// </summary>
+    [MviBind(nameof(SettingsState.MinimizeToTrayOnClose), BindingMode = MviBindingMode.OneWay)]
+    public partial bool MinimizeToTrayOnClose { get; private set; }
+
+    /// <summary>
+    /// 获取是否"开机自动启动"。
+    /// </summary>
+    [MviBind(nameof(SettingsState.LaunchOnStartup), BindingMode = MviBindingMode.OneWay)]
+    public partial bool LaunchOnStartup { get; private set; }
+
+    /// <summary>
+    /// 获取是否"后台检查更新"。
+    /// </summary>
+    [MviBind(nameof(SettingsState.BackgroundUpdateCheck), BindingMode = MviBindingMode.OneWay)]
+    public partial bool BackgroundUpdateCheck { get; private set; }
+
+    /// <summary>
+    /// 获取是否"自动下载安装"。
+    /// </summary>
+    [MviBind(nameof(SettingsState.AutoDownloadUpdates), BindingMode = MviBindingMode.OneWay)]
+    public partial bool AutoDownloadUpdates { get; private set; }
+
+    /// <summary>
     /// 获取 Desktop 版本（编译期常量，非状态——§6 不入 State，同 AppShell/Updates 先例）。
     /// </summary>
     public string DesktopVersion => DesktopInfo.Version;
@@ -100,4 +136,34 @@ public sealed partial class SettingsViewModel
     /// </summary>
     [MviCommand(typeof(SettingsIntent.ChangeChannel), PayloadType = typeof(string))]
     public partial IMviAsyncCommand ChangeChannelCommand { get; private set; }
+
+    /// <summary>
+    /// 获取切换"关闭窗口最小化到托盘"命令（无载荷翻转）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.ToggleMinimizeToTrayOnClose))]
+    public partial IMviAsyncCommand ToggleMinimizeToTrayOnCloseCommand { get; private set; }
+
+    /// <summary>
+    /// 获取切换"开机自动启动"命令（无载荷翻转）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.ToggleLaunchOnStartup))]
+    public partial IMviAsyncCommand ToggleLaunchOnStartupCommand { get; private set; }
+
+    /// <summary>
+    /// 获取切换"后台检查更新"命令（无载荷翻转）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.ToggleBackgroundUpdateCheck))]
+    public partial IMviAsyncCommand ToggleBackgroundUpdateCheckCommand { get; private set; }
+
+    /// <summary>
+    /// 获取切换"自动下载安装"命令（无载荷翻转）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.ToggleAutoDownloadUpdates))]
+    public partial IMviAsyncCommand ToggleAutoDownloadUpdatesCommand { get; private set; }
+
+    /// <summary>
+    /// 获取打开目录命令（载荷：目录绝对路径）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.OpenDirectory), PayloadType = typeof(string))]
+    public partial IMviAsyncCommand OpenDirectoryCommand { get; private set; }
 }

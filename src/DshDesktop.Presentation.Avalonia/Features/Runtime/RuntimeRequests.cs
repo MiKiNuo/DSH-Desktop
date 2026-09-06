@@ -24,3 +24,21 @@ public sealed record RestartRuntimeRequest : IMviRequest<RuntimeSnapshot>;
 /// </summary>
 /// <param name="Enabled">目标安全模式状态。</param>
 public sealed record SetSafeModeRequest(bool Enabled) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示持久化"关闭窗口后保持 DSH Runtime"开关的跨层请求（ADR-0005）。
+/// </summary>
+/// <param name="Enabled">目标开关状态。</param>
+public sealed record SetKeepRuntimeOnCloseRequest(bool Enabled) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示持久化"异常启动自动进入安全模式"开关的跨层请求（ADR-0004 修订注）。
+/// </summary>
+/// <param name="Enabled">目标开关状态。</param>
+public sealed record SetAutoSafeModeOnFailureRequest(bool Enabled) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示持久化"启动时检查网络更新"开关的跨层请求（§34 修订注）。
+/// </summary>
+/// <param name="Enabled">目标开关状态。</param>
+public sealed record SetCheckUpdatesOnStartupRequest(bool Enabled) : IMviRequest<bool>;

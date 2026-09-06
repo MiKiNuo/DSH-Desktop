@@ -203,6 +203,7 @@ public sealed class RuntimeReducerTests
 
         await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Running);
         await Assert.That(result.State.StartupStage).IsEqualTo(RuntimeStartupStage.Ready);
+        await Assert.That(result.State.ProcessId).IsEqualTo(1234);
         await Assert.That(result.State.Port).IsEqualTo(5678);
         await Assert.That(result.State.Url).IsEqualTo("http://127.0.0.1:5678/?token=x");
     }
@@ -238,6 +239,7 @@ public sealed class RuntimeReducerTests
 
         await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
         await Assert.That(result.State.Health).IsEqualTo(RuntimeHealth.Unknown);
+        await Assert.That(result.State.ProcessId).IsNull();
         await Assert.That(result.State.Port).IsNull();
         await Assert.That(result.State.Url).IsNull();
         await Assert.That(result.State.LastError).IsNotNull();
@@ -367,5 +369,68 @@ public sealed class RuntimeReducerTests
             Port = 5678,
             Url = "http://127.0.0.1:5678/?token=x",
         };
+    }
+
+    // ===== Phase 8 Issue 04：启动与恢复策略三开关（照 Settings ToggleSafeMode 先例：无载荷翻转 + 乐观更新 + 持久化副作用） =====
+
+    [Test]
+    public async Task ToggleKeepRuntimeOnClose_FlipsStateWithSaveEffect()
+    {
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.ToggleKeepRuntimeOnClose());
+
+        await Assert.That(result.State.KeepRuntimeOnClose).IsTrue(); // 默认关 → 翻为开
+        await Assert.That(result.Effects.Count).IsEqualTo(1);
+        await Assert.That(result.Effects[0] is RuntimeEffect.SaveKeepRuntimeOnClose { Enabled: true }).IsTrue();
+    }
+
+    [Test]
+    public async Task ToggleAutoSafeModeOnFailure_FlipsStateWithSaveEffect()
+    {
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.ToggleAutoSafeModeOnFailure());
+
+        await Assert.That(result.State.AutoSafeModeOnFailure).IsFalse();
+        await Assert.That(result.Effects[0] is RuntimeEffect.SaveAutoSafeModeOnFailure { Enabled: false }).IsTrue();
+    }
+
+    [Test]
+    public async Task ToggleCheckUpdatesOnStartup_FlipsStateWithSaveEffect()
+    {
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.ToggleCheckUpdatesOnStartup());
+
+        await Assert.That(result.State.CheckUpdatesOnStartup).IsTrue(); // 默认关 → 翻为开
+        await Assert.That(result.Effects[0] is RuntimeEffect.SaveCheckUpdatesOnStartup { Enabled: true }).IsTrue();
+    }
+
+    [Test]
+    public async Task PoliciesLoaded_AppliesPersistedProjection()
+    {
+        var result = _reducer.Reduce(
+            RuntimeState.Initial,
+            new RuntimeIntent.PoliciesLoaded(false, false, true));
+
+        await Assert.That(result.State.KeepRuntimeOnClose).IsFalse();
+        await Assert.That(result.State.AutoSafeModeOnFailure).IsFalse();
+        await Assert.That(result.State.CheckUpdatesOnStartup).IsTrue();
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task EnvironmentLoaded_SetsEnvironmentInfo()
+    {
+        var info = new RuntimeEnvironmentInfo("24.9.0", "149.0.0", @"D:\data\dsh-home", "web");
+
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.EnvironmentLoaded(info));
+
+        await Assert.That(result.State.Environment).IsEqualTo(info);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task DshVersionChanged_SetsDshVersionProjection()
+    {
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.DshVersionChanged("0.1.0-rc.12"));
+
+        await Assert.That(result.State.DshVersion).IsEqualTo("0.1.0-rc.12");
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
 }

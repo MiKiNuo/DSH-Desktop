@@ -41,6 +41,20 @@ public sealed partial class AppShellViewModel
         _ = BindSiblingState(updatesStore, ApplyUpdatesState);
         ApplyRuntimeState(runtimeStore.CurrentState);
         ApplyUpdatesState(updatesStore.CurrentState);
+
+        // 派生投影（页标题 / 状态文本）跟随状态投影属性联动刷新。
+        PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(CurrentPage))
+            {
+                OnPropertyChanged(nameof(PageTitle));
+                OnPropertyChanged(nameof(PageSubtitle));
+            }
+            else if (args.PropertyName == nameof(RuntimeIndicator))
+            {
+                OnPropertyChanged(nameof(RuntimeLifecycleText));
+            }
+        };
     }
 
     /// <summary>
@@ -66,6 +80,45 @@ public sealed partial class AppShellViewModel
     /// </summary>
     [MviBind(nameof(AppShellState.UpdateBadge), BindingMode = MviBindingMode.OneWay)]
     public partial int UpdateBadge { get; private set; }
+
+    /// <summary>
+    /// 获取 DSH 进程 ID 投影（状态栏 PID；未运行为 null，Phase 8 Issue 02）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.RuntimeProcessId), BindingMode = MviBindingMode.OneWay)]
+    public partial int? RuntimeProcessId { get; private set; }
+
+    /// <summary>
+    /// 获取实际监听端口投影（状态栏 Port；未运行为 null，Phase 8 Issue 02）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.RuntimePort), BindingMode = MviBindingMode.OneWay)]
+    public partial int? RuntimePort { get; private set; }
+
+    /// <summary>
+    /// 获取当前 DSH 版本投影（侧栏 runtime-mini；未知为 null，Phase 8 Issue 02）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.DshVersion), BindingMode = MviBindingMode.OneWay)]
+    public partial string? DshVersion { get; private set; }
+
+    /// <summary>
+    /// 获取当前页标题（顶栏主文案；映射见 <see cref="ShellPageText"/>，Phase 8 Issue 02）。
+    /// </summary>
+    public string PageTitle => ShellPageText.Title(CurrentPage);
+
+    /// <summary>
+    /// 获取当前页副标题（顶栏辅助文案；映射见 <see cref="ShellPageText"/>，Phase 8 Issue 02）。
+    /// </summary>
+    public string PageSubtitle => ShellPageText.Subtitle(CurrentPage);
+
+    /// <summary>
+    /// 获取 Runtime 生命周期中文状态词（状态栏与 runtime-mini 共用，Phase 8 Issue 02）。
+    /// </summary>
+    public string RuntimeLifecycleText => TrayTooltipText.StatusText(RuntimeIndicator);
+
+    /// <summary>
+    /// 获取自进程入口起的启动耗时文本（状态栏 Startup 段；编译期无关、只读一次，Phase 8 Issue 02）。
+    /// </summary>
+    public string StartupElapsedText =>
+        TrayTooltipText.FormatStartupElapsed(Domain.Common.StartupTimer.SinceProcessStart.Elapsed);
 
     /// <summary>
     /// 获取导航到 Runtime 页命令。
@@ -126,6 +179,14 @@ public sealed partial class AppShellViewModel
         {
             _ = DispatchAsync(new AppShellIntent.RuntimeIndicatorChanged(runtimeState.Lifecycle));
         }
+
+        if (runtimeState.ProcessId != Store.CurrentState.RuntimeProcessId
+            || runtimeState.Port != Store.CurrentState.RuntimePort)
+        {
+            _ = DispatchAsync(new AppShellIntent.RuntimeEndpointChanged(
+                runtimeState.ProcessId,
+                runtimeState.Port));
+        }
     }
 
     private void ApplyUpdatesState(UpdatesState updatesState)
@@ -135,6 +196,11 @@ public sealed partial class AppShellViewModel
         if (count != Store.CurrentState.UpdateBadge)
         {
             _ = DispatchAsync(new AppShellIntent.UpdateBadgeChanged(count));
+        }
+
+        if (updatesState.CurrentDshVersion != Store.CurrentState.DshVersion)
+        {
+            _ = DispatchAsync(new AppShellIntent.DshVersionChanged(updatesState.CurrentDshVersion));
         }
     }
 }

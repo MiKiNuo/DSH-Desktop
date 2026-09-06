@@ -1,3 +1,4 @@
+using DshDesktop.Application.Diagnostics;
 using DshDesktop.Application.Notifications;
 using DshDesktop.Domain.Diagnostics;
 
@@ -84,6 +85,19 @@ public sealed class NotificationTriggerTests
             Event("Plugin.Install.Begin demo", source: DiagnosticSource.App), notificationsEnabled: true);
 
         await Assert.That(content).IsNull();
+    }
+
+    [Test]
+    public async Task AutoSafeModeEvent_WhenEnabled_Matches()
+    {
+        // Phase 8 Issue 04（ADR-0004 修订注）：连续启动失败自动进入安全模式 → 通知。
+        NotificationContent? content = NotificationTrigger.TryMatch(
+            Event(DiagnosticEventNames.RuntimeAutoSafeModeEntered + " ConsecutiveFailures=2",
+                source: DiagnosticSource.App),
+            notificationsEnabled: true);
+
+        await Assert.That(content).IsNotNull();
+        await Assert.That(content!.Title).IsEqualTo("自动进入安全模式");
     }
 
     [Test]

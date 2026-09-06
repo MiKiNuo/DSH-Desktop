@@ -55,6 +55,36 @@ public sealed class DshDesktopConfig
 
     /// <summary>当前激活的自建 DSH Runtime 版本目录名；null = 借用外部安装（Electron 版）。</summary>
     public string? ActiveDshRuntime { get; set; }
+
+    /// <summary>上一次成功启动的耗时（毫秒，Phase 8 Issue 03：Dashboard"比上次快/慢"对比基准）；首次启动为 null。</summary>
+    public long? LastStartupElapsedMs { get; set; }
+
+    /// <summary>关闭窗口后保持 DSH Runtime（ADR-0005，默认关：Session URL token 一次性，重接管当前恒退化为重启，见 ADR-0005 落地对账）。</summary>
+    public bool KeepRuntimeOnClose { get; set; }
+
+    /// <summary>异常启动自动进入安全模式（ADR-0004 修订注，默认开：连续 2 次启动失败 → 自动 SafeMode + 通知）。</summary>
+    public bool AutoSafeModeOnFailure { get; set; } = true;
+
+    /// <summary>启动时检查网络更新（§34 修订注，默认关：用户显式开启才破例）。</summary>
+    public bool CheckUpdatesOnStartup { get; set; }
+
+    /// <summary>上次 Running 的 Runtime 进程 ID（ADR-0005 重接管探测依据；非 Session 数据，允许落盘）。</summary>
+    public int? LastRuntimePid { get; set; }
+
+    /// <summary>上次 Running 的 Runtime 监听端口（同上）。</summary>
+    public int? LastRuntimePort { get; set; }
+
+    /// <summary>关闭窗口最小化到托盘（Phase 8 Issue 05，默认开：关窗拦截为隐藏，宿主与 Runtime 保持运行，托盘菜单可退出）。</summary>
+    public bool MinimizeToTrayOnClose { get; set; } = true;
+
+    /// <summary>开机自动启动（Phase 8 Issue 05，默认关：HKCU Run 键写入当前 exe 路径，未安装形态同样持久化）。</summary>
+    public bool LaunchOnStartup { get; set; }
+
+    /// <summary>后台检查更新（Phase 8 Issue 05，默认开：UI Ready 后异步静默检查；与"启动时检查"开关独立）。</summary>
+    public bool BackgroundUpdateCheck { get; set; } = true;
+
+    /// <summary>自动下载安装（Phase 8 Issue 05，默认关：开 = 检查发现 Desktop 更新后后台预下载，应用重启仍需用户确认）。</summary>
+    public bool AutoDownloadUpdates { get; set; }
 }
 
 /// <summary>

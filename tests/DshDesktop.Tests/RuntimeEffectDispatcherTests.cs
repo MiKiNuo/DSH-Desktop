@@ -76,6 +76,47 @@ public sealed class RuntimeEffectDispatcherTests
             failed, new RuntimeReducer(), new RuntimeEffectDispatcher(mediator), []);
     }
 
+    // ===== Phase 8 Issue 04：三策略开关走 Intent→Effect→Mediator→config 落盘（照 SetSafeMode 链路） =====
+
+    [Test]
+    public async Task ToggleKeepRuntimeOnClose_PersistsViaMediator()
+    {
+        var mediator = new RecordingMediator();
+        using var store = CreateStore(mediator);
+
+        await store.DispatchAsync(new RuntimeIntent.ToggleKeepRuntimeOnClose());
+        await WaitForAsync(() => mediator.Requests.Contains(nameof(SetKeepRuntimeOnCloseRequest)));
+
+        await Assert.That(store.CurrentState.KeepRuntimeOnClose).IsTrue(); // 默认关 → 翻为开
+        await Assert.That(mediator.Requests).Contains(nameof(SetKeepRuntimeOnCloseRequest));
+    }
+
+    [Test]
+    public async Task ToggleAutoSafeModeOnFailure_PersistsViaMediator()
+    {
+        var mediator = new RecordingMediator();
+        using var store = CreateStore(mediator);
+
+        await store.DispatchAsync(new RuntimeIntent.ToggleAutoSafeModeOnFailure());
+        await WaitForAsync(() => mediator.Requests.Contains(nameof(SetAutoSafeModeOnFailureRequest)));
+
+        await Assert.That(store.CurrentState.AutoSafeModeOnFailure).IsFalse();
+        await Assert.That(mediator.Requests).Contains(nameof(SetAutoSafeModeOnFailureRequest));
+    }
+
+    [Test]
+    public async Task ToggleCheckUpdatesOnStartup_PersistsViaMediator()
+    {
+        var mediator = new RecordingMediator();
+        using var store = CreateStore(mediator);
+
+        await store.DispatchAsync(new RuntimeIntent.ToggleCheckUpdatesOnStartup());
+        await WaitForAsync(() => mediator.Requests.Contains(nameof(SetCheckUpdatesOnStartupRequest)));
+
+        await Assert.That(store.CurrentState.CheckUpdatesOnStartup).IsTrue();
+        await Assert.That(mediator.Requests).Contains(nameof(SetCheckUpdatesOnStartupRequest));
+    }
+
     private static async Task WaitForAsync(Func<bool> condition)
     {
         for (int attempt = 0; attempt < 300 && !condition(); attempt++)
@@ -109,6 +150,8 @@ public sealed class RuntimeEffectDispatcherTests
                 StartRuntimeRequest when StartError is not null =>
                     throw new InvalidOperationException(StartError),
                 StartRuntimeRequest => RunningSnapshot,
+                SetKeepRuntimeOnCloseRequest or SetAutoSafeModeOnFailureRequest
+                    or SetCheckUpdatesOnStartupRequest => true,
                 _ => throw new NotSupportedException($"未登记的请求：{request.GetType().Name}"),
             };
             return ValueTask.FromResult((TResponse)response);

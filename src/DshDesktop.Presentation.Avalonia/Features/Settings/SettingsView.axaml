@@ -4,65 +4,258 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Settings"
     x:DataType="vm:SettingsViewModel">
+    <!--
+      Settings 页（Phase 8 Issue 05，视觉基准 docs/DSH-Desktop-UI-Prototype.html settings section 245-258 行）：
+      数据与安装目录卡（三行 path-value + 打开）+ grid-2（桌面行为 / 更新策略）；
+      保留项并入：通用卡（安全模式 / 通知 / DSH 通道）+ 环境信息卡（只读版本与环境 KV）。
+    -->
     <ScrollViewer>
-        <StackPanel Margin="24" Spacing="16">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <TextBlock
-                    VerticalAlignment="Center"
-                    FontSize="22"
-                    FontWeight="SemiBold"
-                    Text="Settings" />
-                <TextBlock
-                    VerticalAlignment="Center"
-                    Foreground="#9AA4B2"
-                    Text="{Binding PendingOperation}" />
-            </StackPanel>
+        <StackPanel Margin="24" Spacing="14">
+            <TextBlock
+                Foreground="{DynamicResource DshMuted2Brush}"
+                FontSize="{DynamicResource DshFontSizeSmall}"
+                Text="{Binding PendingOperation}" />
+            <TextBlock
+                Foreground="{DynamicResource DshRedBrush}"
+                FontSize="{DynamicResource DshFontSizeSmall}"
+                Text="{Binding LastError}"
+                TextWrapping="Wrap" />
 
-            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
-
-            <Border
-                Padding="16"
-                Background="#161B22"
-                BorderBrush="#30363D"
-                BorderThickness="1"
-                CornerRadius="8">
-                <StackPanel Spacing="12">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="通用" />
-                    <ToggleSwitch
-                        HorizontalAlignment="Left"
-                        Click="OnSafeModeToggled"
-                        Content="安全模式（抑制 Runtime 自动启动，仅保留管理界面）"
-                        IsChecked="{Binding SafeMode}" />
-                    <ToggleSwitch
-                        HorizontalAlignment="Left"
-                        Click="OnNotificationsToggled"
-                        Content="Windows 通知（Runtime 崩溃 / 插件事务回滚时气泡提醒）"
-                        IsChecked="{Binding NotificationsEnabled}" />
-                    <StackPanel Orientation="Horizontal" Spacing="12">
-                        <TextBlock VerticalAlignment="Center" Text="DSH 更新通道：" />
-                        <ComboBox
-                            x:Name="ChannelBox"
-                            MinWidth="120"
-                            VerticalAlignment="Center"
-                            SelectionChanged="OnChannelSelectionChanged"
-                            SelectedItem="{Binding Channel}" />
-                    </StackPanel>
-                </StackPanel>
+            <!-- ===== 数据与安装目录卡 ===== -->
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Classes="card-head" Grid.Row="0">
+                        <StackPanel>
+                            <TextBlock Classes="card-title" Text="数据与安装目录" />
+                            <TextBlock Classes="card-subtitle" Text="所有用户数据跟随 DSH Desktop 安装盘保存" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="card-body" Grid.Row="1">
+                        <StackPanel>
+                            <TextBlock Classes="switch-title" Text="DSH 数据目录" />
+                            <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+                                <Border Classes="path-value">
+                                    <TextBlock
+                                        Classes="path-value"
+                                        Text="{Binding DataDirectory, FallbackValue='—', TargetNullValue='—'}" />
+                                </Border>
+                                <Button
+                                    Classes="btn small"
+                                    Grid.Column="1"
+                                    Margin="8,0,0,0"
+                                    Click="OnOpenDataDirectoryClicked"
+                                    Content="打开" />
+                            </Grid>
+                            <TextBlock Classes="switch-title" Margin="0,14,0,0" Text="插件目录" />
+                            <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+                                <Border Classes="path-value">
+                                    <TextBlock
+                                        Classes="path-value"
+                                        Text="{Binding PluginsDirectory, FallbackValue='—', TargetNullValue='—'}" />
+                                </Border>
+                                <Button
+                                    Classes="btn small"
+                                    Grid.Column="1"
+                                    Margin="8,0,0,0"
+                                    Click="OnOpenPluginsDirectoryClicked"
+                                    Content="打开" />
+                            </Grid>
+                            <TextBlock Classes="switch-title" Margin="0,14,0,0" Text="DSH Runtime" />
+                            <Grid Margin="0,8,0,0" ColumnDefinitions="*,Auto">
+                                <Border Classes="path-value">
+                                    <TextBlock
+                                        Classes="path-value"
+                                        Text="{Binding DshRuntimeDirectory, FallbackValue='—', TargetNullValue='—'}" />
+                                </Border>
+                                <Button
+                                    Classes="btn small"
+                                    Grid.Column="1"
+                                    Margin="8,0,0,0"
+                                    Click="OnOpenDshRuntimeDirectoryClicked"
+                                    Content="打开" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Border>
 
-            <Border
-                Padding="16"
-                Background="#161B22"
-                BorderBrush="#30363D"
-                BorderThickness="1"
-                CornerRadius="8">
-                <StackPanel Spacing="8">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="环境信息" />
-                    <TextBlock Foreground="#9AA4B2" Text="{Binding DesktopVersion, StringFormat='Desktop 版本：{0}', FallbackValue='Desktop 版本：—', TargetNullValue='Desktop 版本：—'}" />
-                    <TextBlock Foreground="#9AA4B2" Text="{Binding NodePath, StringFormat='Node 路径：{0}', FallbackValue='Node 路径：—', TargetNullValue='Node 路径：—'}" TextWrapping="Wrap" />
-                    <TextBlock Foreground="#9AA4B2" Text="{Binding DshHome, StringFormat='DSH_HOME：{0}', FallbackValue='DSH_HOME：—', TargetNullValue='DSH_HOME：—'}" TextWrapping="Wrap" />
-                    <TextBlock Foreground="#9AA4B2" Text="{Binding DataDirectory, StringFormat='数据目录：{0}', FallbackValue='数据目录：—', TargetNullValue='数据目录：—'}" TextWrapping="Wrap" />
-                </StackPanel>
+            <!-- ===== grid-2：桌面行为 + 更新策略 ===== -->
+            <Grid ColumnDefinitions="1.1*,0.9*">
+                <Border Classes="card">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Classes="card-head" Grid.Row="0">
+                            <TextBlock Classes="card-title" Text="桌面行为" />
+                        </Border>
+                        <Border Classes="card-body" Grid.Row="1">
+                            <StackPanel>
+                                <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Classes="switch-title" Text="关闭窗口最小化到托盘" />
+                                            <TextBlock Classes="switch-desc" Text="关窗隐藏到系统托盘，托盘菜单可真正退出" />
+                                        </StackPanel>
+                                        <ToggleSwitch
+                                            Classes="switch"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Click="OnMinimizeToTrayOnCloseToggled"
+                                            IsChecked="{Binding MinimizeToTrayOnClose}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="switch-row">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Classes="switch-title" Text="开机自动启动" />
+                                            <TextBlock Classes="switch-desc" Text="登录 Windows 时自动启动（默认关闭）" />
+                                        </StackPanel>
+                                        <ToggleSwitch
+                                            Classes="switch"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Click="OnLaunchOnStartupToggled"
+                                            IsChecked="{Binding LaunchOnStartup}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Border Classes="card" Grid.Column="1">
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Classes="card-head" Grid.Row="0">
+                            <TextBlock Classes="card-title" Text="更新策略" />
+                        </Border>
+                        <Border Classes="card-body" Grid.Row="1">
+                            <StackPanel>
+                                <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Classes="switch-title" Text="后台检查更新" />
+                                            <TextBlock Classes="switch-desc" Text="UI Ready 后异步执行" />
+                                        </StackPanel>
+                                        <ToggleSwitch
+                                            Classes="switch"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Click="OnBackgroundUpdateCheckToggled"
+                                            IsChecked="{Binding BackgroundUpdateCheck}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="switch-row">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel>
+                                            <TextBlock Classes="switch-title" Text="自动下载安装" />
+                                            <TextBlock Classes="switch-desc" Text="自动下载更新包，重启应用仍需确认" />
+                                        </StackPanel>
+                                        <ToggleSwitch
+                                            Classes="switch"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            Click="OnAutoDownloadUpdatesToggled"
+                                            IsChecked="{Binding AutoDownloadUpdates}" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <!-- ===== 通用卡（保留：安全模式 / 通知 / DSH 通道） ===== -->
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Classes="card-head" Grid.Row="0">
+                        <TextBlock Classes="card-title" Text="通用" />
+                    </Border>
+                    <Border Classes="card-body" Grid.Row="1">
+                        <StackPanel>
+                            <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="安全模式" />
+                                        <TextBlock Classes="switch-desc" Text="抑制 Runtime 自动启动，仅保留管理界面" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        Classes="switch"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="OnSafeModeToggled"
+                                        IsChecked="{Binding SafeMode}" />
+                                </Grid>
+                            </Border>
+                            <Border Classes="switch-row" BorderThickness="0,0,0,1">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="Windows 通知" />
+                                        <TextBlock Classes="switch-desc" Text="Runtime 崩溃 / 插件事务回滚时气泡提醒" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        Classes="switch"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="OnNotificationsToggled"
+                                        IsChecked="{Binding NotificationsEnabled}" />
+                                    </Grid>
+                                </Border>
+                            <Border Classes="switch-row">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <StackPanel>
+                                        <TextBlock Classes="switch-title" Text="DSH 更新通道" />
+                                        <TextBlock Classes="switch-desc" Text="npm dist-tag：latest 稳定 / alpha 尝鲜" />
+                                    </StackPanel>
+                                    <ComboBox
+                                        x:Name="ChannelBox"
+                                        Grid.Column="1"
+                                        MinWidth="120"
+                                        VerticalAlignment="Center"
+                                        SelectionChanged="OnChannelSelectionChanged"
+                                        SelectedItem="{Binding Channel}" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+
+            <!-- ===== 环境信息卡（保留：只读版本与环境 KV） ===== -->
+            <Border Classes="card">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Classes="card-head" Grid.Row="0">
+                        <TextBlock Classes="card-title" Text="环境信息" />
+                    </Border>
+                    <Border Classes="card-body" Grid.Row="1">
+                        <Grid
+                            ColumnDefinitions="96,*"
+                            RowDefinitions="Auto,Auto,Auto,Auto"
+                            RowSpacing="9">
+                            <TextBlock Classes="kv-key" Grid.Row="0" Text="Desktop" />
+                            <TextBlock
+                                Classes="kv-value"
+                                Grid.Row="0"
+                                Grid.Column="1"
+                                Text="{Binding DesktopVersion}" />
+                            <TextBlock Classes="kv-key" Grid.Row="1" Text="Node 路径" />
+                            <TextBlock
+                                Classes="kv-value"
+                                Grid.Row="1"
+                                Grid.Column="1"
+                                Text="{Binding NodePath, FallbackValue='—', TargetNullValue='—'}" />
+                            <TextBlock Classes="kv-key" Grid.Row="2" Text="DSH_HOME" />
+                            <TextBlock
+                                Classes="kv-value"
+                                Grid.Row="2"
+                                Grid.Column="1"
+                                Text="{Binding DshHome, FallbackValue='—', TargetNullValue='—'}" />
+                            <TextBlock Classes="kv-key" Grid.Row="3" Text="数据目录" />
+                            <TextBlock
+                                Classes="kv-value"
+                                Grid.Row="3"
+                                Grid.Column="1"
+                                Text="{Binding DataDirectory, FallbackValue='—', TargetNullValue='—'}" />
+                        </Grid>
+                    </Border>
+                </Grid>
             </Border>
         </StackPanel>
     </ScrollViewer>

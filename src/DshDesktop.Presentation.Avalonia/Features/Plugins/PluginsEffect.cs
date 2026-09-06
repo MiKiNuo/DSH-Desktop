@@ -32,7 +32,8 @@ public abstract partial record PluginsEffect : IMviEffect
     public sealed partial record InstallPlugin(string Source) : PluginsEffect;
 
     /// <summary>
-    /// 表示禁用全部第三方插件副作用（Q6 恢复动作）。
+    /// 表示更新插件副作用（走组合根 UpdatePlugin 链路：安装 name@latest 后刷新清单）。
     /// </summary>
-    public sealed partial record DisableAllThirdParty : PluginsEffect;
+    /// <param name="Name">插件包名。</param>
+    public sealed partial record UpdatePlugin(string Name) : PluginsEffect;
 }

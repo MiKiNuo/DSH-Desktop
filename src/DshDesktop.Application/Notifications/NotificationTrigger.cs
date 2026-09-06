@@ -5,9 +5,11 @@ namespace DshDesktop.Application.Notifications;
 
 /// <summary>
 /// 表示通知触发过滤器（Phase 7 Issue 03）：纯函数，事件名匹配 + 开关判定。
-/// 触发点两个——Runtime 崩溃（<see cref="DiagnosticEventNames.RuntimeCrashDetected"/>）+
+/// 触发点——Runtime 崩溃（<see cref="DiagnosticEventNames.RuntimeCrashDetected"/>）+
 /// 插件事务失败回滚（<see cref="DiagnosticEventNames.PluginInstallRollback"/> /
-/// <see cref="DiagnosticEventNames.PluginRollbackPrefix"/>*）。事件名以生产侧常量为单源。
+/// <see cref="DiagnosticEventNames.PluginRollbackPrefix"/>*）+
+/// 连续失败自动安全模式（<see cref="DiagnosticEventNames.RuntimeAutoSafeModeEntered"/>）。
+/// 事件名以生产侧常量为单源。
 /// </summary>
 public static class NotificationTrigger
 {
@@ -40,6 +42,12 @@ public static class NotificationTrigger
             || message.StartsWith(DiagnosticEventNames.PluginInstallRollback, StringComparison.Ordinal))
         {
             return new NotificationContent("插件事务失败回滚", message);
+        }
+
+        // ADR-0004 修订注（Phase 8 Issue 04）：连续启动失败自动进入安全模式。
+        if (message.StartsWith(DiagnosticEventNames.RuntimeAutoSafeModeEntered, StringComparison.Ordinal))
+        {
+            return new NotificationContent("自动进入安全模式", message);
         }
 
         return null;

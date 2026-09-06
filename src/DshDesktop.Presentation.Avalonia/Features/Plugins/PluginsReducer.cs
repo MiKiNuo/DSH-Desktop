@@ -82,6 +82,30 @@ public sealed partial class PluginsReducer
     }
 
     /// <summary>
+    /// 处理更新插件意图（行内"更新"按钮；走 UpdatePlugin 链路，完成后刷新清单）。
+    /// </summary>
+    [MviReduce(typeof(PluginsIntent.UpdatePlugin))]
+    private MviReduceResult<PluginsState, PluginsEffect> HandleUpdatePlugin(
+        PluginsState state,
+        PluginsIntent.UpdatePlugin intent)
+    {
+        return WithEffect(
+            state with { PendingOperation = $"更新 {intent.Name}…", LastError = null },
+            new PluginsEffect.UpdatePlugin(intent.Name));
+    }
+
+    /// <summary>
+    /// 处理可更新插件名投影回流意图（BindSiblingState 自 UpdatesStore，§11.2）。
+    /// </summary>
+    [MviReduce(typeof(PluginsIntent.UpdatablePluginsChanged))]
+    private MviReduceResult<PluginsState, PluginsEffect> HandleUpdatablePluginsChanged(
+        PluginsState state,
+        PluginsIntent.UpdatablePluginsChanged intent)
+    {
+        return Unchanged(state with { UpdatablePlugins = intent.Names });
+    }
+
+    /// <summary>
     /// 处理安装插件意图：声明事务副作用，阶段进度由 PluginOperationChanged 回流驱动。
     /// </summary>
     [MviReduce(typeof(PluginsIntent.InstallPlugin))]
@@ -97,19 +121,6 @@ public sealed partial class PluginsReducer
         return WithEffect(
             state with { PendingOperation = $"安装 {intent.Source}…", LastError = null },
             new PluginsEffect.InstallPlugin(intent.Source));
-    }
-
-    /// <summary>
-    /// 处理禁用全部第三方插件意图。
-    /// </summary>
-    [MviReduce(typeof(PluginsIntent.DisableAllThirdParty))]
-    private MviReduceResult<PluginsState, PluginsEffect> HandleDisableAllThirdParty(
-        PluginsState state,
-        PluginsIntent.DisableAllThirdParty intent)
-    {
-        return WithEffect(
-            state with { PendingOperation = "禁用全部第三方插件…", LastError = null },
-            new PluginsEffect.DisableAllThirdParty());
     }
 
     /// <summary>

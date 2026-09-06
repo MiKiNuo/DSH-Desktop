@@ -128,7 +128,7 @@ public sealed class PluginOrchestratorTests
         public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
         {
             // 校验要求：已安装且启用（PluginOrchestrator 的 Validating 阶段）。
-            return Task.FromResult<IReadOnlyList<PluginInfo>>([new PluginInfo("dsh-foo", "1.0.0", false, true)]);
+            return Task.FromResult<IReadOnlyList<PluginInfo>>([new PluginInfo("dsh-foo", "1.0.0", false, true, "")]);
         }
 
         public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
@@ -155,9 +155,9 @@ public sealed class PluginOrchestratorTests
         {
             return Task.FromResult<IReadOnlyList<PluginInfo>>(
             [
-                new PluginInfo("@deepseek-ai/dsh", "0.1.2", true, true),  // 核心启用：不可动
-                new PluginInfo("dsh-foo", "1.0.0", false, true),          // 第三方启用：应禁用
-                new PluginInfo("dsh-bar", "1.0.0", false, false),         // 第三方已禁用：跳过
+                new PluginInfo("@deepseek-ai/dsh", "0.1.2", true, true, ""),  // 核心启用：不可动
+                new PluginInfo("dsh-foo", "1.0.0", false, true, ""),          // 第三方启用：应禁用
+                new PluginInfo("dsh-bar", "1.0.0", false, false, ""),         // 第三方已禁用：跳过
             ]);
         }
 

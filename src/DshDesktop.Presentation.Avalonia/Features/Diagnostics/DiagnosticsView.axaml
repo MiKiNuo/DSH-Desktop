@@ -2,37 +2,66 @@
     x:Class="DshDesktop.Presentation.Avalonia.Features.Diagnostics.DiagnosticsView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="clr-namespace:DshDesktop.Domain.Diagnostics;assembly=DshDesktop.Domain"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Diagnostics"
     x:DataType="vm:DiagnosticsViewModel">
-    <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="16,12">
-            <TextBlock
-                FontSize="22"
-                FontWeight="SemiBold"
-                Text="Diagnostics" />
+    <!--
+      Diagnostics 页（Phase 8 Issue 06，视觉基准 docs/DSH-Desktop-UI-Prototype.html diagnostics section 221-243 行）：
+      工具条三按钮（运行诊断 primary / 导出诊断包 / 打开日志目录）+ Live 控制台卡片
+      （等宽字体 + log-ok/warn/err 级别着色 + 自动滚底 + "● Live" tag）。
+    -->
+    <DockPanel Margin="24">
+        <StackPanel
+            Classes="toolbar"
+            DockPanel.Dock="Top"
+            Orientation="Horizontal">
+            <Button
+                Classes="btn primary"
+                Command="{Binding RunDiagnosisCommand}"
+                Content="运行诊断" />
+            <Button
+                Classes="btn"
+                Click="OnExportClicked"
+                Content="导出诊断包" />
+            <Button
+                Classes="btn"
+                Command="{Binding OpenLogsDirectoryCommand}"
+                Content="打开日志目录" />
+        </StackPanel>
+
+        <Border Classes="card">
+            <Grid RowDefinitions="Auto,*">
+                <Border Classes="card-head" Grid.Row="0">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel>
+                            <TextBlock Classes="card-title" Text="实时诊断日志" />
+                            <TextBlock Classes="card-subtitle" Text="Runtime lifecycle / Health Check / Plugin load" />
+                        </StackPanel>
+                        <Border Classes="tag" Grid.Column="1">
+                            <TextBlock Text="● Live" />
+                        </Border>
+                    </Grid>
+                </Border>
+                <Border Classes="card-body" Grid.Row="1">
+                    <Border Classes="diag-console">
+                        <ListBox x:Name="EntriesList" Classes="diag-console">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DiagnosticRow">
+                                    <Grid ColumnDefinitions="95,*">
+                                        <TextBlock Classes="log-ts" Text="{Binding TimestampText}" />
+                                        <TextBlock
+                                            Classes="log-line"
+                                            Classes.log-ok="{Binding IsOk}"
+                                            Classes.log-warn="{Binding IsWarning}"
+                                            Classes.log-err="{Binding IsError}"
+                                            Grid.Column="1"
+                                            Text="{Binding Message}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Border>
+            </Grid>
         </Border>
-        <ListBox x:Name="EntriesList" Padding="16,0" ItemsSource="{Binding Entries}">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="d:DiagnosticEvent">
-                    <StackPanel Orientation="Horizontal" Spacing="10">
-                        <TextBlock
-                            Width="95"
-                            FontFamily="Consolas"
-                            Foreground="#6B7280"
-                            Text="{Binding Timestamp, StringFormat='HH:mm:ss.fff'}" />
-                        <TextBlock
-                            Width="85"
-                            Foreground="#9AA4B2"
-                            Text="{Binding Source}" />
-                        <TextBlock
-                            Width="70"
-                            Foreground="#9AA4B2"
-                            Text="{Binding Level}" />
-                        <TextBlock FontFamily="Consolas" Text="{Binding Message}" TextWrapping="Wrap" />
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
     </DockPanel>
 </UserControl>

@@ -44,4 +44,41 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
             ViewModel.ChangeChannelCommand.Execute(channel);
         }
     }
+
+    // ===== Phase 8 Issue 05：桌面行为 / 更新策略开关（无载荷翻转）与打开目录（载荷来自 State 投影） =====
+
+    private void OnMinimizeToTrayOnCloseToggled(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.ToggleMinimizeToTrayOnCloseCommand.Execute(null);
+    }
+
+    private void OnLaunchOnStartupToggled(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.ToggleLaunchOnStartupCommand.Execute(null);
+    }
+
+    private void OnBackgroundUpdateCheckToggled(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.ToggleBackgroundUpdateCheckCommand.Execute(null);
+    }
+
+    private void OnAutoDownloadUpdatesToggled(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.ToggleAutoDownloadUpdatesCommand.Execute(null);
+    }
+
+    private void OnOpenDataDirectoryClicked(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.OpenDirectoryCommand.Execute(ViewModel.DataDirectory);
+    }
+
+    private void OnOpenPluginsDirectoryClicked(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.OpenDirectoryCommand.Execute(ViewModel.PluginsDirectory);
+    }
+
+    private void OnOpenDshRuntimeDirectoryClicked(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.OpenDirectoryCommand.Execute(ViewModel.DshRuntimeDirectory);
+    }
 }

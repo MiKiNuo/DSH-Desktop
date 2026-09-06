@@ -158,4 +158,58 @@ public sealed partial class RuntimeEffectDispatcher
                 cancellationToken).ConfigureAwait(false);
         }
     }
+
+    // ===== Phase 8 Issue 04：三策略开关持久化（照 SetSafeMode 链路：乐观更新，失败回流 RuntimeOperationFailed） =====
+
+    /// <summary>
+    /// 处理持久化"关闭窗口后保持 DSH Runtime"副作用。
+    /// </summary>
+    [MviEffect(typeof(RuntimeEffect.SaveKeepRuntimeOnClose))]
+    private async ValueTask HandleSaveKeepRuntimeOnClose(
+        RuntimeEffect.SaveKeepRuntimeOnClose effect,
+        CancellationToken cancellationToken)
+    {
+        await PersistPolicyAsync(
+            new SetKeepRuntimeOnCloseRequest(effect.Enabled), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 处理持久化"异常启动自动进入安全模式"副作用。
+    /// </summary>
+    [MviEffect(typeof(RuntimeEffect.SaveAutoSafeModeOnFailure))]
+    private async ValueTask HandleSaveAutoSafeModeOnFailure(
+        RuntimeEffect.SaveAutoSafeModeOnFailure effect,
+        CancellationToken cancellationToken)
+    {
+        await PersistPolicyAsync(
+            new SetAutoSafeModeOnFailureRequest(effect.Enabled), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 处理持久化"启动时检查网络更新"副作用。
+    /// </summary>
+    [MviEffect(typeof(RuntimeEffect.SaveCheckUpdatesOnStartup))]
+    private async ValueTask HandleSaveCheckUpdatesOnStartup(
+        RuntimeEffect.SaveCheckUpdatesOnStartup effect,
+        CancellationToken cancellationToken)
+    {
+        await PersistPolicyAsync(
+            new SetCheckUpdatesOnStartupRequest(effect.Enabled), cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask PersistPolicyAsync(
+        MiKiNuo.Mvi.Domain.MVI.Mediator.IMviRequest<bool> request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _ = await _mediator.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            await DispatchIntentAsync(
+                new RuntimeIntent.RuntimeOperationFailed(exception.Message),
+                cancellationToken).ConfigureAwait(false);
+        }
+    }
 }

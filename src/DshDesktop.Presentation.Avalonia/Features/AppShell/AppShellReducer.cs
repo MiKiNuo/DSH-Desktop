@@ -121,4 +121,26 @@ public sealed partial class AppShellReducer
     {
         return Unchanged(state with { UpdateBadge = intent.Count });
     }
+
+    /// <summary>
+    /// 处理 Runtime 进程/端口投影变化回流意图（§14：仅投影字段，状态栏 PID / Port 数据源）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.RuntimeEndpointChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleRuntimeEndpointChanged(
+        AppShellState state,
+        AppShellIntent.RuntimeEndpointChanged intent)
+    {
+        return Unchanged(state with { RuntimeProcessId = intent.ProcessId, RuntimePort = intent.Port });
+    }
+
+    /// <summary>
+    /// 处理当前 DSH 版本投影变化回流意图（§14：仅投影字段，runtime-mini 数据源）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.DshVersionChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleDshVersionChanged(
+        AppShellState state,
+        AppShellIntent.DshVersionChanged intent)
+    {
+        return Unchanged(state with { DshVersion = intent.Version });
+    }
 }

@@ -29,6 +29,32 @@ public abstract partial record SettingsIntent : IMviIntent
     public sealed partial record ChangeChannel(string Channel) : SettingsIntent;
 
     /// <summary>
+    /// 表示切换"关闭窗口最小化到托盘"意图（无载荷翻转，同 ToggleSafeMode 先例）。
+    /// </summary>
+    public sealed partial record ToggleMinimizeToTrayOnClose : SettingsIntent;
+
+    /// <summary>
+    /// 表示切换"开机自动启动"意图（无载荷翻转）。
+    /// </summary>
+    public sealed partial record ToggleLaunchOnStartup : SettingsIntent;
+
+    /// <summary>
+    /// 表示切换"后台检查更新"意图（无载荷翻转）。
+    /// </summary>
+    public sealed partial record ToggleBackgroundUpdateCheck : SettingsIntent;
+
+    /// <summary>
+    /// 表示切换"自动下载安装"意图（无载荷翻转）。
+    /// </summary>
+    public sealed partial record ToggleAutoDownloadUpdates : SettingsIntent;
+
+    /// <summary>
+    /// 表示打开目录意图（载荷来自 State 投影的路径；null/空 = 数据未加载，不产副作用）。
+    /// </summary>
+    /// <param name="Path">目标目录绝对路径。</param>
+    public sealed partial record OpenDirectory(string? Path) : SettingsIntent;
+
+    /// <summary>
     /// 表示设置信息已加载的回流意图。
     /// </summary>
     /// <param name="Info">设置信息快照。</param>

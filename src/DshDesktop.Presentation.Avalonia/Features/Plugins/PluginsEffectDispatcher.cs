@@ -115,19 +115,19 @@ public sealed partial class PluginsEffectDispatcher
     }
 
     /// <summary>
-    /// 处理禁用全部第三方插件副作用。
+    /// 处理更新插件副作用（照 Updates 链路：安装 name@latest 后刷新清单）。
     /// </summary>
-    [MviEffect(typeof(PluginsEffect.DisableAllThirdParty))]
-    private async ValueTask HandleDisableAllThirdParty(
-        PluginsEffect.DisableAllThirdParty effect,
+    [MviEffect(typeof(PluginsEffect.UpdatePlugin))]
+    private async ValueTask HandleUpdatePlugin(
+        PluginsEffect.UpdatePlugin effect,
         CancellationToken cancellationToken)
     {
         try
         {
-            IReadOnlyList<DshDesktop.Domain.Plugins.PluginInfo> plugins = await _mediator
-                .SendAsync(new DisableAllThirdPartyRequest(), cancellationToken)
+            _ = await _mediator
+                .SendAsync(new Updates.UpdatePluginRequest(effect.Name), cancellationToken)
                 .ConfigureAwait(false);
-            await DispatchIntentAsync(new PluginsIntent.PluginsLoaded(plugins), cancellationToken)
+            await DispatchIntentAsync(new PluginsIntent.LoadPlugins(), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
