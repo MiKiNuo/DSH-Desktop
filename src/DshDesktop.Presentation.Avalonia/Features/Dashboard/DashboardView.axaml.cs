@@ -16,12 +16,6 @@ namespace DshDesktop.Presentation.Avalonia.Features.Dashboard;
 /// </summary>
 public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 {
-    private readonly IBrush _iconTintRunning;
-    private readonly IBrush _iconTintTransition;
-    private readonly IBrush _iconTintFailed;
-    private readonly IBrush _iconTintStopped;
-    private readonly IBrush _muted;
-
     private readonly Border _readyIconBox;
     private readonly TextBlock _readyIconText;
     private readonly TextBlock _healthStatus;
@@ -35,13 +29,6 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
         _readyIconBox = FindRequiredControl<Border>("ReadyIconBox");
         _readyIconText = FindRequiredControl<TextBlock>("ReadyIconText");
         _healthStatus = FindRequiredControl<TextBlock>("HealthStatus");
-
-        // Phase 8 评审 F6：画刷集中 DshTheme 资源字典，code-behind 只引用键。
-        _iconTintRunning = RequireBrush("DshDashIconTintRunningBrush");
-        _iconTintTransition = RequireBrush("DshDashIconTintTransitionBrush");
-        _iconTintFailed = RequireBrush("DshDashIconTintFailedBrush");
-        _iconTintStopped = RequireBrush("DshDashIconTintStoppedBrush");
-        _muted = RequireBrush("DshMutedBrush");
     }
 
     /// <inheritdoc />
@@ -70,17 +57,16 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 
     private void ApplyLifecycleIndicator(RuntimeLifecycle lifecycle)
     {
-        (string glyph, IBrush tint) = lifecycle switch
+        string glyph = lifecycle switch
         {
-            RuntimeLifecycle.Running => ("✓", _iconTintRunning),
-            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering
-                => ("●", _iconTintTransition),
-            RuntimeLifecycle.Failed => ("✗", _iconTintFailed),
-            _ => ("○", _iconTintStopped),
+            RuntimeLifecycle.Running => "✓",
+            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering => "●",
+            RuntimeLifecycle.Failed => "✗",
+            _ => "○",
         };
         _readyIconText.Text = glyph;
         _readyIconText.Foreground = RuntimeLifecycleBrushes.For(lifecycle);
-        _readyIconBox.Background = tint;
+        _readyIconBox.Background = RuntimeLifecycleBrushes.TintFor(lifecycle);
     }
 
     private void ApplyHealthIndicator(RuntimeHealth health)
@@ -89,7 +75,7 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
         {
             RuntimeHealth.Healthy => RuntimeLifecycleBrushes.Running,
             RuntimeHealth.Unresponsive => RuntimeLifecycleBrushes.Failed,
-            _ => _muted,
+            _ => RuntimeLifecycleBrushes.Muted,
         };
     }
 
@@ -98,12 +84,5 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
     {
         return this.FindControl<TControl>(name)
             ?? throw new InvalidOperationException($"无法找到 {name} 控件。");
-    }
-
-    private IBrush RequireBrush(string key)
-    {
-        return this.TryFindResource(key, out object? value) && value is IBrush brush
-            ? brush
-            : throw new InvalidOperationException($"DshTheme 缺少 {key} 画刷资源。");
     }
 }

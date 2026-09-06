@@ -2,6 +2,8 @@
   DSH Desktop 暗色主题（Phase 8 Issue 02）。
   视觉基准：docs/DSH-Desktop-UI-Prototype.html 的 :root 色板与 class 语义；
   颜色 / 字号 / 圆角集中在此字典，各 Feature 视图按 Classes 引用，禁止散落硬编码。
+  豁免：code-behind 构造期需要的画刷走 RuntimeLifecycleBrushes 静态类
+  （构造期 View 未挂逻辑树，TryFindResource 走不到本字典——运行时实测崩溃）。
 -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -89,12 +91,6 @@
         <SolidColorBrush x:Key="DshLogOkBrush" Color="#65d8b0" />
         <SolidColorBrush x:Key="DshLogBlueBrush" Color="#88a7ff" />
         <SolidColorBrush x:Key="DshLogWarnBrush" Color="#e9bd67" />
-
-        <!-- ===== Dashboard 页（就绪行图标底色 tint，Phase 8 评审 F6：自 code-behind 收编） ===== -->
-        <SolidColorBrush x:Key="DshDashIconTintRunningBrush" Color="#2638c793" />
-        <SolidColorBrush x:Key="DshDashIconTintTransitionBrush" Color="#26f4b955" />
-        <SolidColorBrush x:Key="DshDashIconTintFailedBrush" Color="#26ef6673" />
-        <SolidColorBrush x:Key="DshDashIconTintStoppedBrush" Color="#268493aa" />
 
         <!-- ===== 字号梯度（原型 body 13px 基准） ===== -->
         <x:Double x:Key="DshFontSizeCaption">9</x:Double>

@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- supportedOS 清单：NativeWebView/WebView2 子窗口创建 + PerMonitorV2 DPI 感知所需。 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <!-- §31 修订（Q6-A）：Release + 指定 RID 即 AOT（dotnet publish -c Release -r win-x64）；
        无 RID 的 Release 构建不触发 AOT（AOT 必须有 RID，避免 dotnet build -c Release 炸掉）。 -->
