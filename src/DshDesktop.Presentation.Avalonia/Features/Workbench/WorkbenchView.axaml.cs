@@ -2,7 +2,10 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Platform.Storage;
+using DshDesktop.Application.Diagnostics;
 using DshDesktop.Domain.Common;
+using DshDesktop.Presentation.Avalonia.Features.Workbench.Bridge;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
 
@@ -17,6 +20,7 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 {
     private readonly NativeWebView _webViewHost;
     private readonly Border _placeholderOverlay;
+    private readonly DesktopBridgeProtocol _bridge = new();
     private string? _navigatedUrl;
 
     /// <summary>
@@ -32,6 +36,7 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 
         _webViewHost.NavigationStarted += (_, args) => OnNavigationStarted(args);
         _webViewHost.NavigationCompleted += (_, args) => OnNavigationCompleted(args);
+        _webViewHost.WebMessageReceived += (_, args) => OnWebMessageReceived(args);
     }
 
     private bool _webViewReadyLogged;
@@ -47,6 +52,7 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         if (args.IsSuccess)
         {
             ViewModel.NotifyNavigationCompleted(url, _webViewHost.CanGoBack, _webViewHost.CanGoForward);
+            _ = InstallBridgeAsync();
         }
         else
         {
@@ -71,6 +77,74 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             ViewModel.RequestGoBack();
             _ = _webViewHost.GoBack();
         }
+    }
+
+    // ---- Desktop Bridge（ADR-0006，§21 修订注扩展点：仅 dshDesktopDirectoryPicker.pick 一方法）----
+
+    private async Task InstallBridgeAsync()
+    {
+        // 每次导航完成重装：页面上下文重建后 shim 序号归零，挂起表同步清空。
+        _bridge.Reset();
+        try
+        {
+            await _webViewHost.InvokeScript(DesktopBridgeShim.InstallScript);
+            Serilog.Log.Information(DiagnosticEventNames.BridgeDirectoryPickerInstalled);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, DiagnosticEventNames.BridgeDirectoryPickerInstalled + " 注入失败");
+        }
+    }
+
+    private async void OnWebMessageReceived(WebMessageReceivedEventArgs args)
+    {
+        if (!_bridge.TryParseRequest(args.Body, out string id))
+        {
+            return;
+        }
+
+        if (!_bridge.TryBegin(id))
+        {
+            Serilog.Log.Warning(
+                DiagnosticEventNames.BridgeDirectoryPickerInvoked + " 重复请求 id={RequestId}，忽略", id);
+            return;
+        }
+
+        Serilog.Log.Information(
+            DiagnosticEventNames.BridgeDirectoryPickerInvoked + " RequestId={RequestId}", id);
+        try
+        {
+            string? path = await PickFolderAsync();
+            await _webViewHost.InvokeScript(DesktopBridgeShim.BuildResolveScript(id, path));
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                await _webViewHost.InvokeScript(DesktopBridgeShim.BuildRejectScript(id, ex.Message));
+            }
+            catch (Exception rejectEx)
+            {
+                Serilog.Log.Warning(rejectEx, DiagnosticEventNames.BridgeDirectoryPickerInvoked + " reject 回调失败");
+            }
+        }
+        finally
+        {
+            _bridge.Complete(id);
+        }
+    }
+
+    private async Task<string?> PickFolderAsync()
+    {
+        IStorageProvider? storageProvider = TopLevel.GetTopLevel(this)?.StorageProvider;
+        if (storageProvider is null)
+        {
+            throw new InvalidOperationException("StorageProvider 不可用。");
+        }
+
+        IReadOnlyList<IStorageFolder> folders = await storageProvider.OpenFolderPickerAsync(
+            new FolderPickerOpenOptions { Title = "选择文件夹", AllowMultiple = false });
+        return folders.Count > 0 ? folders[0].TryGetLocalPath() : null;
     }
 
     private void OnForwardClick(object? sender, RoutedEventArgs args)

@@ -36,4 +36,10 @@ public static class DiagnosticEventNames
 
     /// <summary>诊断包导出失败事件名（组合根发，Message 附带错误）。</summary>
     public const string DiagnosisExportFailed = "Diagnosis.Export.Failed";
+
+    /// <summary>Desktop Bridge shim 安装事件名（ADR-0006，WorkbenchView 每次导航完成重装后发，契约失效排查依据）。</summary>
+    public const string BridgeDirectoryPickerInstalled = "Bridge.DirectoryPicker.Installed";
+
+    /// <summary>Desktop Bridge 目录选择调用事件名（ADR-0006，WorkbenchView 收到 pick 请求时发）。</summary>
+    public const string BridgeDirectoryPickerInvoked = "Bridge.DirectoryPicker.Invoked";
 }
