@@ -58,5 +58,6 @@ nunit-*.xml
 /AGENTS.md
 /CONTEXT.md
 /docs
-.idea
-.scratch
+/.idea
+/.scratch
+/.workbuddy

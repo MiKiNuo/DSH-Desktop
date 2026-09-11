@@ -36,6 +36,7 @@ public sealed partial class MainWindow : Window
     private readonly IMviResolver _resolver;
     private readonly Func<bool>? _minimizeToTrayOnClose;
     private bool _exitRequested;
+    private readonly Grid _shellGrid;
     private readonly ContentControl _rootContent;
     private readonly Ellipse _statusBarDot;
     private readonly Ellipse _miniStatusDot;
@@ -45,6 +46,13 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock _toastText;
     private readonly DispatcherTimer _toastTimer;
     private readonly IReadOnlyDictionary<ShellPage, Button> _navButtons;
+
+    // ===== 侧栏折叠表现层（规则见 SidebarLayout，原型 @media(max-width:900px) 降级） =====
+    private readonly Button _sidebarToggle;
+    private readonly Grid _brandRow;
+    private readonly StackPanel _brandTextPanel;
+    private readonly Border _runtimeMini;
+    private readonly IReadOnlyList<TextBlock> _collapsibleSidebarTexts;
 
     /// <summary>
     /// 初始化主窗口。
@@ -66,6 +74,24 @@ public sealed partial class MainWindow : Window
 
         AvaloniaXamlLoader.Load(this);
         DataContext = _shellViewModel;
+        _shellGrid = FindRequiredControl<Grid>("ShellGrid");
+        _sidebarToggle = FindRequiredControl<Button>("SidebarToggle");
+        _brandRow = FindRequiredControl<Grid>("BrandRow");
+        _brandTextPanel = FindRequiredControl<StackPanel>("BrandTextPanel");
+        _runtimeMini = FindRequiredControl<Border>("RuntimeMini");
+        _collapsibleSidebarTexts =
+        [
+            FindRequiredControl<TextBlock>("NavLabelWorkspace"),
+            FindRequiredControl<TextBlock>("NavDashboardText"),
+            FindRequiredControl<TextBlock>("NavWorkbenchText"),
+            FindRequiredControl<TextBlock>("NavLabelManagement"),
+            FindRequiredControl<TextBlock>("NavPluginsText"),
+            FindRequiredControl<TextBlock>("NavRuntimeText"),
+            FindRequiredControl<TextBlock>("NavUpdatesText"),
+            FindRequiredControl<TextBlock>("NavDiagnosticsText"),
+            FindRequiredControl<TextBlock>("NavLabelSystem"),
+            FindRequiredControl<TextBlock>("NavSettingsText"),
+        ];
         _rootContent = FindRequiredControl<ContentControl>("RootContent");
         _statusBarDot = FindRequiredControl<Ellipse>("StatusBarDot");
         _miniStatusDot = FindRequiredControl<Ellipse>("MiniStatusDot");
@@ -107,6 +133,10 @@ public sealed partial class MainWindow : Window
                 RenderCurrentPage();
                 ApplyNavState();
             }
+            else if (args.PropertyName == nameof(AppShellViewModel.SidebarCollapsed))
+            {
+                ApplySidebarState();
+            }
             else if (args.PropertyName
                 is nameof(AppShellViewModel.RuntimeIndicator)
                 or nameof(AppShellViewModel.UpdateBadge))
@@ -126,9 +156,13 @@ public sealed partial class MainWindow : Window
             }
         };
 
+        // 折叠切换只发 Intent（§14：导航与折叠全走 AppShell），表现层按回流状态重排。
+        _sidebarToggle.Click += (_, _) => _shellViewModel.ToggleSidebarCommand.Execute(null);
+
         RenderCurrentPage();
         ApplyNavState();
         ApplyIndicators();
+        ApplySidebarState();
         WireToastScenarios();
     }
 
@@ -236,6 +270,60 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// 应用侧栏折叠态（原型 @media(max-width:900px) 降级规则，规则集中见 <see cref="SidebarLayout"/>）：
+    /// 列宽 218 ↔ 70；折叠时隐藏品牌文案 / 导航文案 / 分组标签 / 徽标 / runtime-mini，
+    /// 导航按钮图标居中，切换按钮箭头翻转。
+    /// </summary>
+    private void ApplySidebarState()
+    {
+        bool collapsed = _shellViewModel.SidebarCollapsed;
+        bool showText = SidebarLayout.ShowsTextContent(collapsed);
+
+        // 列宽唯一来源：侧栏 Border 填满列 0，故只设 ColumnDefinition（不再重复设 Border.Width）。
+        _shellGrid.ColumnDefinitions[0].Width =
+            new GridLength(SidebarLayout.WidthFor(collapsed));
+
+        _brandTextPanel.IsVisible = showText;
+        _runtimeMini.IsVisible = showText;
+        foreach (TextBlock text in _collapsibleSidebarTexts)
+        {
+            text.IsVisible = showText;
+        }
+
+        foreach (Button button in _navButtons.Values)
+        {
+            if (collapsed)
+            {
+                button.Classes.Add("collapsed");
+            }
+            else
+            {
+                button.Classes.Remove("collapsed");
+            }
+        }
+
+        // 折叠态品牌行居中（原型 .brand{justify-content:center}）：列定义非 AvaloniaProperty，
+        // 不能用 Style Setter，故在此直接切换。折叠时文案列隐藏（Auto=0），
+        // 两侧弹性列等宽，使 logo 与切换按钮整体居中。
+        _brandRow.ColumnDefinitions.Clear();
+        if (collapsed)
+        {
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+        }
+        else
+        {
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+        }
+
+        ApplyUpdatesBadge();
+        _sidebarToggle.Content = collapsed ? "⏵" : "⏴";
+    }
+
+    /// <summary>
     /// 应用壳指示器：状态栏 / runtime-mini 的 Runtime 生命周期状态点 + 更新中心徽标
     /// （表现逻辑属于 View；颜色映射共享自 Presentation 层，与 Runtime 页同色系）。
     /// </summary>
@@ -245,8 +333,18 @@ public sealed partial class MainWindow : Window
         _statusBarDot.Fill = lifecycleBrush;
         _miniStatusDot.Fill = lifecycleBrush;
 
+        ApplyUpdatesBadge();
+    }
+
+    /// <summary>
+    /// 更新徽标可见性唯一所有者（依赖 UpdateBadge 与侧栏折叠态两个来源，
+    /// 故由 ApplyIndicators / ApplySidebarState 共用，避免两处各写一半而互相覆盖）。
+    /// </summary>
+    private void ApplyUpdatesBadge()
+    {
         int badge = _shellViewModel.UpdateBadge;
-        _updatesBadgeBox.IsVisible = badge > 0;
+        _updatesBadgeBox.IsVisible =
+            badge > 0 && SidebarLayout.ShowsTextContent(_shellViewModel.SidebarCollapsed);
         _updatesBadgeText.Text = badge.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 

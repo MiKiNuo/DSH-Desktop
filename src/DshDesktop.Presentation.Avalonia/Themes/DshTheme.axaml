@@ -190,6 +190,32 @@
         <Setter Property="FontSize" Value="16" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
+    <!-- 折叠态导航按钮：图标居中（原型折叠态 .nav-btn justify-content:center;padding:0）。
+         .collapsed 由 MainWindow 按 AppShell.SidebarCollapsed 挂/摘。
+         注：品牌行折叠居中不在此处——ColumnDefinitions 非 AvaloniaProperty，无法用 Setter，
+         故由 MainWindow.ApplySidebarState 直接改列定义。 -->
+    <Style Selector="Button.nav-btn.collapsed">
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <!-- 折叠切换按钮（原型无此控件：原型为窗口宽度自动降级，桌面端改为手动点击触发）。 -->
+    <Style Selector="Button.sidebar-toggle">
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
+        <Setter Property="Background" Value="{DynamicResource DshRuntimeMiniBgBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavTextBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.sidebar-toggle:pointerover">
+        <Setter Property="BorderBrush" Value="{DynamicResource DshNavActiveBorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DshNavHoverTextBrush}" />
+    </Style>
     <Style Selector="Border.nav-badge">
         <Setter Property="MinWidth" Value="18" />
         <Setter Property="Height" Value="18" />

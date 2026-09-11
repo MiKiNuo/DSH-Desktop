@@ -11,29 +11,44 @@
     MinHeight="600">
     <!--
       应用壳（Phase 8 Issue 02，视觉基准 docs/DSH-Desktop-UI-Prototype.html）：
-      218px 侧栏（品牌 + Workspace/Management/System 三组导航 + runtime-mini）
+      侧栏（品牌 + Workspace/Management/System 三组导航 + runtime-mini，可折叠 218↔70）
       + 58px 顶栏（页标题/副标题 + 进入工作台）+ 内容区 + 27px 状态栏 + toast 浮层。
-      不做窄窗折叠（Q4 决策：YAGNI）；导航全走 AppShell Intent（MVI §14）。
+      侧栏折叠：规格照原型 @media(max-width:900px) 降级规则，桌面端改为点击切换
+      （Phase 9 修订，推翻 Phase 8 Q4「不做窄窗折叠」）；导航全走 AppShell Intent（MVI §14）。
     -->
     <Grid>
-        <Grid ColumnDefinitions="218,*">
+        <!-- 侧栏列宽：由 AppShell.SidebarCollapsed 驱动（218 ↔ 70，规则见 SidebarLayout）。
+             折叠规格照原型 @media(max-width:900px) 降级规则，桌面端改为手动点击切换（原型为窗口宽度自动降级）。 -->
+        <Grid x:Name="ShellGrid" ColumnDefinitions="218,*">
             <!-- ===== 侧栏 ===== -->
             <Border Classes="sidebar" Grid.Column="0">
                 <Grid RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0">
                         <Border Classes="brand">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Border Classes="brand-mark">
+                            <!-- 展开态：logo + 文案靠左，切换按钮靠右；折叠态：仅 logo + 切换按钮居中
+                                 （原型折叠态 .brand{justify-content:center}）。 -->
+                            <Grid x:Name="BrandRow" ColumnDefinitions="Auto,*,Auto">
+                                <Border Classes="brand-mark" Grid.Column="0">
                                     <TextBlock Classes="brand-mark-text" Text="D" />
                                 </Border>
-                                <StackPanel VerticalAlignment="Center">
+                                <StackPanel
+                                    x:Name="BrandTextPanel"
+                                    Grid.Column="1"
+                                    Margin="10,0,0,0"
+                                    VerticalAlignment="Center">
                                     <TextBlock Classes="brand-title" Text="DSH Desktop" />
                                     <TextBlock Classes="brand-sub" Text="Stable Runtime Host" />
                                 </StackPanel>
-                            </StackPanel>
+                                <!-- 折叠切换（原型 @media 由窗口宽度触发；桌面端提供显式入口）。 -->
+                                <Button
+                                    x:Name="SidebarToggle"
+                                    Classes="sidebar-toggle"
+                                    Grid.Column="2"
+                                    Content="⏴" />
+                            </Grid>
                         </Border>
 
-                        <TextBlock Classes="nav-label" Text="WORKSPACE" />
+                        <TextBlock x:Name="NavLabelWorkspace" Classes="nav-label" Text="WORKSPACE" />
                         <!-- 导航按钮文案以 ShellPageText.Title 为单一映射源（Phase 8 评审 F14）；此处 Text 仅为设计期占位。 -->
                         <Button
                             x:Name="NavDashboard"
@@ -41,7 +56,11 @@
                             Command="{Binding ShowDashboardCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="⌂" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="概览" />
+                                <TextBlock
+                                    x:Name="NavDashboardText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="概览" />
                             </Grid>
                         </Button>
                         <Button
@@ -50,18 +69,26 @@
                             Command="{Binding ShowWorkbenchCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="✦" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="DSH 工作台" />
+                                <TextBlock
+                                    x:Name="NavWorkbenchText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="DSH 工作台" />
                             </Grid>
                         </Button>
 
-                        <TextBlock Classes="nav-label" Text="MANAGEMENT" />
+                        <TextBlock x:Name="NavLabelManagement" Classes="nav-label" Text="MANAGEMENT" />
                         <Button
                             x:Name="NavPlugins"
                             Classes="nav-btn"
                             Command="{Binding ShowPluginsCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="⬡" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="插件管理" />
+                                <TextBlock
+                                    x:Name="NavPluginsText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="插件管理" />
                             </Grid>
                         </Button>
                         <Button
@@ -70,7 +97,11 @@
                             Command="{Binding ShowRuntimeCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="◈" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="运行环境" />
+                                <TextBlock
+                                    x:Name="NavRuntimeText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="运行环境" />
                             </Grid>
                         </Button>
                         <Button
@@ -79,7 +110,11 @@
                             Command="{Binding ShowUpdatesCommand}">
                             <Grid ColumnDefinitions="Auto,*,Auto">
                                 <TextBlock Classes="nav-icon" Text="↻" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="更新中心" />
+                                <TextBlock
+                                    x:Name="NavUpdatesText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="更新中心" />
                                 <Border
                                     x:Name="UpdatesBadgeBox"
                                     Classes="nav-badge"
@@ -95,24 +130,33 @@
                             Command="{Binding ShowDiagnosticsCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="⌁" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="诊断中心" />
+                                <TextBlock
+                                    x:Name="NavDiagnosticsText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="诊断中心" />
                             </Grid>
                         </Button>
 
-                        <TextBlock Classes="nav-label" Text="SYSTEM" />
+                        <TextBlock x:Name="NavLabelSystem" Classes="nav-label" Text="SYSTEM" />
                         <Button
                             x:Name="NavSettings"
                             Classes="nav-btn"
                             Command="{Binding ShowSettingsCommand}">
                             <Grid ColumnDefinitions="Auto,*">
                                 <TextBlock Classes="nav-icon" Text="⚙" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="设置" />
+                                <TextBlock
+                                    x:Name="NavSettingsText"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Text="设置" />
                             </Grid>
                         </Button>
                     </StackPanel>
 
                     <!-- runtime-mini：Runtime 状态点+Lifecycle / Desktop 版本 / DSH 版本（全为现有投影） -->
                     <Border
+                        x:Name="RuntimeMini"
                         Classes="runtime-mini"
                         Grid.Row="1"
                         VerticalAlignment="Bottom">

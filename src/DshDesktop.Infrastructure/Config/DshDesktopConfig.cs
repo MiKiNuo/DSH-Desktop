@@ -100,18 +100,109 @@ public sealed partial class DshConfigJsonContext : JsonSerializerContext;
 public static class DshDesktopConfigStore
 {
     /// <summary>
-    /// 获取数据根目录（ADR-0003 修订：固定 %LOCALAPPDATA%\DshDesktop\data，开发与安装形态一致——
-    /// Velopack 更新会整体重命名安装根做回滚，数据根必须独立于安装根）。
+    /// 覆盖数据根的环境变量名（测试 / 便携场景可显式指定，优先级最高）。
     /// </summary>
-    public static string DataRoot { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "DshDesktop", "data");
+    internal const string DataRootEnvironmentVariable = "DSH_DESKTOP_DATA_ROOT";
+
+    /// <summary>
+    /// 获取数据根目录（ADR-0003 修订：默认跟随安装盘，避免用户数据落系统盘 C 盘）。
+    /// 解析顺序：环境变量 → 安装根同级 data → %LOCALAPPDATA% 兜底。
+    /// Velopack 更新只替换安装根下的 current\ 目录，data\ 与 current\ 平级不受影响。
+    /// </summary>
+    public static string DataRoot { get; } = ResolveDataRoot(
+        Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "DshDesktop", "data"),
+        ResolveInstallRoot(AppContext.BaseDirectory),
+        Environment.GetEnvironmentVariable(DataRootEnvironmentVariable));
+
+    /// <summary>
+    /// 解析数据根：环境变量优先，其次安装根同级 data，最后回退默认根。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）；入参注入使用例确定且无副作用。
+    /// </summary>
+    /// <param name="defaultRoot">兜底数据根（%LOCALAPPDATA%\DshDesktop\data）。</param>
+    /// <param name="installRoot">安装根；null 表示未安装形态（便携 / dotnet run）。</param>
+    /// <param name="environmentOverride">环境变量覆盖值。</param>
+    /// <returns>最终数据根绝对路径。</returns>
+    internal static string ResolveDataRoot(
+        string defaultRoot,
+        string? installRoot,
+        string? environmentOverride)
+    {
+        if (!string.IsNullOrWhiteSpace(environmentOverride))
+        {
+            return environmentOverride;
+        }
+
+        return string.IsNullOrWhiteSpace(installRoot)
+            ? defaultRoot
+            : Path.Combine(installRoot, "data");
+    }
+
+    /// <summary>
+    /// 解析安装根：Velopack 已安装形态下 exe 位于 &lt;安装根&gt;\current\，上跳一级即安装根；
+    /// 未安装形态（开发 bin 目录 / 便携解压）返回 null，由调用方回退默认根。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="baseDirectory">exe 所在目录（生产传 AppContext.BaseDirectory）。</param>
+    /// <returns>安装根；非安装形态为 null。</returns>
+    internal static string? ResolveInstallRoot(string baseDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(baseDirectory))
+        {
+            return null;
+        }
+
+        try
+        {
+            // BaseDirectory 形如 "<安装根>\current\"：去尾分隔符后取末段判断是否 current。
+            string trimmed = baseDirectory.TrimEnd(
+                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            // 仅当 exe 位于名为 current 的目录下才认定是 Velopack 安装根，
+            // 避免开发形态（bin\Debug\net10.0-windows）被误判。
+            return string.Equals(Path.GetFileName(trimmed), "current", StringComparison.OrdinalIgnoreCase)
+                ? Path.GetDirectoryName(trimmed)
+                : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// 获取配置文件路径（ADR-0003：数据根 config 子目录——exe 旁会随 Velopack 更新被替换，§39）。
     /// </summary>
     public static string ConfigPath { get; } =
         Path.Combine(DataRoot, "config", "dsh-desktop.config.json");
+
+    /// <summary>
+    /// 重锚配置中的 <c>dshHome</c> 到当前数据根（ADR-0003 修订：数据根从系统盘迁到安装盘后，
+    /// 已落盘配置仍指向旧位置，必须重锚，否则数据继续写旧盘）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="config">配置实例（原地修改）。</param>
+    /// <param name="newDataRoot">新数据根。</param>
+    /// <returns>是否发生了修改。</returns>
+    internal static bool RebaseDshHome(DshDesktopConfig config, string newDataRoot)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newDataRoot);
+
+        string expected = Path.Combine(newDataRoot, "dsh-home");
+        if (string.Equals(config.DshHome, expected, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        config.DshHome = expected;
+        return true;
+    }
 
     /// <summary>
     /// 旧版配置路径（exe 旁），仅用于一次性迁移。
@@ -156,6 +247,12 @@ public static class DshDesktopConfigStore
                     dirty = true;
                 }
 
+                // 数据根迁移：配置中的 dshHome 与当前数据根不一致时重锚（如 C 盘 → 安装盘）。
+                if (RebaseDshHome(loaded, DataRoot))
+                {
+                    dirty = true;
+                }
+
                 if (dirty)
                 {
                     await SaveAsync(loaded, cancellationToken).ConfigureAwait(false);
@@ -171,13 +268,42 @@ public static class DshDesktopConfigStore
     }
 
     /// <summary>
-    /// 回写配置到 exe 旁。
+    /// 回写配置到数据根 config 目录。
     /// </summary>
     /// <param name="config">配置实例。</param>
     /// <param name="cancellationToken">取消标记。</param>
-    public static async Task SaveAsync(DshDesktopConfig config, CancellationToken cancellationToken = default)
+    public static Task SaveAsync(DshDesktopConfig config, CancellationToken cancellationToken = default)
+        => SaveToPathAsync(config, ConfigPath, cancellationToken);
+
+    /// <summary>
+    /// 确保配置文件所在目录存在（首次全新安装时数据根内尚无 config 目录，
+    /// 而 File.Create 不创建父目录——缺此步骤会以 DirectoryNotFoundException 中断启动）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="configPath">配置文件完整路径。</param>
+    internal static void EnsureConfigDirectory(string configPath)
     {
-        await using FileStream writeStream = File.Create(ConfigPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
+        if (Path.GetDirectoryName(configPath) is { Length: > 0 } directory)
+        {
+            Directory.CreateDirectory(directory);
+        }
+    }
+
+    /// <summary>
+    /// 回写配置到指定路径（路径可注入，供测试覆盖首次安装场景）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="config">配置实例。</param>
+    /// <param name="configPath">目标配置文件路径。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    internal static async Task SaveToPathAsync(
+        DshDesktopConfig config,
+        string configPath,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureConfigDirectory(configPath);
+        await using FileStream writeStream = File.Create(configPath);
         await JsonSerializer
             .SerializeAsync(writeStream, config, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
             .ConfigureAwait(false);
