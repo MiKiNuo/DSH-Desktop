@@ -124,12 +124,23 @@
         <Setter Property="BorderThickness" Value="0,0,1,0" />
         <Setter Property="Padding" Value="12,18,12,14" />
     </Style>
-    <Style Selector="Border.brand">
+    <!-- 品牌行 = 折叠开关（Phase 9 修订）：整行可点，故样式从 Border.brand 迁到 Button.brand。
+         内容左右铺满（对标原型 .brand{display:flex;align-items:center}），
+         padding / margin / 高度沿用原 Border 值以保持视觉零变化。 -->
+    <Style Selector="Button.brand">
         <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="CornerRadius" Value="0" />
         <Setter Property="Padding" Value="9,0,9,15" />
         <Setter Property="Margin" Value="0,0,0,8" />
         <Setter Property="Height" Value="46" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.brand:pointerover">
+        <Setter Property="Background" Value="{DynamicResource DshNavHoverBgBrush}" />
     </Style>
     <Style Selector="Border.brand-mark">
         <Setter Property="Width" Value="28" />
@@ -197,24 +208,6 @@
     <Style Selector="Button.nav-btn.collapsed">
         <Setter Property="Padding" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
-    <!-- 折叠切换按钮（原型无此控件：原型为窗口宽度自动降级，桌面端改为手动点击触发）。 -->
-    <Style Selector="Button.sidebar-toggle">
-        <Setter Property="Width" Value="40" />
-        <Setter Property="Height" Value="24" />
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="Margin" Value="0,0,0,6" />
-        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshBorder2Brush}" />
-        <Setter Property="Background" Value="{DynamicResource DshRuntimeMiniBgBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource DshNavTextBrush}" />
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="Button.sidebar-toggle:pointerover">
-        <Setter Property="BorderBrush" Value="{DynamicResource DshNavActiveBorderBrush}" />
-        <Setter Property="Foreground" Value="{DynamicResource DshNavHoverTextBrush}" />
     </Style>
     <Style Selector="Border.nav-badge">
         <Setter Property="MinWidth" Value="18" />

@@ -24,11 +24,11 @@
             <Border Classes="sidebar" Grid.Column="0">
                 <Grid RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0">
-                        <Border Classes="brand">
-                            <!-- 展开态：logo + 文案靠左，切换按钮靠右；折叠态：仅 logo + 切换按钮居中
-                                 （原型折叠态 .brand{justify-content:center}）。 -->
-                            <Grid x:Name="BrandRow" ColumnDefinitions="Auto,*,Auto">
-                                <Border Classes="brand-mark" Grid.Column="0">
+                        <!-- 品牌行即折叠开关（Phase 9 修订）：整行可点，不再有独立按钮。
+                             点击 → AppShell.ToggleSidebarCommand，折叠态点 logo 即展开。 -->
+                        <Button x:Name="SidebarToggle" Classes="brand">
+                            <Grid x:Name="BrandRow" ColumnDefinitions="Auto,*">
+                                <Border x:Name="BrandMark" Classes="brand-mark" Grid.Column="0">
                                     <TextBlock Classes="brand-mark-text" Text="D" />
                                 </Border>
                                 <StackPanel
@@ -39,14 +39,8 @@
                                     <TextBlock Classes="brand-title" Text="DSH Desktop" />
                                     <TextBlock Classes="brand-sub" Text="Stable Runtime Host" />
                                 </StackPanel>
-                                <!-- 折叠切换（原型 @media 由窗口宽度触发；桌面端提供显式入口）。 -->
-                                <Button
-                                    x:Name="SidebarToggle"
-                                    Classes="sidebar-toggle"
-                                    Grid.Column="2"
-                                    Content="⏴" />
                             </Grid>
-                        </Border>
+                        </Button>
 
                         <TextBlock x:Name="NavLabelWorkspace" Classes="nav-label" Text="WORKSPACE" />
                         <!-- 导航按钮文案以 ShellPageText.Title 为单一映射源（Phase 8 评审 F14）；此处 Text 仅为设计期占位。 -->

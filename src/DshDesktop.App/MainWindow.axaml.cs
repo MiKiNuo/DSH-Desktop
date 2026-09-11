@@ -50,6 +50,7 @@ public sealed partial class MainWindow : Window
     // ===== 侧栏折叠表现层（规则见 SidebarLayout，原型 @media(max-width:900px) 降级） =====
     private readonly Button _sidebarToggle;
     private readonly Grid _brandRow;
+    private readonly Border _brandMark;
     private readonly StackPanel _brandTextPanel;
     private readonly Border _runtimeMini;
     private readonly IReadOnlyList<TextBlock> _collapsibleSidebarTexts;
@@ -77,6 +78,7 @@ public sealed partial class MainWindow : Window
         _shellGrid = FindRequiredControl<Grid>("ShellGrid");
         _sidebarToggle = FindRequiredControl<Button>("SidebarToggle");
         _brandRow = FindRequiredControl<Grid>("BrandRow");
+        _brandMark = FindRequiredControl<Border>("BrandMark");
         _brandTextPanel = FindRequiredControl<StackPanel>("BrandTextPanel");
         _runtimeMini = FindRequiredControl<Border>("RuntimeMini");
         _collapsibleSidebarTexts =
@@ -156,7 +158,7 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        // 折叠切换只发 Intent（§14：导航与折叠全走 AppShell），表现层按回流状态重排。
+        // 品牌行即折叠开关（Phase 9 修订）：整行任意位置可点，不再有独立按钮。
         _sidebarToggle.Click += (_, _) => _shellViewModel.ToggleSidebarCommand.Execute(null);
 
         RenderCurrentPage();
@@ -272,7 +274,7 @@ public sealed partial class MainWindow : Window
     /// <summary>
     /// 应用侧栏折叠态（原型 @media(max-width:900px) 降级规则，规则集中见 <see cref="SidebarLayout"/>）：
     /// 列宽 218 ↔ 70；折叠时隐藏品牌文案 / 导航文案 / 分组标签 / 徽标 / runtime-mini，
-    /// 导航按钮图标居中，切换按钮箭头翻转。
+    /// 导航按钮图标居中。
     /// </summary>
     private void ApplySidebarState()
     {
@@ -303,24 +305,27 @@ public sealed partial class MainWindow : Window
         }
 
         // 折叠态品牌行居中（原型 .brand{justify-content:center}）：列定义非 AvaloniaProperty，
-        // 不能用 Style Setter，故在此直接切换。折叠时文案列隐藏（Auto=0），
-        // 两侧弹性列等宽，使 logo 与切换按钮整体居中。
+        // 不能用 Style Setter，故在此直接切换。
+        // 折叠时文案列隐藏（Auto → 0），仅剩 logo 一个可见子元素；此时把 logo 放进居中的
+        // 中间列、两侧各一个 Star 弹性列，logo 才会呈居中（列数与子元素数无关，多余列宽为 0）。
         _brandRow.ColumnDefinitions.Clear();
         if (collapsed)
         {
             _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
             _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
             _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            Grid.SetColumn(_brandMark, 1);
+            Grid.SetColumn(_brandTextPanel, 2);
         }
         else
         {
             _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
             _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            Grid.SetColumn(_brandMark, 0);
+            Grid.SetColumn(_brandTextPanel, 1);
         }
 
         ApplyUpdatesBadge();
-        _sidebarToggle.Content = collapsed ? "⏵" : "⏴";
     }
 
     /// <summary>
