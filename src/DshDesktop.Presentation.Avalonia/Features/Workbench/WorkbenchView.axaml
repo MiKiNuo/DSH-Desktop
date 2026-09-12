@@ -3,122 +3,41 @@
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Workbench"
-    xmlns:local="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Workbench"
     xmlns:web="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.WebView"
     x:DataType="vm:WorkbenchViewModel">
     <!--
       Workbench 页（Phase 8 Issue 06，视觉基准 docs/DSH-Desktop-UI-Redesign.html #p-workbench）：
-      工具条（后退/前进/刷新分段控件 + 端口 tag）+ 错误条（notice.err + 重试/关闭）
-      + 内容区（card 外框 + 占位 + 进行中 ProgressBar.bar）。保留 WebView、_placeholderOverlay 逻辑与现有绑定。
+      用户精简后本页只保留内容区——WebView 直接铺满，外加占位层与加载条。
+      工具条（后退/前进/刷新）、端口标记、页内错误条已移除，见 §21 Phase 6 修订注。
+      不再需要卡片外框：它原本是为了和上方工具条分隔，工具条没了外框只会多一圈边框。
     -->
-    <UserControl.Resources>
-        <local:DshAddressConverter x:Key="DshAddressConverter" />
-    </UserControl.Resources>
-    <Grid RowDefinitions="Auto,Auto,*">
-        <!-- 工具条：后退/前进/刷新（分段控件）+ 端口标记（无地址栏——Session URL 含一次性 token，不暴露编辑，§21 Phase 6 修订）。 -->
-        <Border
-            Grid.Row="0"
-            Background="{DynamicResource DshSurface2Brush}"
-            BorderBrush="{DynamicResource DshLineSoftBrush}"
-            BorderThickness="0,0,0,1"
-            Padding="8,4"
-            IsEnabled="{Binding RuntimeReady}">
-            <Grid ColumnDefinitions="Auto,*,Auto">
-                <StackPanel Orientation="Horizontal" Spacing="0">
-                    <Button
-                        Classes="btn secondary icon seg-first"
-                        Click="OnBackClick"
-                        IsEnabled="{Binding CanGoBack}">
-                        <Path Classes="icon" Data="{DynamicResource IconChevronLeft}" />
-                    </Button>
-                    <Button
-                        Classes="btn secondary icon seg-mid"
-                        Click="OnForwardClick"
-                        IsEnabled="{Binding CanGoForward}">
-                        <Path Classes="icon" Data="{DynamicResource IconChevronRight}" />
-                    </Button>
-                    <Button
-                        Classes="btn secondary seg-last"
-                        Click="OnRefreshClick"
-                        IsEnabled="{Binding !Loading}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <Path Classes="icon icon-sm" Data="{DynamicResource IconRefresh}" />
-                            <TextBlock Text="刷新" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-                <Border
-                    Grid.Column="2"
-                    Classes="tag mono">
-                    <TextBlock Text="{Binding DshUrl, Converter={StaticResource DshAddressConverter}}" />
-                </Border>
-            </Grid>
-        </Border>
-
-        <!-- 页内错误条：导航失败展示 + 重试（§21 Phase 6 修订，不做独立错误页）。 -->
-        <Border
-            x:Name="ErrorBar"
-            Grid.Row="1"
-            Classes="notice err"
-            IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+    <Grid>
+        <web:NativeWebView x:Name="WebViewHost" />
+        <ProgressBar
+            Classes="bar"
+            IsIndeterminate="True"
+            IsVisible="{Binding Loading}"
+            VerticalAlignment="Top"
+            Margin="0" />
+        <Border x:Name="PlaceholderOverlay" Background="{DynamicResource DshSurface1Brush}">
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="10">
                 <Path
-                    Classes="icon"
-                    Grid.Column="0"
-                    Data="{DynamicResource IconAlert}"
-                    VerticalAlignment="Top"
-                    Margin="0,2,0,0" />
-                <StackPanel Grid.Column="1" Spacing="2">
-                    <TextBlock Classes="notice-title" Text="导航失败" />
-                    <TextBlock Text="{Binding Error}" TextWrapping="Wrap" />
-                </StackPanel>
-                <Button
-                    Grid.Column="2"
-                    Classes="btn secondary sm"
-                    Margin="12,0,0,0"
-                    Click="OnRefreshClick"
-                    Content="重试" />
-                <Button
-                    Grid.Column="3"
-                    Classes="btn ghost icon sm"
-                    Margin="6,0,0,0"
-                    Click="OnErrorCloseClicked">
-                    <Path Classes="icon icon-sm" Data="{DynamicResource IconClose}" />
-                </Button>
-            </Grid>
-        </Border>
-
-        <!-- 内容区：card 外框 + 进行中 ProgressBar + 占位 / WebView -->
-        <Border Grid.Row="2" Classes="card" Margin="0,12,0,0">
-            <Grid>
-                <web:NativeWebView x:Name="WebViewHost" />
-                <ProgressBar
-                    Classes="bar"
-                    IsIndeterminate="True"
-                    IsVisible="{Binding Loading}"
-                    VerticalAlignment="Top"
-                    Margin="0" />
-                <Border x:Name="PlaceholderOverlay" Background="{DynamicResource DshSurface1Brush}">
-                    <StackPanel
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Spacing="10">
-                        <Path
-                            Classes="icon icon-lg"
-                            Data="{DynamicResource IconTerminal}"
-                            HorizontalAlignment="Center" />
-                        <TextBlock
-                            FontSize="18"
-                            FontWeight="SemiBold"
-                            Text="等待 Runtime 就绪…"
-                            HorizontalAlignment="Center" />
-                        <TextBlock
-                            Foreground="{DynamicResource DshText3Brush}"
-                            Text="DSH Web UI 将在 Runtime 启动完成后装载"
-                            HorizontalAlignment="Center" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+                    Classes="icon icon-lg"
+                    Data="{DynamicResource IconTerminal}"
+                    HorizontalAlignment="Center" />
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="等待 Runtime 就绪…"
+                    HorizontalAlignment="Center" />
+                <TextBlock
+                    Foreground="{DynamicResource DshText3Brush}"
+                    Text="DSH Web UI 将在 Runtime 启动完成后装载"
+                    HorizontalAlignment="Center" />
+            </StackPanel>
         </Border>
     </Grid>
 </UserControl>

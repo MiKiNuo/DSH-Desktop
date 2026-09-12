@@ -30,7 +30,7 @@
                     <StackPanel Grid.Row="0">
                         <!-- 品牌行即折叠开关：整行可点，点击 → ToggleSidebarCommand。 -->
                         <Button x:Name="SidebarToggle" Classes="brand">
-                            <Grid x:Name="BrandRow">
+                            <Grid x:Name="BrandRow" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />

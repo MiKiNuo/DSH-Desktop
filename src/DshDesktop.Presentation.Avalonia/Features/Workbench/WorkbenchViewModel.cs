@@ -14,13 +14,14 @@ namespace DshDesktop.Presentation.Avalonia.Features.Workbench;
 /// <remarks>
 /// DSH Web UI 地址经 <see cref="MviViewModelBase{TState, TIntent, TEffect}.BindSiblingState"/>
 /// 从 Runtime Store 投影（兄弟 Store 只读订阅，§11.2 允许的非父子协作方式之一）。
+/// 用户移除页内工具条后，Refresh / GoBack / GoForward 三条命令通道已删除——
+/// 本 ViewModel 只剩下投影职责与导航事件上报。
 /// </remarks>
 public sealed partial class WorkbenchViewModel
     : MviViewModelBase<WorkbenchState, WorkbenchIntent, UnitEffect>
 {
     private readonly IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> _runtimeStore;
     private string? _dshUrl;
-    private bool _runtimeReady;
 
     /// <summary>
     /// 初始化 Workbench ViewModel。
@@ -41,21 +42,8 @@ public sealed partial class WorkbenchViewModel
     }
 
     /// <summary>
-    /// 刷新请求事件：携带从 Runtime Store 当前状态取出的最新 Session URL，由 View 执行 WebView 导航。
-    /// </summary>
-    public event Action<string>? ReloadRequested;
-
-    /// <summary>
-    /// 获取 Runtime 是否就绪（决定 WebView 是否可导航）。
-    /// </summary>
-    public bool RuntimeReady
-    {
-        get => _runtimeReady;
-        private set => SetProperty(ref _runtimeReady, value);
-    }
-
-    /// <summary>
     /// 获取 DSH Web UI 完整地址（含 token；Runtime 非 Running 时为 null）。
+    /// 这是本页唯一的对外投影：非 null 即导航，为 null 即退回占位层。
     /// </summary>
     public string? DshUrl
     {
@@ -70,60 +58,10 @@ public sealed partial class WorkbenchViewModel
     public partial string? CurrentUrl { get; private set; }
 
     /// <summary>
-    /// 获取是否可后退。
-    /// </summary>
-    [MviBind(nameof(WorkbenchState.CanGoBack), BindingMode = MviBindingMode.OneWay)]
-    public partial bool CanGoBack { get; private set; }
-
-    /// <summary>
-    /// 获取是否可前进。
-    /// </summary>
-    [MviBind(nameof(WorkbenchState.CanGoForward), BindingMode = MviBindingMode.OneWay)]
-    public partial bool CanGoForward { get; private set; }
-
-    /// <summary>
-    /// 获取是否正在加载页面。
+    /// 获取是否正在加载页面（驱动内容区顶部的加载条）。
     /// </summary>
     [MviBind(nameof(WorkbenchState.Loading), BindingMode = MviBindingMode.OneWay)]
     public partial bool Loading { get; private set; }
-
-    /// <summary>
-    /// 获取最近一次导航错误信息。
-    /// </summary>
-    [MviBind(nameof(WorkbenchState.Error), BindingMode = MviBindingMode.OneWay)]
-    public partial string? Error { get; private set; }
-
-    /// <summary>
-    /// 请求后退（View 确认 WebView 可后退后调用；实际历史导航由 View 调 WebView API）。
-    /// </summary>
-    public void RequestGoBack()
-    {
-        _ = DispatchAsync(new WorkbenchIntent.NavigateBack());
-    }
-
-    /// <summary>
-    /// 请求前进（View 确认 WebView 可前进后调用；实际历史导航由 View 调 WebView API）。
-    /// </summary>
-    public void RequestGoForward()
-    {
-        _ = DispatchAsync(new WorkbenchIntent.NavigateForward());
-    }
-
-    /// <summary>
-    /// 请求刷新：从 Runtime Store 当前状态取最新 Session URL（token 一次性，禁止缓存旧 URL，
-    /// §21 Phase 6 修订），经 <see cref="ReloadRequested"/> 通知 View 导航。
-    /// </summary>
-    public void RequestReload()
-    {
-        RuntimeState current = _runtimeStore.CurrentState;
-        if (current.Lifecycle is not RuntimeLifecycle.Running || current.Url is not { } url)
-        {
-            return;
-        }
-
-        _ = DispatchAsync(new WorkbenchIntent.Reload());
-        ReloadRequested?.Invoke(url);
-    }
 
     /// <summary>
     /// 上报 WebView 导航开始（View → Intent，§5 规则 1）。
@@ -135,29 +73,17 @@ public sealed partial class WorkbenchViewModel
     }
 
     /// <summary>
-    /// 上报 WebView 导航完成（View → Intent，§5 规则 1）。
+    /// 上报 WebView 导航完成（View → Intent，§5 规则 1）。成功与失败共用此入口——
+    /// 失败不再有页内错误条承载，但同样要结束加载，否则加载条永久悬停。
     /// </summary>
     /// <param name="url">完成地址。</param>
-    /// <param name="canGoBack">完成时 WebView 是否可后退。</param>
-    /// <param name="canGoForward">完成时 WebView 是否可前进。</param>
-    public void NotifyNavigationCompleted(string url, bool canGoBack, bool canGoForward)
+    public void NotifyNavigationCompleted(string url)
     {
-        _ = DispatchAsync(new WorkbenchIntent.NavigationCompleted(url, canGoBack, canGoForward));
-    }
-
-    /// <summary>
-    /// 上报 WebView 导航失败（View → Intent，§5 规则 1）。
-    /// </summary>
-    /// <param name="error">错误信息。</param>
-    public void NotifyNavigationFailed(string error)
-    {
-        _ = DispatchAsync(new WorkbenchIntent.NavigationFailed(error));
+        _ = DispatchAsync(new WorkbenchIntent.NavigationCompleted(url));
     }
 
     private void ApplyRuntimeState(RuntimeState runtimeState)
     {
-        bool running = runtimeState.Lifecycle is RuntimeLifecycle.Running;
-        RuntimeReady = running;
-        DshUrl = running ? runtimeState.Url : null;
+        DshUrl = runtimeState.Lifecycle is RuntimeLifecycle.Running ? runtimeState.Url : null;
     }
 }

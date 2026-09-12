@@ -3,12 +3,18 @@ using System.Text.RegularExpressions;
 namespace DshDesktop.Tests;
 
 /// <summary>
-/// 主题资源引用守卫：Avalonia 的 <c>{DynamicResource}</c> 找不到键时静默失败（不抛错、
-/// 只是不生效），一次 77 键的色板重命名很容易留下拼错或漏改的引用，且不会有任何报错。
-/// 此测试把「所有被引用的 Dsh*/Icon* 键都必须在 DshTheme.axaml 中定义」变成编译期外的硬约束。
+/// 主题文件守卫：资源键存在性 + 动画属性可用性 + 页内共享状态的控件归属。
+/// 这些都是 **XAML 编译器看不到** 的约束——编译能过，运行才炸。
 /// </summary>
 public sealed partial class ThemeResourceTests
 {
+    /// <summary>
+    /// 外壳顶栏的行号（<c>MainWindow.axaml</c> 里 <c>Classes="topbar"</c> 所在行）。
+    /// 页面内容从下一行开始，任何页内代码隐藏里的「页内共享状态」都必须在更靠后的行——
+    /// 序号大于它就说明那个控件不在本页，属于复制粘贴来源的残留引用。
+    /// </summary>
+    private const int ShellTopbarLine = 182;
+
     [GeneratedRegex(@"\{(?:Dynamic|Static)Resource\s+([A-Za-z0-9_]+)\s*\}")]
     private static partial Regex ResourceReference();
 
@@ -59,6 +65,36 @@ public sealed partial class ThemeResourceTests
         RegexOptions.Singleline)]
     private static partial Regex IconGeometryElement();
 
+    [GeneratedRegex("<KeyFrame\\b[^>]*>([\\s\\S]*?)</KeyFrame>", RegexOptions.Singleline)]
+    private static partial Regex KeyFrameElement();
+
+    [Test]
+    public async Task NoAnimationKeyframe_TargetsRenderTransform()
+    {
+        // RenderTransform 的声明类型是 ITransform，Avalonia 没有为它注册动画器，
+        // 在 KeyFrame 里设它会抛 InvalidOperationException: No animator registered...
+        // 更糟的是样式在**挂载阶段**就解析关键帧，与选择器是否命中该元素无关——
+        // 一个只被某个页面用到的动画，足以把整个应用打死在启动之前（实测过）。
+        //
+        // 要动 transform，请动画具体分量：ScaleTransform.ScaleX 是 double，有动画器。
+        var root = FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var offenders = new List<string>();
+        foreach (var file in EnumerateViews(root!))
+        {
+            foreach (Match frame in KeyFrameElement().Matches(File.ReadAllText(file)))
+            {
+                if (frame.Groups[1].Value.Contains("Property=\"RenderTransform\"", StringComparison.Ordinal))
+                {
+                    offenders.Add(Path.GetRelativePath(root!, file));
+                }
+            }
+        }
+
+        await Assert.That(string.Join(", ", offenders.Distinct())).IsEmpty();
+    }
+
     [Test]
     public async Task EveryIconGeometry_HasPathData()
     {
@@ -78,6 +114,58 @@ public sealed partial class ThemeResourceTests
             .ToList();
 
         await Assert.That(string.Join(", ", empty)).IsEmpty();
+    }
+
+    [GeneratedRegex("Classes=\"([^\"]+)\"")]
+    private static partial Regex ClassAttribute();
+
+    [GeneratedRegex("Selector=\"([^\"]+)\"")]
+    private static partial Regex StyleSelector();
+
+    [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
+    private static partial Regex XmlComment();
+
+    [Test]
+    public async Task EveryClassesMember_IsTargetedBySomeStyleSelector()
+    {
+        // Avalonia 对未知类名静默无视——写错一个字，控件只是"看起来有点怪"，不报错。
+        // 这条守住「类名不是孤儿」。
+        //
+        // 注释里的示例不能当引用（`Classes="card*"` 出现在契约说明里，不是真控件）。
+        //
+        // 已知例外：布局类名（由 View 自己的容器提供样式，主题不负责渲染它们）。
+        var layoutOnly = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "brand", "nav-btn", "nav-label", "nav-badge", "topbar", "statusbar",
+            "page-title", "page-desc", "runtime-mini-text",
+        };
+
+        var root = FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var sources = EnumerateViews(root!).ToList();
+        var targeted = sources
+            .SelectMany(f => StyleSelector().Matches(File.ReadAllText(f)))
+            .SelectMany(m => m.Groups[1].Value.Split(['.', ':', ' '], StringSplitOptions.RemoveEmptyEntries))
+            .ToHashSet(StringComparer.Ordinal);
+
+        var orphans = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var file in sources)
+        {
+            var text = XmlComment().Replace(await File.ReadAllTextAsync(file), string.Empty);
+            foreach (Match m in ClassAttribute().Matches(text))
+            {
+                foreach (var cls in m.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!layoutOnly.Contains(cls) && !targeted.Contains(cls))
+                    {
+                        orphans.Add($"{cls}  ←  {Path.GetRelativePath(root!, file)}");
+                    }
+                }
+            }
+        }
+
+        await Assert.That(string.Join(Environment.NewLine, orphans)).IsEmpty();
     }
 
     private static IEnumerable<string> EnumerateViews(string root)

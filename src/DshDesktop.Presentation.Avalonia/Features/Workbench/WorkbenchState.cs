@@ -6,20 +6,18 @@ namespace DshDesktop.Presentation.Avalonia.Features.Workbench;
 /// 表示 Workbench 状态（架构文档 §21：DSH Web UI 视为黑盒）。
 /// RuntimeReady / SessionUrl 从 Runtime Store 投影（§6：不保存可推导状态），不在此重复。
 /// </summary>
+/// <remarks>
+/// 用户精简掉页内工具条与错误条后，<c>CanGoBack</c> / <c>CanGoForward</c> / <c>Error</c>
+/// 失去全部消费方，已整链删除（§21 Phase 6 修订注）。
+/// </remarks>
 /// <param name="CurrentUrl">当前导航地址。</param>
-/// <param name="CanGoBack">是否可后退（WebView 内部历史，导航完成时回流）。</param>
-/// <param name="CanGoForward">是否可前进（WebView 内部历史，导航完成时回流）。</param>
 /// <param name="Loading">是否正在加载页面。</param>
-/// <param name="Error">最近一次导航错误信息（非空时展示页内错误条）。</param>
 public sealed record WorkbenchState(
     string? CurrentUrl,
-    bool CanGoBack,
-    bool CanGoForward,
-    bool Loading,
-    string? Error) : IMviState
+    bool Loading) : IMviState
 {
     /// <summary>
     /// 获取初始状态。
     /// </summary>
-    public static WorkbenchState Initial { get; } = new((string?)null, false, false, false, null);
+    public static WorkbenchState Initial { get; } = new((string?)null, false);
 }

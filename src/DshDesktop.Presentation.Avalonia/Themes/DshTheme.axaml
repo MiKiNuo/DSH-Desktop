@@ -98,7 +98,7 @@
         <Setter Property="Background" Value="{DynamicResource DshSurface1Brush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
         <Setter Property="BorderThickness" Value="0,0,1,0" />
-        <Setter Property="Padding" Value="12,18,12,14" />
+        <Setter Property="Padding" Value="12,14" />
     </Style>
 
     <!-- 品牌行 = 折叠开关：整行可点（Phase 9 修订），内容左右铺满 -->
@@ -107,7 +107,7 @@
         <Setter Property="BorderThickness" Value="0,0,0,1" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="CornerRadius" Value="0" />
-        <Setter Property="Padding" Value="9,0,9,15" />
+        <Setter Property="Padding" Value="9,0" />
         <Setter Property="Margin" Value="0,0,0,8" />
         <Setter Property="Height" Value="56" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -161,6 +161,7 @@
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{DynamicResource DshText2Brush}" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
         <Setter Property="FontWeight" Value="Medium" />
@@ -264,6 +265,7 @@
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
     </Style>
     <Style Selector="Button.btn:pointerover">
         <Setter Property="BorderBrush" Value="{DynamicResource DshText4Brush}" />
@@ -332,15 +334,8 @@
         <Setter Property="Padding" Value="9,0" />
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
     </Style>
-    <Style Selector="Button.btn.icon">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Padding" Value="0" />
-    </Style>
-    <Style Selector="Button.btn.icon.sm">
-        <Setter Property="Width" Value="27" />
-    </Style>
-
-    <!-- 分段控件：相邻按钮共享边框（左/中/右圆角） -->
+    <!-- 分段控件：相邻按钮共享边框（左/中/右圆角）。Workbench 工具条已移除，
+         现由 Diagnostics（级别筛选）与 Plugins（状态过滤）消费。 -->
     <Style Selector="Button.btn.seg-first">
         <Setter Property="CornerRadius" Value="8,0,0,8" />
         <Setter Property="Margin" Value="0" />
@@ -445,20 +440,6 @@
     </Style>
     <Style Selector="Border.tag.ok TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DshOkBrush}" />
-    </Style>
-    <Style Selector="Border.tag.warn">
-        <Setter Property="Background" Value="{DynamicResource DshWarnSoftBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshWarnLineBrush}" />
-    </Style>
-    <Style Selector="Border.tag.warn TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource DshWarnBrush}" />
-    </Style>
-    <Style Selector="Border.tag.err">
-        <Setter Property="Background" Value="{DynamicResource DshErrSoftBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshErrLineBrush}" />
-    </Style>
-    <Style Selector="Border.tag.err TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource DshErrBrush}" />
     </Style>
     <Style Selector="Border.tag.accent">
         <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />
@@ -834,26 +815,15 @@
         <Setter Property="Background" Value="{DynamicResource DshSurface3Brush}" />
         <Setter Property="ClipToBounds" Value="True" />
     </Style>
+    <!-- 条宽由 DashboardView 的 ColumnDefinition.Star 占比驱动（PercentColumnConverter），
+         不依赖 transform。这里原本有一个 scaleX 生长动画：RenderTransform 的声明类型是
+         ITransform，Avalonia 没有为它注册动画器，会在样式挂载阶段抛
+         InvalidOperationException 打死整个应用启动。守卫：ThemeResourceTests。 -->
     <Style Selector="Border.wf-fill">
         <Setter Property="Height" Value="8" />
         <Setter Property="CornerRadius" Value="99" />
         <Setter Property="Background" Value="{DynamicResource DshAccentBrush}" />
         <Setter Property="HorizontalAlignment" Value="Left" />
-        <Setter Property="RenderTransformOrigin" Value="0,0.5" />
-        <Style.Animations>
-            <Animation Duration="0:0:.8" Easing="CubicEaseOut">
-                <KeyFrame Cue="0%">
-                    <Setter Property="RenderTransform">
-                        <ScaleTransform ScaleX="0" ScaleY="1" />
-                    </Setter>
-                </KeyFrame>
-                <KeyFrame Cue="100%">
-                    <Setter Property="RenderTransform">
-                        <ScaleTransform ScaleX="1" ScaleY="1" />
-                    </Setter>
-                </KeyFrame>
-            </Animation>
-        </Style.Animations>
     </Style>
     <Style Selector="Border.wf-fill.muted">
         <Setter Property="Background" Value="{DynamicResource DshText4Brush}" />
@@ -989,20 +959,6 @@
     </Style>
     <Style Selector="Border.notice TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DshText2Brush}" />
-    </Style>
-    <Style Selector="Border.notice.warn">
-        <Setter Property="Background" Value="{DynamicResource DshWarnSoftBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshWarnLineBrush}" />
-    </Style>
-    <Style Selector="Border.notice.warn TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource DshWarnBrush}" />
-    </Style>
-    <Style Selector="Border.notice.err">
-        <Setter Property="Background" Value="{DynamicResource DshErrSoftBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshErrLineBrush}" />
-    </Style>
-    <Style Selector="Border.notice.err TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource DshErrBrush}" />
     </Style>
     <Style Selector="Border.notice.info">
         <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />

@@ -9,59 +9,19 @@ using R3;
 namespace DshDesktop.Tests;
 
 /// <summary>
-/// Workbench ViewModel 测试（§21 Phase 6 修订：Reload 从 Runtime 投影取最新 Session URL，禁止缓存旧 URL）。
+/// Workbench ViewModel 测试（§21 Phase 6 修订：Runtime 投影驱动 WebView 导航）。
+/// 用户精简掉工具条后，Refresh / GoBack / GoForward 通道已删除，RuntimeReady 也失去唯一消费方——
+/// ViewModel 只剩一条对外的 DshUrl 投影：非 null 导航，null 退回占位层。
 /// </summary>
 public sealed class WorkbenchViewModelTests
 {
     [Test]
-    public async Task Reload_UsesLatestRuntimeSessionUrl_NotCached()
-    {
-        var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial with
-        {
-            Lifecycle = RuntimeLifecycle.Running,
-            Url = "http://127.0.0.1:5000/?token=old",
-        });
-        using var workbenchStore = CreateWorkbenchStore();
-        var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
-
-        // Runtime 重启后 Session URL 已变化，但投影事件尚未送达（模拟通知时序）：
-        // Reload 必须读取 Runtime Store 当前状态，而不是构造期缓存的旧 URL。
-        runtimeStore.OverwriteCurrentState(runtimeStore.CurrentState with
-        {
-            Url = "http://127.0.0.1:5000/?token=new",
-        });
-
-        string? reloadUrl = null;
-        viewModel.ReloadRequested += url => reloadUrl = url;
-        viewModel.RequestReload();
-
-        await Assert.That(reloadUrl).IsEqualTo("http://127.0.0.1:5000/?token=new");
-        await Assert.That(workbenchStore.CurrentState.Loading).IsTrue();
-    }
-
-    [Test]
-    public async Task Reload_WhenRuntimeNotRunning_DoesNothing()
+    public async Task DshUrlProjection_FollowsRuntimeStore()
     {
         var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial);
         using var workbenchStore = CreateWorkbenchStore();
         var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
 
-        bool raised = false;
-        viewModel.ReloadRequested += _ => raised = true;
-        viewModel.RequestReload();
-
-        await Assert.That(raised).IsFalse();
-        await Assert.That(workbenchStore.CurrentState.Loading).IsFalse();
-    }
-
-    [Test]
-    public async Task RuntimeProjection_TracksRuntimeStore()
-    {
-        var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial);
-        using var workbenchStore = CreateWorkbenchStore();
-        var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
-
-        await Assert.That(viewModel.RuntimeReady).IsFalse();
         await Assert.That(viewModel.DshUrl).IsNull();
 
         runtimeStore.Push(RuntimeState.Initial with
@@ -70,8 +30,46 @@ public sealed class WorkbenchViewModelTests
             Url = "http://127.0.0.1:5000/?token=a",
         });
 
-        await Assert.That(viewModel.RuntimeReady).IsTrue();
         await Assert.That(viewModel.DshUrl).IsEqualTo("http://127.0.0.1:5000/?token=a");
+    }
+
+    /// <summary>
+    /// Runtime 停止后投影必须把 DshUrl 置空，View 才能退回占位层。
+    /// Session URL 含一次性 token，停止后旧 URL 不可复用，不能留在属性上。
+    /// </summary>
+    [Test]
+    public async Task DshUrlProjection_ClearsUrlWhenRuntimeStops()
+    {
+        var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Running,
+            Url = "http://127.0.0.1:5000/?token=a",
+        });
+        using var workbenchStore = CreateWorkbenchStore();
+        var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
+        await Assert.That(viewModel.DshUrl).IsNotNull();
+
+        runtimeStore.Push(RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Stopped });
+
+        await Assert.That(viewModel.DshUrl).IsNull();
+    }
+
+    /// <summary>
+    /// Runtime 处于 Running 但尚无 URL（端口未就绪）时同样退占位层——
+    /// 不能把 null URL 当作可导航地址。
+    /// </summary>
+    [Test]
+    public async Task DshUrlProjection_RunningWithoutUrl_StaysNull()
+    {
+        var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Running,
+            Url = null,
+        });
+        using var workbenchStore = CreateWorkbenchStore();
+        var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
+
+        await Assert.That(viewModel.DshUrl).IsNull();
     }
 
     private static MviStore<WorkbenchState, WorkbenchIntent, UnitEffect> CreateWorkbenchStore()
