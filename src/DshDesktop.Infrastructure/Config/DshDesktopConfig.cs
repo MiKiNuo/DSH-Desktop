@@ -211,6 +211,61 @@ public static class DshDesktopConfigStore
         Path.Combine(AppContext.BaseDirectory, "dsh-desktop.config.json");
 
     /// <summary>
+    /// Desktop 自带的 harness-node-entry.mjs 垫片路径（exe 旁 resources\ 下，随包分发）。
+    /// 背景：dsh ≥0.1.5-rc.1 的 bin.js 以 import.meta.main 守门，旧 Electron harness 的
+    /// 纯 import() 加载方式下入口不会自执行（进程静默退出 0）；自带垫片在 import 后
+    /// 显式调用 runCli 导出以兼容新旧入口。
+    /// </summary>
+    private static string OwnHarnessEntryPath { get; } =
+        Path.Combine(AppContext.BaseDirectory, "resources", "harness-node-entry.mjs");
+
+    /// <summary>
+    /// 解析 harness 垫片路径：自带垫片存在则优先（隔离旧 Electron 依赖），否则回退借用版。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="ownHarnessPath">自带垫片候选路径。</param>
+    /// <param name="electronHarnessPath">借用的 Electron 垫片候选路径。</param>
+    /// <returns>可用的垫片路径；两者皆不存在时为 null。</returns>
+    internal static string? ResolveHarnessEntryPath(string? ownHarnessPath, string? electronHarnessPath)
+    {
+        if (!string.IsNullOrWhiteSpace(ownHarnessPath) && File.Exists(ownHarnessPath))
+        {
+            return ownHarnessPath;
+        }
+
+        return !string.IsNullOrWhiteSpace(electronHarnessPath) && File.Exists(electronHarnessPath)
+            ? electronHarnessPath
+            : null;
+    }
+
+    /// <summary>
+    /// 重锚配置中的 harness 垫片路径：配置缺失或指向的文件已不存在，且自带垫片可用时切换到自带垫片。
+    /// 配置仍指向有效文件时不动（尊重用户 / 手工修复的选择）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="config">配置实例（原地修改）。</param>
+    /// <param name="ownHarnessPath">自带垫片候选路径。</param>
+    /// <returns>是否发生了修改。</returns>
+    internal static bool ReanchorHarnessEntryPath(DshDesktopConfig config, string? ownHarnessPath)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        if (string.IsNullOrWhiteSpace(ownHarnessPath) || !File.Exists(ownHarnessPath))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(config.HarnessNodeEntryPath)
+            && File.Exists(config.HarnessNodeEntryPath))
+        {
+            return false;
+        }
+
+        config.HarnessNodeEntryPath = ownHarnessPath;
+        return true;
+    }
+
+    /// <summary>
     /// 加载配置；文件不存在时自动探测并回写。
     /// </summary>
     /// <param name="cancellationToken">取消标记。</param>
@@ -249,6 +304,12 @@ public static class DshDesktopConfigStore
 
                 // 数据根迁移：配置中的 dshHome 与当前数据根不一致时重锚（如 C 盘 → 安装盘）。
                 if (RebaseDshHome(loaded, DataRoot))
+                {
+                    dirty = true;
+                }
+
+                // harness 垫片迁移：配置缺失 / 指向失效且自带垫片可用时重锚到自带垫片。
+                if (ReanchorHarnessEntryPath(loaded, OwnHarnessEntryPath))
                 {
                     dirty = true;
                 }
@@ -344,6 +405,8 @@ public static class DshDesktopConfigStore
             {
                 DshHome = dshHome,
                 SeedProfileFrom = seedFrom,
+                // 自带 harness 垫片与 Electron 无关，缺失时不设（Detect 结果原样回写）。
+                HarnessNodeEntryPath = ResolveHarnessEntryPath(OwnHarnessEntryPath, null),
             };
         }
 
@@ -356,7 +419,7 @@ public static class DshDesktopConfigStore
         {
             NodePath = File.Exists(vendoredNode) ? vendoredNode : "node",
             DshEntryPath = dshEntry,
-            HarnessNodeEntryPath = File.Exists(harnessEntry) ? harnessEntry : null,
+            HarnessNodeEntryPath = ResolveHarnessEntryPath(OwnHarnessEntryPath, harnessEntry),
             WorkingDirectory = appDir,
             DshHome = dshHome,
             SeedProfileFrom = seedFrom,

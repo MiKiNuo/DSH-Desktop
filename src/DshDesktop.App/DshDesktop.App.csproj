@@ -25,4 +25,9 @@
     <ProjectReference Include="..\DshDesktop.Platform.Windows\DshDesktop.Platform.Windows.csproj" />
     <ProjectReference Include="..\DshDesktop.Presentation.Avalonia\DshDesktop.Presentation.Avalonia.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- 自带 harness-node 垫片（resources\ 布局与 Electron 同构）：复制到 exe 旁并随发布打包，
+         由 DshDesktopConfigStore.ResolveHarnessEntryPath 优先探测。 -->
+    <None Update="resources\**\*.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
