@@ -1,0 +1,68 @@
+<!--
+  DSH Desktop 图标资源（UI 重设计 · Lucide 24×24 viewBox，stroke 风格）。
+  每个图标是一个 StreamGeometry 资源，键名 Icon<Name>，由视图用
+  Path + Data 绑定该键消费（写法见 docs/UI-Redesign-Token-Contract.md §6）。
+  几何数据取自 Lucide 官方（lucide-static v0.456.0 的 SVG 源），
+  将 <path>/<line>/<polyline>/<polygon>/<rect>/<circle> 统一转换为路径迷你语言，
+  描边色由消费端 Path.Stroke 提供（StreamGeometry 仅描述轮廓）。
+  注：契约 §6 正文列出的键名为 29 个，此处全部实现。
+-->
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Styles.Resources>
+        <!-- 概览 / Dashboard（Lucide: layout-dashboard） -->
+        <StreamGeometry x:Key="IconDashboard">M4 3 h5 a1 1 0 0 1 1 1 v7 a1 1 0 0 1 -1 1 h-5 a1 1 0 0 1 -1 -1 v-7 a1 1 0 0 1 1 -1 Z M15 3 h5 a1 1 0 0 1 1 1 v3 a1 1 0 0 1 -1 1 h-5 a1 1 0 0 1 -1 -1 v-3 a1 1 0 0 1 1 -1 Z M15 12 h5 a1 1 0 0 1 1 1 v7 a1 1 0 0 1 -1 1 h-5 a1 1 0 0 1 -1 -1 v-7 a1 1 0 0 1 1 -1 Z M4 16 h5 a1 1 0 0 1 1 1 v3 a1 1 0 0 1 -1 1 h-5 a1 1 0 0 1 -1 -1 v-3 a1 1 0 0 1 1 -1 Z</StreamGeometry>
+
+        <!-- 工作台 / Terminal -->
+        <StreamGeometry x:Key="IconTerminal">M4 17 L10 11 L4 5 M12 19 L20 19</StreamGeometry>
+
+        <!-- 插件 / Package -->
+        <StreamGeometry x:Key="IconPackage">M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z M12 22V12 M3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7 M7.5 4.27 9 5.15</StreamGeometry>
+
+        <!-- 运行环境 / Cpu -->
+        <StreamGeometry x:Key="IconCpu">M6 4 h12 a2 2 0 0 1 2 2 v12 a2 2 0 0 1 -2 2 h-12 a2 2 0 0 1 -2 -2 v-12 a2 2 0 0 1 2 -2 Z M10 9 h4 a1 1 0 0 1 1 1 v4 a1 1 0 0 1 -1 1 h-4 a1 1 0 0 1 -1 -1 v-4 a1 1 0 0 1 1 -1 Z M15 2 L15 4 M15 20 L15 22 M2 15 L4 15 M2 9 L4 9 M20 15 L22 15 M20 9 L22 9 M9 2 L9 4 M9 20 L9 22</StreamGeometry>
+
+        <!-- 更新中心 / Refresh -->
+        <StreamGeometry x:Key="IconRefresh">M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16 M8 16H3v5</StreamGeometry>
+
+        <!-- 诊断中心 / Activity -->
+        <StreamGeometry x:Key="IconActivity">M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2</StreamGeometry>
+
+        <!-- 设置 / Sliders -->
+        <StreamGeometry x:Key="IconSliders">M21 4 L14 4 M10 4 L3 4 M21 12 L12 12 M8 12 L3 12 M21 20 L16 20 M12 20 L3 20 M14 2 L14 6 M8 10 L8 14 M16 18 L16 22</StreamGeometry>
+
+        <!-- 搜索 -->
+        <StreamGeometry x:Key="IconSearch">M11 3 a8 8 0 1 0 0 16 a8 8 0 1 0 0 -16 Z M21 21 L16.7 16.7</StreamGeometry>
+
+        <!-- 折叠 / 展开 方向 -->
+        <StreamGeometry x:Key="IconChevronLeft">M15 18 L9 12 L15 6</StreamGeometry>
+        <StreamGeometry x:Key="IconChevronRight">M9 18 L15 12 L9 6</StreamGeometry>
+        <StreamGeometry x:Key="IconChevronDown">M6 9 L12 15 L18 9</StreamGeometry>
+
+        <!-- 新增 / 播放 / 停止 -->
+        <StreamGeometry x:Key="IconPlus">M5 12 L19 12 M12 5 L12 19</StreamGeometry>
+        <StreamGeometry x:Key="IconPlay">M6 3 L20 12 L6 21 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconStop">M5 3 h14 a2 2 0 0 1 2 2 v14 a2 2 0 0 1 -2 2 h-14 a2 2 0 0 1 -2 -2 v-14 a2 2 0 0 1 2 -2 Z</StreamGeometry>
+
+        <!-- 下载 / 文件夹 / 关闭 / 勾选 -->
+        <StreamGeometry x:Key="IconDownload">M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10 L12 15 L17 10 M12 15 L12 3</StreamGeometry>
+        <StreamGeometry x:Key="IconFolder">M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z</StreamGeometry>
+        <StreamGeometry x:Key="IconClose">M18 6 L6 18 M6 6 L18 18</StreamGeometry>
+        <StreamGeometry x:Key="IconCheck">M20 6 L9 17 L4 12</StreamGeometry>
+
+        <!-- 告警 / 信息 / 更多 -->
+        <StreamGeometry x:Key="IconAlert">M21.73 18 L8 4 a2 2 0 0 0-3.48 0 l-8 14 A2 2 0 0 0 4 21 h16 a2 2 0 0 0 1.73 -3 M12 9v4 M12 17h.01</StreamGeometry>
+        <StreamGeometry x:Key="IconInfo">M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 Z M12 16v-4 M12 8h.01</StreamGeometry>
+        <StreamGeometry x:Key="IconMore">M12 11 a1 1 0 1 0 0 2 a1 1 0 1 0 0 -2 Z M19 11 a1 1 0 1 0 0 2 a1 1 0 1 0 0 -2 Z M5 11 a1 1 0 1 0 0 2 a1 1 0 1 0 0 -2 Z</StreamGeometry>
+
+        <!-- 外链 / 删除 / 文档 / 盾牌 / 闪电图 / 时钟 / 硬盘 / 电源 -->
+        <StreamGeometry x:Key="IconExternal">M15 3h6v6 M10 14 L21 3 M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2 2V8a2 2 0 0 1 2-2h6</StreamGeometry>
+        <StreamGeometry x:Key="IconTrash">M3 6 L21 6 M19 6 L19 20 c0 1 -1 2 -2 2 L7 22 c-1 0 -2 -1 -2 -2 L5 6 M8 6 L8 4 c0 -1 1 -2 2 -2 L14 2 c1 0 2 1 2 2 L16 6 M10 11 L10 17 M14 11 L14 17</StreamGeometry>
+        <StreamGeometry x:Key="IconDocument">M15 2 L6 2 a2 2 0 0 0-2 2 L4 20 a2 2 0 0 0 2 2 L18 22 a2 2 0 0 0 2 -2 L20 7 Z M14 2 L14 6 a2 2 0 0 0 2 2 L20 10 M10 9 L8 9 M16 13 L8 13 M16 17 L8 17</StreamGeometry>
+        <StreamGeometry x:Key="IconShield">M20 13 c0 5 -3.5 7.5 -7.66 8.95 a1 1 0 0 1 -.67 -.01 C7.5 20.5 4 18 4 13 L4 6 a1 1 0 0 1 1 -1 c2 0 4.5 -1.2 6.24 -2.72 a1.17 1.17 0 0 1 1.52 0 C14.51 3.81 17 5 19 5 a1 1 0 0 1 1 1 Z</StreamGeometry>
+        <StreamGeometry x:Key="IconZap">M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z</StreamGeometry>
+        <StreamGeometry x:Key="IconClock">M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 Z M12 6 L12 12 L16 14</StreamGeometry>
+        <StreamGeometry x:Key="IconDrive">M22 12 L2 12 M5.45 5.11 L2 12 v6 a2 2 0 0 0 2 2 h16 a2 2 0 0 0 2 -2 v-6 l-3.45 -6.89 A2 2 0 0 0 16.76 4 H7.24 A2 2 0 0 0 5.45 5.11 Z M6 16 L6.01 16 M10 16 L10.01 16</StreamGeometry>
+        <StreamGeometry x:Key="IconPower">M12 2 L12 10 M18.4 6.6 a9 9 0 1 1 -12.77 .04</StreamGeometry>
+    </Styles.Resources>
+</Styles>

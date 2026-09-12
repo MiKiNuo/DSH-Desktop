@@ -3,23 +3,22 @@ using DshDesktop.Presentation.Avalonia.Features.AppShell;
 namespace DshDesktop.Tests;
 
 /// <summary>
-/// 侧栏折叠布局规则测试（视觉基准 docs/DSH-Desktop-UI-Prototype.html 第 64 行
-/// 的窄窗降级规则：列宽 218px → 70px，且 brand-text / nav-title / nav-label /
-/// nav-badge / runtime-mini 全部隐藏）。
+/// 侧栏折叠布局规则测试（视觉基准 docs/DSH-Desktop-UI-Redesign.html：
+/// 展开 248px / 折叠 72px；折叠态隐藏品牌文案、分组标题、导航文字与徽标，
+/// 底部 runtime 卡退化为居中状态点）。
 /// </summary>
 public sealed class SidebarLayoutTests
 {
     [Test]
-    public async Task Expanded_Width_Is218()
+    public async Task Expanded_Width_Is248()
     {
-        await Assert.That(SidebarLayout.WidthFor(collapsed: false)).IsEqualTo(218d);
+        await Assert.That(SidebarLayout.WidthFor(collapsed: false)).IsEqualTo(248d);
     }
 
     [Test]
-    public async Task Collapsed_Width_Is70()
+    public async Task Collapsed_Width_Is72()
     {
-        // 原型 @media(max-width:900px) 的 .shell grid-template-columns:70px。
-        await Assert.That(SidebarLayout.WidthFor(collapsed: true)).IsEqualTo(70d);
+        await Assert.That(SidebarLayout.WidthFor(collapsed: true)).IsEqualTo(72d);
     }
 
     [Test]
@@ -31,7 +30,6 @@ public sealed class SidebarLayoutTests
     [Test]
     public async Task Collapsed_HidesBrandTextAndNavLabels()
     {
-        // 原型折叠态：.brand-text,.nav-title,.nav-label,.nav-badge,.runtime-mini{display:none}。
         await Assert.That(SidebarLayout.ShowsTextContent(collapsed: true)).IsFalse();
     }
 }

@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
@@ -20,6 +22,7 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 {
     private readonly NativeWebView _webViewHost;
     private readonly Border _placeholderOverlay;
+    private readonly Border _errorBar;
     private readonly DesktopBridgeProtocol _bridge = new();
     private string? _navigatedUrl;
 
@@ -33,6 +36,8 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             ?? throw new InvalidOperationException("无法找到 WebViewHost 控件。");
         _placeholderOverlay = this.FindControl<Border>("PlaceholderOverlay")
             ?? throw new InvalidOperationException("无法找到 PlaceholderOverlay 控件。");
+        _errorBar = this.FindControl<Border>("ErrorBar")
+            ?? throw new InvalidOperationException("无法找到 ErrorBar 控件。");
 
         _webViewHost.NavigationStarted += (_, args) => OnNavigationStarted(args);
         _webViewHost.NavigationCompleted += (_, args) => OnNavigationCompleted(args);
@@ -162,6 +167,12 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         ViewModel.RequestReload();
     }
 
+    private void OnErrorCloseClicked(object? sender, RoutedEventArgs args)
+    {
+        // 关闭当前错误条（下次 Error 属性变化会由绑定重新驱动显隐）。
+        _errorBar.IsVisible = false;
+    }
+
     /// <inheritdoc />
     protected override void OnBind(WorkbenchViewModel viewModel, MviDisposableBag bindings)
     {
@@ -206,4 +217,25 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         _webViewHost.Navigate(new Uri(url, UriKind.Absolute));
         _navigatedUrl = url;
     }
+}
+
+/// <summary>
+/// 把 DSH Web UI 完整地址（含 token）映射为 host:port 端口标记，Runtime 非 Running 时显示占位。
+/// </summary>
+internal sealed class DshAddressConverter : IValueConverter
+{
+    /// <inheritdoc />
+    public object? Convert(object? value, Type? targetType, object? parameter, CultureInfo? culture)
+    {
+        if (value is not string s || !Uri.TryCreate(s, UriKind.Absolute, out Uri? uri))
+        {
+            return "—";
+        }
+
+        return uri.Authority;
+    }
+
+    /// <inheritdoc />
+    public object? ConvertBack(object? value, Type? targetType, object? parameter, CultureInfo? culture)
+        => throw new NotSupportedException();
 }

@@ -3,6 +3,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Threading;
+using System.Threading.Tasks;
 using DshDesktop.Domain.Common;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
@@ -55,6 +56,20 @@ public sealed partial class MainWindow : Window
     private readonly Border _runtimeMini;
     private readonly IReadOnlyList<TextBlock> _collapsibleSidebarTexts;
 
+    // ===== 折叠态分组标题发丝线（替代隐藏的 nav-label 文本） =====
+    private readonly Border _navRuleWorkspace;
+    private readonly Border _navRuleManagement;
+    private readonly Border _navRuleSystem;
+
+    // ===== 二次确认弹层（壳渲染，ConfirmDialog 注册 RequestConfirmAsync） =====
+    private readonly Border _confirmScrim;
+    private readonly TextBlock _confirmTitle;
+    private readonly TextBlock _confirmBody;
+    private readonly TextBlock _confirmSubject;
+    private readonly Button _confirmOk;
+    private readonly Button _confirmCancel;
+    private TaskCompletionSource<bool>? _confirmTcs;
+
     /// <summary>
     /// 初始化主窗口。
     /// </summary>
@@ -81,6 +96,15 @@ public sealed partial class MainWindow : Window
         _brandMark = FindRequiredControl<Border>("BrandMark");
         _brandTextPanel = FindRequiredControl<StackPanel>("BrandTextPanel");
         _runtimeMini = FindRequiredControl<Border>("RuntimeMini");
+        _navRuleWorkspace = FindRequiredControl<Border>("NavRuleWorkspace");
+        _navRuleManagement = FindRequiredControl<Border>("NavRuleManagement");
+        _navRuleSystem = FindRequiredControl<Border>("NavRuleSystem");
+        _confirmScrim = FindRequiredControl<Border>("ConfirmScrim");
+        _confirmTitle = FindRequiredControl<TextBlock>("ConfirmTitle");
+        _confirmBody = FindRequiredControl<TextBlock>("ConfirmBody");
+        _confirmSubject = FindRequiredControl<TextBlock>("ConfirmSubject");
+        _confirmOk = FindRequiredControl<Button>("ConfirmOk");
+        _confirmCancel = FindRequiredControl<Button>("ConfirmCancel");
         _collapsibleSidebarTexts =
         [
             FindRequiredControl<TextBlock>("NavLabelWorkspace"),
@@ -161,6 +185,11 @@ public sealed partial class MainWindow : Window
         // 品牌行即折叠开关（Phase 9 修订）：整行任意位置可点，不再有独立按钮。
         _sidebarToggle.Click += (_, _) => _shellViewModel.ToggleSidebarCommand.Execute(null);
 
+        // 二次确认弹层：取消 / 确认两个按钮收口到同一 TaskCompletionSource。
+        _confirmCancel.Click += (_, _) => CompleteConfirm(false);
+        _confirmOk.Click += (_, _) => CompleteConfirm(true);
+        ConfirmDialog.Register((action, subject) => RequestConfirmAsync(action, subject));
+
         RenderCurrentPage();
         ApplyNavState();
         ApplyIndicators();
@@ -189,6 +218,38 @@ public sealed partial class MainWindow : Window
         _toastBox.IsVisible = true;
         _toastTimer.Stop();
         _toastTimer.Start();
+    }
+
+    /// <summary>
+    /// 弹出二次确认弹层并异步等待用户选择（由 <see cref="ConfirmDialog"/> 经注册的渲染器调用）。
+    /// 填充 <see cref="ConfirmDialogText"/> 文案，按 <see cref="ConfirmDialogText.IsDangerous"/>
+    /// 切换确认按钮的 danger / primary 样式，显示遮罩，用 <see cref="TaskCompletionSource{TResult}"/>
+    /// 等待「取消 / 确认」之一，随后隐藏遮罩并回传结果。
+    /// </summary>
+    private Task<bool> RequestConfirmAsync(ConfirmAction action, string subject)
+    {
+        _confirmTitle.Text = ConfirmDialogText.Title(action);
+        _confirmBody.Text = ConfirmDialogText.Body(action);
+        _confirmSubject.Text = subject;
+        _confirmOk.Content = ConfirmDialogText.ConfirmLabel(action);
+        bool dangerous = ConfirmDialogText.IsDangerous(action);
+        _confirmOk.Classes.Set("danger", dangerous);
+        _confirmOk.Classes.Set("primary", !dangerous);
+
+        _confirmScrim.IsVisible = true;
+        _confirmTcs = new TaskCompletionSource<bool>();
+        return _confirmTcs.Task;
+    }
+
+    /// <summary>
+    /// 收口确认结果：隐藏遮罩并完成等待中的 <see cref="TaskCompletionSource{TResult}"/>。
+    /// </summary>
+    private void CompleteConfirm(bool result)
+    {
+        _confirmScrim.IsVisible = false;
+        TaskCompletionSource<bool>? tcs = _confirmTcs;
+        _confirmTcs = null;
+        tcs?.TrySetResult(result);
     }
 
     // ===== Phase 8 评审 F7：toast 接线（只订阅现有 Store 投影 / 壳投影，不新造事件源） =====
@@ -291,6 +352,11 @@ public sealed partial class MainWindow : Window
         {
             text.IsVisible = showText;
         }
+
+        // 折叠态分组标题退化为一条发丝线（Avalonia 用 1px Border 代替 HTML 的 ::after）。
+        _navRuleWorkspace.IsVisible = collapsed;
+        _navRuleManagement.IsVisible = collapsed;
+        _navRuleSystem.IsVisible = collapsed;
 
         foreach (Button button in _navButtons.Values)
         {

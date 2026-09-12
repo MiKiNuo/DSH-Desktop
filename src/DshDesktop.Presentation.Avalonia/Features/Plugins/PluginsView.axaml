@@ -2,63 +2,125 @@
     x:Class="DshDesktop.Presentation.Avalonia.Features.Plugins.PluginsView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Plugins"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Plugins"
     x:DataType="vm:PluginsViewModel">
     <!--
-      Plugins 页（Phase 8 Issue 06，视觉基准 docs/DSH-Desktop-UI-Prototype.html plugins section 170-186 行）：
-      工具条（搜索 .search 客户端过滤 / 刷新 / 安装插件 primary）+ 卡片（头部标题+副标题+总数 tag，
-      表格列：插件 / 状态 tag / 版本 / 加载耗时恒 "—" / 操作右对齐）；安装事务进度（§20）融入卡片。
+      Plugins 页（UI 重设计）：工具条（搜索 + 分段过滤 + 刷新 / 安装插件）+ 折叠安装行 +
+      插件表格（表头 / 逐行 / 状态 tag / 行内操作）+ 空状态。版式以视觉稿 #p-plugins 为参考，
+      类严格照用契约 §5；数据源（绑定）全部保留。
     -->
     <ScrollViewer>
-        <StackPanel Margin="24">
-            <StackPanel Classes="toolbar" Orientation="Horizontal">
+        <StackPanel Margin="24" Spacing="14">
+
+            <!-- 工具条 -->
+            <DockPanel Classes="bar" LastChildFill="False">
                 <TextBox
                     x:Name="SearchInput"
-                    Classes="search"
+                    Classes="field"
+                    MinWidth="260"
+                    MaxWidth="360"
                     TextChanged="OnSearchTextChanged"
-                    PlaceholderText="搜索已安装插件…" />
-                <Button
-                    Classes="btn"
-                    Command="{Binding LoadPluginsCommand}"
-                    Content="刷新" />
+                    PlaceholderText="搜索插件名称、scope 或描述…" />
+                <StackPanel
+                    Orientation="Horizontal"
+                    Margin="10,0,0,0"
+                    DockPanel.Dock="Left"
+                    VerticalAlignment="Center">
+                    <Button
+                        x:Name="TabAll"
+                        Classes="btn seg-first primary"
+                        Click="OnFilterAllClicked"
+                        Content="全部" />
+                    <Button
+                        x:Name="TabOn"
+                        Classes="btn seg-mid"
+                        Click="OnFilterOnClicked"
+                        Content="已启用" />
+                    <Button
+                        x:Name="TabOff"
+                        Classes="btn seg-last"
+                        Click="OnFilterOffClicked"
+                        Content="已禁用" />
+                </StackPanel>
                 <Button
                     Classes="btn primary"
-                    Click="OnInstallClicked"
-                    Content="安装插件" />
-            </StackPanel>
+                    DockPanel.Dock="Right"
+                    Click="OnInstallClicked">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Classes="icon icon-sm" Data="{DynamicResource IconPackage}" Stroke="{Binding $parent[Button].Foreground}" />
+                        <TextBlock Text="安装插件" />
+                    </StackPanel>
+                </Button>
+                <Button
+                    Classes="btn secondary"
+                    DockPanel.Dock="Right"
+                    Command="{Binding LoadPluginsCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Classes="icon icon-sm" Data="{DynamicResource IconRefresh}" Stroke="{Binding $parent[Button].Foreground}" />
+                        <TextBlock Text="刷新" />
+                    </StackPanel>
+                </Button>
+            </DockPanel>
 
-            <Border Classes="card">
+            <!-- 安装行（默认折叠） -->
+            <Border
+                x:Name="InstallPanel"
+                Classes="panel"
+                IsVisible="False">
+                <StackPanel Classes="panel-body" Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <TextBox
+                            x:Name="InstallSourceInput"
+                            Classes="field"
+                            HorizontalAlignment="Stretch"
+                            MinWidth="340"
+                            PlaceholderText="npm 包名（可带版本）或本地 .tgz 绝对路径" />
+                        <Button Classes="btn primary" Click="OnInstallStartClicked">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Path Classes="icon icon-sm" Data="{DynamicResource IconDownload}" Stroke="{Binding $parent[Button].Foreground}" />
+                                <TextBlock Text="开始安装" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="btn ghost" Click="OnInstallCancelClicked" Content="取消" />
+                    </StackPanel>
+                    <Border Classes="notice info">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Path Classes="icon" Data="{DynamicResource IconInfo}" VerticalAlignment="Top" />
+                            <TextBlock
+                                Text="安装前会自动快照 Profile（package.json / pnpm-lock.yaml / cordis.patch.yml / .npmrc），失败将自动回滚并重启原 Runtime。" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- 插件表格卡片 -->
+            <Border Classes="panel">
                 <Grid RowDefinitions="Auto,*">
-                    <Border Classes="card-head" Grid.Row="0">
+                    <Border Classes="panel-head" Grid.Row="0">
                         <Grid ColumnDefinitions="*,Auto">
                             <StackPanel>
-                                <TextBlock Classes="card-title" Text="已安装插件" />
-                                <TextBlock Classes="card-subtitle" Text="插件位于 data/dsh-home/profiles/web/node_modules" />
+                                <TextBlock Classes="panel-title" Text="已安装插件" />
+                                <TextBlock Classes="panel-sub" Text="data / dsh-home / profiles / web / node_modules" />
                             </StackPanel>
-                            <Border Classes="tag info" Grid.Column="1">
+                            <Border Classes="tag mono" Grid.Column="1">
                                 <TextBlock x:Name="CountTag" Text="0 Plugins" />
                             </Border>
                         </Grid>
                     </Border>
-                    <Border Classes="card-body" Grid.Row="1">
-                        <StackPanel Spacing="10">
-                            <TextBox
-                                x:Name="InstallSourceInput"
-                                Classes="search"
-                                MaxWidth="520"
-                                HorizontalAlignment="Left"
-                                PlaceholderText="安装来源：npm 包名（可带版本）或本地 .tgz 路径，填好后点上方安装插件" />
+                    <Border Classes="panel-body" Grid.Row="1">
+                        <StackPanel Spacing="0">
                             <TextBlock
-                                Foreground="{DynamicResource DshYellowBrush}"
+                                Foreground="{DynamicResource DshWarnBrush}"
                                 FontSize="{DynamicResource DshFontSizeSmall}"
                                 Text="{Binding PendingOperation}" />
                             <TextBlock
-                                Foreground="{DynamicResource DshRedBrush}"
+                                Foreground="{DynamicResource DshErrBrush}"
                                 FontSize="{DynamicResource DshFontSizeSmall}"
                                 Text="{Binding LastError}"
                                 TextWrapping="Wrap" />
 
-                            <StackPanel>
+                            <StackPanel x:Name="TableArea">
                                 <Border Classes="table-head">
                                     <Grid ColumnDefinitions="*,110,90,90,160">
                                         <TextBlock Classes="table-head" Margin="12,0,0,0" Text="插件" />
@@ -80,28 +142,37 @@
                                                 <Grid ColumnDefinitions="*,110,90,90,160">
                                                     <StackPanel Margin="12,0,0,0">
                                                         <TextBlock Classes="plugin-name" Text="{Binding Name}" />
-                                                        <TextBlock
-                                                            Foreground="{DynamicResource DshMuted2Brush}"
-                                                            FontSize="{DynamicResource DshFontSizeCaption}"
-                                                            Text="{Binding Description}" />
+                                                        <TextBlock Classes="plugin-desc" Text="{Binding Description}" />
                                                     </StackPanel>
                                                     <Border
-                                                        Classes="tag"
-                                                        Classes.info="{Binding StatusIsInfo}"
-                                                        Classes.warn="{Binding StatusIsWarn}"
                                                         Grid.Column="1"
+                                                        Classes="tag"
+                                                        Classes.warn="{Binding StatusIsWarn}"
                                                         HorizontalAlignment="Left">
                                                         <TextBlock Text="{Binding StatusText}" />
                                                     </Border>
-                                                    <TextBlock
-                                                        Classes="table-cell"
-                                                        Grid.Column="2"
-                                                        Text="{Binding Version}" />
-                                                    <!-- DSH 无插件加载耗时数据，列保留为原型视觉（Phase 8 spec Round 2 Q2） -->
-                                                    <TextBlock
-                                                        Classes="table-cell"
-                                                        Grid.Column="3"
-                                                        Text="{Binding LoadTime}" />
+                                                    <Grid Grid.Column="2" VerticalAlignment="Center">
+                                                        <TextBlock
+                                                            Classes="table-cell"
+                                                            Text="{Binding Version}"
+                                                            IsVisible="{Binding Version, Converter={x:Static local:Converters.IsNotEmpty}}" />
+                                                        <Border
+                                                            Classes="skel"
+                                                            Width="54"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding Version, Converter={x:Static local:Converters.IsEmpty}}" />
+                                                    </Grid>
+                                                    <Grid Grid.Column="3" VerticalAlignment="Center">
+                                                        <TextBlock
+                                                            Classes="table-cell"
+                                                            Text="{Binding LoadTime}"
+                                                            IsVisible="{Binding LoadTime, Converter={x:Static local:Converters.IsNotEmpty}}" />
+                                                        <Border
+                                                            Classes="skel"
+                                                            Width="40"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding LoadTime, Converter={x:Static local:Converters.IsEmpty}}" />
+                                                    </Grid>
                                                     <StackPanel
                                                         Grid.Column="4"
                                                         Margin="0,0,12,0"
@@ -109,22 +180,22 @@
                                                         Orientation="Horizontal"
                                                         Spacing="6">
                                                         <Button
-                                                            Classes="btn small"
+                                                            Classes="btn ghost sm"
                                                             Click="OnUpdateClicked"
                                                             Content="更新"
                                                             IsVisible="{Binding ShowUpdate}" />
                                                         <Button
-                                                            Classes="btn small"
+                                                            Classes="btn ghost sm"
                                                             Click="OnEnableClicked"
                                                             Content="启用"
                                                             IsVisible="{Binding ShowEnable}" />
                                                         <Button
-                                                            Classes="btn small"
+                                                            Classes="btn ghost sm"
                                                             Click="OnDisableClicked"
                                                             Content="禁用"
                                                             IsVisible="{Binding ShowManage}" />
                                                         <Button
-                                                            Classes="btn small danger"
+                                                            Classes="btn danger sm"
                                                             Click="OnUninstallClicked"
                                                             Content="卸载"
                                                             IsVisible="{Binding ShowManage}" />
@@ -135,6 +206,17 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </StackPanel>
+
+                            <Border
+                                x:Name="EmptyState"
+                                Classes="empty"
+                                IsVisible="False">
+                                <StackPanel Spacing="6">
+                                    <Path Classes="icon icon-lg" Data="{DynamicResource IconSearch}" HorizontalAlignment="Center" />
+                                    <TextBlock Classes="empty-title" Text="没有匹配的插件" />
+                                    <TextBlock Classes="empty-sub" Text="换一个关键词，或重置筛选条件后重试" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
                 </Grid>

@@ -10,24 +10,31 @@
     MinWidth="960"
     MinHeight="600">
     <!--
-      应用壳（Phase 8 Issue 02，视觉基准 docs/DSH-Desktop-UI-Prototype.html）：
-      侧栏（品牌 + Workspace/Management/System 三组导航 + runtime-mini，可折叠 218↔70）
-      + 58px 顶栏（页标题/副标题 + 进入工作台）+ 内容区 + 27px 状态栏 + toast 浮层。
-      侧栏折叠：规格照原型 @media(max-width:900px) 降级规则，桌面端改为点击切换
-      （Phase 9 修订，推翻 Phase 8 Q4「不做窄窗折叠」）；导航全走 AppShell Intent（MVI §14）。
+      应用壳（UI 重设计 v2）：侧栏（品牌 + Workspace/Management/System 三组导航 + runtime-mini，
+      可折叠 248↔72）+ 52px 顶栏（页标题/副标题 + 打开工作台 ghost）+ 内容区 + 28px 分段式状态栏
+      + toast 浮层 + 二次确认弹层（壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
+      侧栏列宽由 SidebarLayout.ExpandedWidth 驱动（ApplySidebarState 按 WidthFor 设列宽）。
     -->
     <Grid>
-        <!-- 侧栏列宽：由 AppShell.SidebarCollapsed 驱动（218 ↔ 70，规则见 SidebarLayout）。
-             折叠规格照原型 @media(max-width:900px) 降级规则，桌面端改为手动点击切换（原型为窗口宽度自动降级）。 -->
-        <Grid x:Name="ShellGrid" ColumnDefinitions="218,*">
+        <!-- 侧栏列宽：展开 248 / 折叠 72，唯一来源 SidebarLayout（单测）。
+             XAML 里的 248 只是设计期默认值，运行时由 ApplySidebarState 按 WidthFor 覆写。 -->
+        <Grid x:Name="ShellGrid">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
             <!-- ===== 侧栏 ===== -->
             <Border Classes="sidebar" Grid.Column="0">
                 <Grid RowDefinitions="Auto,*">
                     <StackPanel Grid.Row="0">
-                        <!-- 品牌行即折叠开关（Phase 9 修订）：整行可点，不再有独立按钮。
-                             点击 → AppShell.ToggleSidebarCommand，折叠态点 logo 即展开。 -->
+                        <!-- 品牌行即折叠开关：整行可点，点击 → ToggleSidebarCommand。 -->
                         <Button x:Name="SidebarToggle" Classes="brand">
-                            <Grid x:Name="BrandRow" ColumnDefinitions="Auto,*">
+                            <Grid x:Name="BrandRow">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
                                 <Border x:Name="BrandMark" Classes="brand-mark" Grid.Column="0">
                                     <TextBlock Classes="brand-mark-text" Text="D" />
                                 </Border>
@@ -43,72 +50,57 @@
                         </Button>
 
                         <TextBlock x:Name="NavLabelWorkspace" Classes="nav-label" Text="WORKSPACE" />
-                        <!-- 导航按钮文案以 ShellPageText.Title 为单一映射源（Phase 8 评审 F14）；此处 Text 仅为设计期占位。 -->
+                        <Border x:Name="NavRuleWorkspace" Height="1" Margin="0,9,0,9"
+                                Background="{DynamicResource DshLineSoftBrush}" IsVisible="False" />
+
                         <Button
                             x:Name="NavDashboard"
                             Classes="nav-btn"
                             Command="{Binding ShowDashboardCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="⌂" />
-                                <TextBlock
-                                    x:Name="NavDashboardText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="概览" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconDashboard}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavDashboardText" Grid.Column="1" VerticalAlignment="Center" Text="概览" />
                             </Grid>
                         </Button>
                         <Button
                             x:Name="NavWorkbench"
                             Classes="nav-btn"
                             Command="{Binding ShowWorkbenchCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="✦" />
-                                <TextBlock
-                                    x:Name="NavWorkbenchText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="DSH 工作台" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconTerminal}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavWorkbenchText" Grid.Column="1" VerticalAlignment="Center" Text="DSH 工作台" />
                             </Grid>
                         </Button>
 
                         <TextBlock x:Name="NavLabelManagement" Classes="nav-label" Text="MANAGEMENT" />
+                        <Border x:Name="NavRuleManagement" Height="1" Margin="0,9,0,9"
+                                Background="{DynamicResource DshLineSoftBrush}" IsVisible="False" />
+
                         <Button
                             x:Name="NavPlugins"
                             Classes="nav-btn"
                             Command="{Binding ShowPluginsCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="⬡" />
-                                <TextBlock
-                                    x:Name="NavPluginsText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="插件管理" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconPackage}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavPluginsText" Grid.Column="1" VerticalAlignment="Center" Text="插件管理" />
                             </Grid>
                         </Button>
                         <Button
                             x:Name="NavRuntime"
                             Classes="nav-btn"
                             Command="{Binding ShowRuntimeCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="◈" />
-                                <TextBlock
-                                    x:Name="NavRuntimeText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="运行环境" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconCpu}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavRuntimeText" Grid.Column="1" VerticalAlignment="Center" Text="运行环境" />
                             </Grid>
                         </Button>
                         <Button
                             x:Name="NavUpdates"
                             Classes="nav-btn"
                             Command="{Binding ShowUpdatesCommand}">
-                            <Grid ColumnDefinitions="Auto,*,Auto">
-                                <TextBlock Classes="nav-icon" Text="↻" />
-                                <TextBlock
-                                    x:Name="NavUpdatesText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="更新中心" />
+                            <Grid ColumnDefinitions="20,*,Auto">
+                                <Path Classes="icon" Data="{DynamicResource IconRefresh}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavUpdatesText" Grid.Column="1" VerticalAlignment="Center" Text="更新中心" />
                                 <Border
                                     x:Name="UpdatesBadgeBox"
                                     Classes="nav-badge"
@@ -122,33 +114,28 @@
                             x:Name="NavDiagnostics"
                             Classes="nav-btn"
                             Command="{Binding ShowDiagnosticsCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="⌁" />
-                                <TextBlock
-                                    x:Name="NavDiagnosticsText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="诊断中心" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconActivity}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavDiagnosticsText" Grid.Column="1" VerticalAlignment="Center" Text="诊断中心" />
                             </Grid>
                         </Button>
 
                         <TextBlock x:Name="NavLabelSystem" Classes="nav-label" Text="SYSTEM" />
+                        <Border x:Name="NavRuleSystem" Height="1" Margin="0,9,0,9"
+                                Background="{DynamicResource DshLineSoftBrush}" IsVisible="False" />
+
                         <Button
                             x:Name="NavSettings"
                             Classes="nav-btn"
                             Command="{Binding ShowSettingsCommand}">
-                            <Grid ColumnDefinitions="Auto,*">
-                                <TextBlock Classes="nav-icon" Text="⚙" />
-                                <TextBlock
-                                    x:Name="NavSettingsText"
-                                    Grid.Column="1"
-                                    VerticalAlignment="Center"
-                                    Text="设置" />
+                            <Grid ColumnDefinitions="20,*">
+                                <Path Classes="icon" Data="{DynamicResource IconSliders}" HorizontalAlignment="Center" />
+                                <TextBlock x:Name="NavSettingsText" Grid.Column="1" VerticalAlignment="Center" Text="设置" />
                             </Grid>
                         </Button>
                     </StackPanel>
 
-                    <!-- runtime-mini：Runtime 状态点+Lifecycle / Desktop 版本 / DSH 版本（全为现有投影） -->
+                    <!-- runtime-mini：Runtime 状态点+Lifecycle / Desktop 版本 / DSH 版本 -->
                     <Border
                         x:Name="RuntimeMini"
                         Classes="runtime-mini"
@@ -191,7 +178,7 @@
             </Border>
 
             <!-- ===== 工作区：顶栏 + 内容 + 状态栏 ===== -->
-            <Grid Grid.Column="1" RowDefinitions="58,*,27">
+            <Grid Grid.Column="1" RowDefinitions="52,*,28">
                 <Border Classes="topbar" Grid.Row="0">
                     <Grid>
                         <StackPanel
@@ -200,12 +187,12 @@
                             <TextBlock Classes="page-title" Text="{Binding PageTitle}" />
                             <TextBlock Classes="page-desc" Text="{Binding PageSubtitle}" />
                         </StackPanel>
-                        <!-- Q3 决策：顶栏右侧仅"进入工作台"，不做"重启 DSH"。 -->
+                        <!-- 顶栏右侧仅保留一个 ghost 按钮，避免与 Dashboard 页内 primary 同屏冲突。 -->
                         <Button
-                            Classes="btn primary"
+                            Classes="btn ghost"
                             HorizontalAlignment="Right"
                             Command="{Binding ShowWorkbenchCommand}"
-                            Content="进入工作台" />
+                            Content="打开工作台" />
                     </Grid>
                 </Border>
 
@@ -213,39 +200,52 @@
                     x:Name="RootContent"
                     Grid.Row="1" />
 
+                <!-- 状态栏：分段式，段间 1px 竖发丝线；数值用等宽字体。 -->
                 <Border Classes="statusbar" Grid.Row="2">
-                    <DockPanel>
-                        <TextBlock
-                            Classes="statusbar-text"
-                            DockPanel.Dock="Right"
-                            Text="{Binding DesktopVersion, StringFormat='Desktop {0}'}" />
-                        <StackPanel Orientation="Horizontal" Spacing="14">
-                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                <Ellipse
-                                    x:Name="StatusBarDot"
-                                    Width="7"
-                                    Height="7"
-                                    VerticalAlignment="Center" />
+                    <DockPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                            <TextBlock Classes="statusbar-text" Text="Desktop" />
+                            <TextBlock
+                                Classes="statusbar-text"
+                                FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                Text="{Binding DesktopVersion, StringFormat=' v{0}'}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <Ellipse x:Name="StatusBarDot" Width="7" Height="7" VerticalAlignment="Center" />
+                                <TextBlock Classes="statusbar-text" Text="{Binding RuntimeLifecycleText, StringFormat='DSH {0}'}" />
+                            </StackPanel>
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DshLineSoftBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Classes="statusbar-text" Text="PID" />
                                 <TextBlock
                                     Classes="statusbar-text"
-                                    Text="{Binding RuntimeLifecycleText, StringFormat='DSH {0}'}" />
+                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                    Text="{Binding RuntimeProcessId, StringFormat=' {0}', FallbackValue=' —', TargetNullValue=' —'}" />
                             </StackPanel>
-                            <TextBlock
-                                Classes="statusbar-text"
-                                Text="{Binding RuntimeProcessId, StringFormat='PID {0}', FallbackValue='PID —', TargetNullValue='PID —'}" />
-                            <TextBlock
-                                Classes="statusbar-text"
-                                Text="{Binding RuntimePort, StringFormat='Port {0}', FallbackValue='Port —', TargetNullValue='Port —'}" />
-                            <TextBlock
-                                Classes="statusbar-text"
-                                Text="{Binding StartupElapsedText, StringFormat='Startup {0}'}" />
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DshLineSoftBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Classes="statusbar-text" Text="Port" />
+                                <TextBlock
+                                    Classes="statusbar-text"
+                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                    Text="{Binding RuntimePort, StringFormat=' {0}', FallbackValue=' —', TargetNullValue=' —'}" />
+                            </StackPanel>
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DshLineSoftBrush}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                <TextBlock Classes="statusbar-text" Text="启动" />
+                                <TextBlock
+                                    Classes="statusbar-text"
+                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                    Text="{Binding StartupElapsedText, StringFormat=' {0}'}" />
+                            </StackPanel>
                         </StackPanel>
                     </DockPanel>
                 </Border>
             </Grid>
         </Grid>
 
-        <!-- ===== toast 浮层（右下角，自动消隐；供后续 issue 复用 MainWindow.ShowToast） ===== -->
+        <!-- ===== toast 浮层（右下角，自动消隐） ===== -->
         <Border
             x:Name="ToastBox"
             Classes="toast"
@@ -255,6 +255,25 @@
             IsHitTestVisible="False"
             IsVisible="False">
             <TextBlock x:Name="ToastText" />
+        </Border>
+
+        <!-- ===== 二次确认弹层（壳渲染；ConfirmDialog.Register 接线 RequestConfirmAsync） ===== -->
+        <Border x:Name="ConfirmScrim" Classes="scrim" IsVisible="False">
+            <Border x:Name="ConfirmModal" Classes="modal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                    <TextBlock x:Name="ConfirmTitle" Classes="modal-title" Grid.Row="0" Margin="20,18,20,0" />
+                    <TextBlock x:Name="ConfirmBody" Classes="modal-body" Grid.Row="1" Margin="20,0,20,0" />
+                    <Border x:Name="ConfirmCode" Classes="modal-code" Grid.Row="2">
+                        <TextBlock x:Name="ConfirmSubject" />
+                    </Border>
+                    <Border Classes="modal-foot" Grid.Row="3" Margin="0,16,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="20,14">
+                            <Button x:Name="ConfirmCancel" Classes="btn secondary" Content="取消" />
+                            <Button x:Name="ConfirmOk" Classes="btn primary" Content="确认" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
         </Border>
     </Grid>
 </Window>

@@ -1,23 +1,30 @@
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Windows.Input;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using DshDesktop.Domain.Runtime;
+using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
+using Path = Avalonia.Controls.Shapes.Path;
 
 namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 
 /// <summary>
-/// 表示 Runtime 视图（Phase 8 Issue 04）：六态 pills 高亮、状态图标着色与 Failed 恢复面板
-/// 显隐由 View 依据 State 投影计算（表现逻辑属于 View）。
+/// 表示 Runtime 视图（Phase 8 Issue 04）：状态机 stepper 高亮（.current/.current-ok/.off）、
+/// 生命周期图标（Path，按状态取图标与着色）、Failed 恢复面板显隐由 View 依据 State 投影计算
+/// （表现逻辑属于 View）。停止 DSH 经二次确认后再执行命令。
 /// </summary>
 public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 {
-    private readonly IReadOnlyDictionary<RuntimeLifecycle, Border> _pills;
-    private readonly TextBlock _lifecycleIconText;
-    private readonly StackPanel _recoverPanel;
+    private readonly IReadOnlyDictionary<RuntimeLifecycle, Border> _states;
+    private readonly Path _lifecycleIcon;
+    private readonly Border _lifecycleIconBorder;
+    private readonly Border _recoverPanel;
+    private Button? _stopButton;
 
     /// <summary>
     /// 初始化 Runtime 视图。
@@ -25,7 +32,7 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     public RuntimeView()
     {
         AvaloniaXamlLoader.Load(this);
-        _pills = new Dictionary<RuntimeLifecycle, Border>
+        _states = new Dictionary<RuntimeLifecycle, Border>
         {
             [RuntimeLifecycle.Stopped] = FindRequiredBorder("PillStopped"),
             [RuntimeLifecycle.Starting] = FindRequiredBorder("PillStarting"),
@@ -34,9 +41,11 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
             [RuntimeLifecycle.Failed] = FindRequiredBorder("PillFailed"),
             [RuntimeLifecycle.Recovering] = FindRequiredBorder("PillRecovering"),
         };
-        _lifecycleIconText = this.FindControl<TextBlock>("LifecycleIconText")
-            ?? throw new InvalidOperationException("无法找到 LifecycleIconText 控件。");
-        _recoverPanel = this.FindControl<StackPanel>("RecoverPanel")
+        _lifecycleIcon = this.FindControl<Path>("LifecycleIcon")
+            ?? throw new InvalidOperationException("无法找到 LifecycleIcon 控件。");
+        _lifecycleIconBorder = this.FindControl<Border>("LifecycleIconBorder")
+            ?? throw new InvalidOperationException("无法找到 LifecycleIconBorder 控件。");
+        _recoverPanel = this.FindControl<Border>("RecoverPanel")
             ?? throw new InvalidOperationException("无法找到 RecoverPanel 控件。");
     }
 
@@ -44,6 +53,14 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     protected override void OnBind(RuntimeViewModel viewModel, MviDisposableBag bindings)
     {
         base.OnBind(viewModel, bindings);
+
+        // 停止 DSH 接二次确认：将按钮命令包一层确认拦截（XAML 仍绑定原 StopRuntimeCommand，
+        // 类名与既有绑定保持一致；仅执行前插入确认）。
+        _stopButton = this.FindControl<Button>("StopButton");
+        if (_stopButton is not null && _stopButton.Command is not ConfirmStopCommand)
+        {
+            _stopButton.Command = new ConfirmStopCommand(this, _stopButton.Command);
+        }
 
         PropertyChangedEventHandler handler = (_, args) =>
         {
@@ -60,40 +77,77 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     }
 
     /// <summary>
-    /// 应用状态机指示：当前态 pill 高亮（原型 .state-pill.on）、图标着色（与壳状态点同色系）、
-    /// Failed 恢复面板显隐（ADR-0004）。
+    /// 应用状态机指示：当前态 state 高亮（.current-ok 绿 / .current 强调 / .off 虚线灰）、
+    /// 生命周期图标（Path，按状态取图标与着色，与壳状态点同色系）、Failed 恢复面板显隐（ADR-0004）。
     /// </summary>
     private void ApplyIndicators(RuntimeViewModel viewModel)
     {
         RuntimeLifecycle lifecycle = viewModel.Lifecycle;
 
-        foreach ((RuntimeLifecycle pillLifecycle, Border pill) in _pills)
+        foreach ((RuntimeLifecycle pillLifecycle, Border pill) in _states)
         {
+            pill.Classes.Remove("current");
+            pill.Classes.Remove("current-ok");
+            pill.Classes.Remove("off");
             if (pillLifecycle == lifecycle)
             {
-                if (!pill.Classes.Contains("on"))
-                {
-                    pill.Classes.Add("on");
-                }
+                // Running 且健康视为 current-ok（绿）；其余当前态用 current（强调色）。
+                pill.Classes.Add(lifecycle == RuntimeLifecycle.Running ? "current-ok" : "current");
             }
             else
             {
-                pill.Classes.Remove("on");
+                pill.Classes.Add("off");
             }
         }
 
-        (string glyph, IBrush brush) = lifecycle switch
+        (string iconKey, IBrush color, IBrush tint) = lifecycle switch
         {
-            RuntimeLifecycle.Running => ("✓", RuntimeLifecycleBrushes.Running),
-            RuntimeLifecycle.Failed => ("✗", RuntimeLifecycleBrushes.Failed),
-            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering =>
-                ("●", RuntimeLifecycleBrushes.Transition),
-            _ => ("○", RuntimeLifecycleBrushes.Stopped),
+            RuntimeLifecycle.Running => ("IconCheck", RuntimeLifecycleBrushes.Running, RuntimeLifecycleBrushes.TintRunning),
+            RuntimeLifecycle.Failed => ("IconAlert", RuntimeLifecycleBrushes.Failed, RuntimeLifecycleBrushes.TintFailed),
+            RuntimeLifecycle.Stopped => ("IconPower", RuntimeLifecycleBrushes.Stopped, RuntimeLifecycleBrushes.TintStopped),
+            _ => ("IconRefresh", RuntimeLifecycleBrushes.Transition, RuntimeLifecycleBrushes.TintTransition),
         };
-        _lifecycleIconText.Text = glyph;
-        _lifecycleIconText.Foreground = brush;
+
+        if (this.FindResource(iconKey) is StreamGeometry geometry)
+        {
+            _lifecycleIcon.Data = geometry;
+        }
+
+        _lifecycleIcon.Stroke = color;
+        _lifecycleIconBorder.Background = tint;
+        _lifecycleIconBorder.BorderBrush = color;
 
         _recoverPanel.IsVisible = lifecycle is RuntimeLifecycle.Failed;
+    }
+
+    /// <summary>
+    /// 构造停止确认弹窗的等宽上下文：PID 与端口取自现有 ViewModel 属性，取不到则退化为端口或版本信息。
+    /// </summary>
+    private string BuildStopSubject()
+    {
+        int? pid = ViewModel.ProcessId;
+        string? addr = ViewModel.Url is { } u
+            ? u.Split('?')[0]
+                .Replace("http://", string.Empty)
+                .Replace("https://", string.Empty)
+            : null;
+
+        if (pid is { } p && addr is { } a)
+        {
+            return $"PID {p} · {a}";
+        }
+
+        if (addr is { } a2)
+        {
+            return a2;
+        }
+
+        if (pid is { } p2)
+        {
+            return $"PID {p2}";
+        }
+
+        return ViewModel.DshVersion ?? "DSH Runtime";
     }
 
     private void OnKeepRuntimeOnCloseToggled(object? sender, RoutedEventArgs args)
@@ -116,5 +170,49 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     {
         return this.FindControl<Border>(name)
             ?? throw new InvalidOperationException($"无法找到 {name} 控件。");
+    }
+
+    /// <summary>
+    /// 停止 DSH 命令的二次确认拦截：先弹确认框，确认后才执行被包装的原命令。
+    /// </summary>
+    private sealed class ConfirmStopCommand : ICommand
+    {
+        private readonly RuntimeView _owner;
+        private readonly ICommand? _inner;
+
+        public ConfirmStopCommand(RuntimeView owner, ICommand? inner)
+        {
+            _owner = owner;
+            _inner = inner;
+        }
+
+        public bool CanExecute(object? parameter) => _inner?.CanExecute(parameter) ?? false;
+
+        public async void Execute(object? parameter)
+        {
+            bool ok = await ConfirmDialog.ShowAsync(ConfirmAction.StopRuntime, _owner.BuildStopSubject());
+            if (ok)
+            {
+                _inner?.Execute(parameter);
+            }
+        }
+
+        public event EventHandler? CanExecuteChanged
+        {
+            add
+            {
+                if (_inner is not null)
+                {
+                    _inner.CanExecuteChanged += value;
+                }
+            }
+            remove
+            {
+                if (_inner is not null)
+                {
+                    _inner.CanExecuteChanged -= value;
+                }
+            }
+        }
     }
 }

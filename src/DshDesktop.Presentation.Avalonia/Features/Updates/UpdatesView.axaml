@@ -2,136 +2,229 @@
     x:Class="DshDesktop.Presentation.Avalonia.Features.Updates.UpdatesView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Updates"
     xmlns:u="clr-namespace:DshDesktop.Domain.Updates;assembly=DshDesktop.Domain"
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Updates"
     x:DataType="vm:UpdatesViewModel">
     <ScrollViewer>
         <StackPanel Margin="24" Spacing="16">
-            <StackPanel Orientation="Horizontal" Spacing="12">
+
+            <!-- 顶部工具条 -->
+            <DockPanel Classes="bar" LastChildFill="False">
                 <TextBlock
+                    DockPanel.Dock="Left"
                     VerticalAlignment="Center"
-                    FontSize="22"
-                    FontWeight="SemiBold"
-                    Text="Updates" />
-                <Button
-                    VerticalAlignment="Center"
-                    Command="{Binding CheckUpdatesCommand}"
-                    Content="检查更新" />
-                <TextBlock
-                    VerticalAlignment="Center"
-                    Foreground="#9AA4B2"
+                    Classes="panel-sub"
                     Text="{Binding Status}" />
-            </StackPanel>
-
-            <TextBlock Foreground="#EAB308" Text="{Binding PendingOperation}" />
-            <TextBlock Foreground="#EF4444" Text="{Binding LastError}" TextWrapping="Wrap" />
-
-            <Border
-                Padding="16"
-                Background="#161B22"
-                BorderBrush="#30363D"
-                BorderThickness="1"
-                CornerRadius="8">
-                <StackPanel Spacing="10">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="Desktop" />
-                    <StackPanel Orientation="Horizontal" Spacing="16">
-                        <TextBlock VerticalAlignment="Center" Text="{Binding DesktopVersion, StringFormat='当前：{0}'}" />
-                        <TextBlock VerticalAlignment="Center" Foreground="#22C55E" Text="{Binding LatestDesktopVersion, StringFormat='→ {0}'}" />
-                        <Button
-                            VerticalAlignment="Center"
-                            Command="{Binding DownloadAndApplyDesktopUpdateCommand}"
-                            Content="下载并重启更新"
-                            IsVisible="{Binding LatestDesktopVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <Button
+                    DockPanel.Dock="Right"
+                    Classes="btn secondary"
+                    Command="{Binding CheckUpdatesCommand}">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Path Classes="icon icon-sm" Data="{DynamicResource IconRefresh}" Stroke="{Binding $parent[Button].Foreground}" />
+                        <TextBlock Text="检查更新" />
                     </StackPanel>
-                    <TextBlock Foreground="#9AA4B2" Text="自更新经 Velopack（ADR-0003）；未安装形态不显示更新按钮" />
-                </StackPanel>
-            </Border>
+                </Button>
+            </DockPanel>
 
-            <Border
-                Padding="16"
-                Background="#161B22"
-                BorderBrush="#30363D"
-                BorderThickness="1"
-                CornerRadius="8">
-                <StackPanel Spacing="10">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="DSH Runtime" />
-                    <StackPanel Orientation="Horizontal" Spacing="16">
-                        <TextBlock VerticalAlignment="Center" Text="{Binding CurrentDshVersion, StringFormat='当前：{0}', FallbackValue='当前：—', TargetNullValue='当前：—'}" />
-                        <TextBlock VerticalAlignment="Center" Foreground="#9AA4B2" Text="{Binding LatestDshVersion, StringFormat='最新（{0} 通道）', FallbackValue='最新：—', TargetNullValue='最新：—'}" />
-                        <Button VerticalAlignment="Center" Click="OnInstallLatestClicked" Content="安装最新版本" />
+            <TextBlock
+                Foreground="{DynamicResource DshWarnBrush}"
+                FontSize="{DynamicResource DshFontSizeSmall}"
+                Text="{Binding PendingOperation}" />
+            <TextBlock
+                Foreground="{DynamicResource DshErrBrush}"
+                FontSize="{DynamicResource DshFontSizeSmall}"
+                Text="{Binding LastError}"
+                TextWrapping="Wrap" />
+
+            <!-- 两张对比卡 -->
+            <Grid ColumnDefinitions="*,*">
+                <Border Classes="panel" Grid.Column="0" Margin="0,0,8,0">
+                    <StackPanel>
+                        <Border Classes="panel-head">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="panel-title" Text="Desktop 本体" />
+                                <Border
+                                    Classes="tag ok"
+                                    Grid.Column="1"
+                                    IsVisible="{Binding LatestDesktopVersion, Converter={x:Static StringConverters.IsNullOrEmpty}}">
+                                    <TextBlock Text="已是最新" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Border Classes="panel-body">
+                            <StackPanel Spacing="10">
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                                    <TextBlock
+                                        FontSize="24"
+                                        FontWeight="SemiBold"
+                                        FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                        Text="{Binding DesktopVersion, StringFormat='v{0}'}" />
+                                    <Border Classes="tag">
+                                        <TextBlock Text="Stable" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock
+                                    Classes="panel-sub"
+                                    Text="自更新经 Velopack 检查。更新只替换安装根的 current 目录，不触碰 data。" />
+                                <Button
+                                    Classes="btn primary"
+                                    HorizontalAlignment="Left"
+                                    Command="{Binding DownloadAndApplyDesktopUpdateCommand}"
+                                    IsVisible="{Binding LatestDesktopVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Path Classes="icon icon-sm" Data="{DynamicResource IconDownload}" Stroke="{Binding $parent[Button].Foreground}" />
+                                        <TextBlock Text="下载并重启更新" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
+                </Border>
 
-                    <TextBlock Foreground="#9AA4B2" Text="可用 Runtime（激活即切换并重启）：" />
-                    <ItemsControl ItemsSource="{Binding Runtimes}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="u:DshRuntimeInfo">
-                                <StackPanel Margin="0,2" Orientation="Horizontal" Spacing="8">
+                <Border Classes="panel" Grid.Column="1" Margin="8,0,0,0">
+                    <StackPanel>
+                        <Border Classes="panel-head">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="panel-title" Text="DSH Runtime" />
+                                <Border
+                                    Classes="tag accent"
+                                    Grid.Column="1"
+                                    IsVisible="{Binding LatestDshVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <TextBlock Text="有可用更新" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Border Classes="panel-body">
+                            <StackPanel Spacing="12">
+                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                                     <TextBlock
-                                        Width="160"
-                                        VerticalAlignment="Center"
-                                        FontFamily="Consolas"
-                                        Text="{Binding Version}" />
-                                    <Border
-                                        VerticalAlignment="Center"
-                                        Background="#1F6FEB"
-                                        CornerRadius="4"
-                                        Padding="6,1"
-                                        IsVisible="{Binding IsBorrowed}">
-                                        <TextBlock FontSize="11" Foreground="White" Text="借用" />
+                                        FontSize="24"
+                                        FontWeight="SemiBold"
+                                        FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                        Foreground="{DynamicResource DshText3Brush}"
+                                        Text="{Binding CurrentDshVersion, StringFormat='v{0}', FallbackValue='v—', TargetNullValue='v—'}" />
+                                    <Path Classes="icon" Data="{DynamicResource IconChevronRight}" Stroke="{DynamicResource DshText4Brush}" />
+                                    <TextBlock
+                                        FontSize="24"
+                                        FontWeight="SemiBold"
+                                        FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                        Foreground="{DynamicResource DshAccentHiBrush}"
+                                        Text="{Binding LatestDshVersion, StringFormat='v{0}', FallbackValue='v—', TargetNullValue='v—'}" />
+                                    <Border Classes="tag mono">
+                                        <TextBlock Text="latest" />
                                     </Border>
-                                    <Border
-                                        VerticalAlignment="Center"
-                                        Background="#238636"
-                                        CornerRadius="4"
-                                        Padding="6,1"
-                                        IsVisible="{Binding IsActive}">
-                                        <TextBlock FontSize="11" Foreground="White" Text="当前" />
-                                    </Border>
-                                    <Button
-                                        VerticalAlignment="Center"
-                                        Click="OnActivateRuntimeClicked"
-                                        Content="激活"
-                                        IsVisible="{Binding !IsActive}" />
                                 </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
+                                <TextBlock
+                                    Classes="panel-sub"
+                                    Text="{Binding LatestDshVersion, StringFormat='最新（{0} 通道）', FallbackValue='最新：—', TargetNullValue='最新：—'}" />
+                                <Button
+                                    Classes="btn primary"
+                                    HorizontalAlignment="Left"
+                                    Click="OnInstallLatestClicked">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Path Classes="icon icon-sm" Data="{DynamicResource IconDownload}" Stroke="{Binding $parent[Button].Foreground}" />
+                                        <TextBlock Text="安装最新版本" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
 
-            <Border
-                Padding="16"
-                Background="#161B22"
-                BorderBrush="#30363D"
-                BorderThickness="1"
-                CornerRadius="8">
-                <StackPanel Spacing="10">
-                    <TextBlock FontSize="16" FontWeight="SemiBold" Text="插件更新" />
-                    <ItemsControl ItemsSource="{Binding PluginUpdates}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="u:PluginUpdateInfo">
-                                <StackPanel Margin="0,2" Orientation="Horizontal" Spacing="8">
-                                    <TextBlock
-                                        Width="260"
-                                        VerticalAlignment="Center"
-                                        Text="{Binding Name}" />
-                                    <TextBlock
-                                        Width="200"
-                                        VerticalAlignment="Center"
-                                        FontFamily="Consolas"
-                                        Foreground="#9AA4B2"
-                                        Text="{Binding CurrentVersion, StringFormat='{}{0}', FallbackValue=''}" />
-                                    <TextBlock VerticalAlignment="Center" Foreground="#22C55E" Text="{Binding LatestVersion, StringFormat='→ {0}'}" />
-                                    <Button
-                                        VerticalAlignment="Center"
-                                        Click="OnUpdatePluginClicked"
-                                        Content="更新" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </Border>
+            <!-- 两栏：可用 Runtime / 插件更新 -->
+            <Grid ColumnDefinitions="*,*">
+                <Border Classes="panel" Grid.Column="0" Margin="0,0,8,0">
+                    <StackPanel>
+                        <Border Classes="panel-head">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="panel-title" Text="可用 Runtime" />
+                                <TextBlock Classes="panel-sub" Grid.Column="1" Text="激活即切换并重启" />
+                            </Grid>
+                        </Border>
+                        <Border Classes="panel-body">
+                            <ItemsControl ItemsSource="{Binding Runtimes}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="u:DshRuntimeInfo">
+                                        <Border Classes="path-row">
+                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock
+                                                    Width="160"
+                                                    VerticalAlignment="Center"
+                                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                                    Text="{Binding Version}" />
+                                                <Border Classes="tag accent" IsVisible="{Binding IsActive}">
+                                                    <TextBlock Text="当前" />
+                                                </Border>
+                                                <Border Classes="tag" IsVisible="{Binding IsBorrowed}">
+                                                    <TextBlock Text="借用" />
+                                                </Border>
+                                                <Border Classes="tag" IsVisible="{Binding Converter={x:Static local:Converters.LocalCopy}}">
+                                                    <TextBlock Text="本机副本" />
+                                                </Border>
+                                                <Button
+                                                    Classes="btn secondary sm"
+                                                    HorizontalAlignment="Right"
+                                                    Click="OnActivateRuntimeClicked"
+                                                    Content="激活"
+                                                    IsVisible="{Binding !IsActive}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Border Classes="panel" Grid.Column="1" Margin="8,0,0,0">
+                    <StackPanel>
+                        <Border Classes="panel-head">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="panel-title" Text="插件更新" />
+                                <Border Classes="tag mono" Grid.Column="1">
+                                    <TextBlock Text="{Binding PluginUpdates.Count}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Border Classes="panel-body">
+                            <ItemsControl ItemsSource="{Binding PluginUpdates}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="u:PluginUpdateInfo">
+                                        <Border Classes="path-row">
+                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                <TextBlock
+                                                    Width="200"
+                                                    Classes="plugin-name"
+                                                    FontSize="{DynamicResource DshFontSizeBodySmall}"
+                                                    Text="{Binding Name}" />
+                                                <TextBlock
+                                                    Width="110"
+                                                    VerticalAlignment="Center"
+                                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                                    Foreground="{DynamicResource DshText3Brush}"
+                                                    Text="{Binding CurrentVersion}" />
+                                                <Path Classes="icon icon-sm" Data="{DynamicResource IconChevronRight}" Stroke="{DynamicResource DshText4Brush}" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
+                                                    Foreground="{DynamicResource DshAccentHiBrush}"
+                                                    Text="{Binding LatestVersion}" />
+                                                <Button
+                                                    Classes="btn secondary sm"
+                                                    HorizontalAlignment="Right"
+                                                    Click="OnUpdatePluginClicked"
+                                                    Content="更新" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

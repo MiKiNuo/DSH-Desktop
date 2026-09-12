@@ -1,23 +1,48 @@
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
+using Path = Avalonia.Controls.Shapes.Path;
 
 namespace DshDesktop.Presentation.Avalonia.Features.Dashboard;
 
 /// <summary>
+/// 把启动阶段耗时占比（0-100）映射为 <see cref="GridLength"/>.Star，
+/// 让瀑布图的 <c>wf-fill</c> 按阶段耗时占总量比例占据轨道宽度。
+/// <c>Remainder=true</c> 时返回剩余比例（100 - 占比），与填充列配对。
+/// </summary>
+public sealed class PercentColumnConverter : IValueConverter
+{
+    public bool Remainder { get; set; }
+
+    /// <inheritdoc />
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        double pct = value is double d ? d : 0;
+        double star = Remainder ? Math.Max(0, 100 - pct) : Math.Max(0, pct);
+        return new GridLength(star, GridUnitType.Star);
+    }
+
+    /// <inheritdoc />
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// 表示 Dashboard 视图（Phase 8 Issue 03：独立 DashboardViewModel 投影直显）。
-/// 就绪行图标 / 健康状态点的颜色映射属表现逻辑，随生命周期在 View 层计算
+/// 就绪图标 / 健康状态点的颜色映射属表现逻辑，随生命周期在 View 层计算
 /// （与 RuntimeView.ApplyIndicators 同先例，画刷复用 RuntimeLifecycleBrushes）。
 /// </summary>
 public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 {
     private readonly Border _readyIconBox;
-    private readonly TextBlock _readyIconText;
+    private readonly Path _readyIconPath;
     private readonly TextBlock _healthStatus;
 
     /// <summary>
@@ -27,7 +52,7 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
     {
         AvaloniaXamlLoader.Load(this);
         _readyIconBox = FindRequiredControl<Border>("ReadyIconBox");
-        _readyIconText = FindRequiredControl<TextBlock>("ReadyIconText");
+        _readyIconPath = FindRequiredControl<Path>("ReadyIconPath");
         _healthStatus = FindRequiredControl<TextBlock>("HealthStatus");
     }
 
@@ -57,15 +82,20 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 
     private void ApplyLifecycleIndicator(RuntimeLifecycle lifecycle)
     {
-        string glyph = lifecycle switch
+        string iconKey = lifecycle switch
         {
-            RuntimeLifecycle.Running => "✓",
-            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering => "●",
-            RuntimeLifecycle.Failed => "✗",
-            _ => "○",
+            RuntimeLifecycle.Running => "IconCheck",
+            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering => "IconActivity",
+            RuntimeLifecycle.Failed => "IconAlert",
+            _ => "IconInfo",
         };
-        _readyIconText.Text = glyph;
-        _readyIconText.Foreground = RuntimeLifecycleBrushes.For(lifecycle);
+
+        if (this.FindResource(iconKey) is StreamGeometry geometry)
+        {
+            _readyIconPath.Data = geometry;
+            _readyIconPath.Stroke = RuntimeLifecycleBrushes.For(lifecycle);
+        }
+
         _readyIconBox.Background = RuntimeLifecycleBrushes.TintFor(lifecycle);
     }
 

@@ -1,16 +1,19 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using Avalonia.Controls;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using DshDesktop.Domain.Diagnostics;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
 
 namespace DshDesktop.Presentation.Avalonia.Features.Diagnostics;
 
 /// <summary>
-/// 表示 Diagnostics 视图：Live 控制台 + 新事件到达时自动滚到底部；
+/// 表示 Diagnostics 视图：Live 控制台 + 搜索/级别过滤 + 空状态切换 + 新事件到达时自动滚到底部；
 /// 导出诊断包经 Avalonia StorageProvider 保存对话框取目标路径（对话框属 View 层职责）。
 /// </summary>
 public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewModel>
@@ -22,6 +25,10 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
 
     private readonly ListBox _entriesList;
     private readonly ObservableCollection<DiagnosticRow> _rows = [];
+    private readonly Border _emptyBorder;
+    private readonly TextBox _searchBox;
+    private readonly Button[] _filterButtons;
+    private string _levelFilter = "all";
     private DiagnosticsViewModel? _viewModel;
 
     /// <summary>
@@ -33,6 +40,23 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
         _entriesList = this.FindControl<ListBox>("EntriesList")
             ?? throw new InvalidOperationException("无法找到 EntriesList 控件。");
         _entriesList.ItemsSource = _rows;
+        _emptyBorder = this.FindControl<Border>("EmptyState")
+            ?? throw new InvalidOperationException("无法找到 EmptyState 控件。");
+        _searchBox = this.FindControl<TextBox>("SearchBox")
+            ?? throw new InvalidOperationException("无法找到 SearchBox 控件。");
+        _filterButtons =
+        [
+            this.FindControl<Button>("FilterAll")
+                ?? throw new InvalidOperationException("无法找到 FilterAll 控件。"),
+            this.FindControl<Button>("FilterInfo")
+                ?? throw new InvalidOperationException("无法找到 FilterInfo 控件。"),
+            this.FindControl<Button>("FilterWarn")
+                ?? throw new InvalidOperationException("无法找到 FilterWarn 控件。"),
+            this.FindControl<Button>("FilterErr")
+                ?? throw new InvalidOperationException("无法找到 FilterErr 控件。"),
+        ];
+        // 默认选中「全部」。
+        _filterButtons[0].Classes.Add("primary");
     }
 
     /// <inheritdoc />
@@ -60,27 +84,67 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
 
     private void SyncRows(DiagnosticsViewModel viewModel)
     {
-        IReadOnlyList<DshDesktop.Domain.Diagnostics.DiagnosticEvent> entries = viewModel.Entries;
-
-        // 快速路径：Reducer 语义为尾部追加（未满 1000 时），共享前缀仅做 O(1) 边界校验；
-        // 触发头部截断（计数不变）时回退全量重建。
-        if (entries.Count > _rows.Count
-            && (_rows.Count == 0
-                || entries[entries.Count - _rows.Count - 1].Equals(_rows[_rows.Count - 1].Event)))
+        // 过滤由 View 层承担（搜索词 + 级别分段），数据来自 viewModel.Entries。
+        _rows.Clear();
+        string q = _searchBox.Text?.Trim() ?? string.Empty;
+        foreach (DiagnosticEvent entry in viewModel.Entries)
         {
-            int appendStart = _rows.Count; // 追加期间 _rows.Count 会变，先捕获起点。
-            for (int i = appendStart; i < entries.Count; i++)
+            if (MatchesLevel(entry.Level, _levelFilter) && MatchesQuery(entry, q))
             {
-                _rows.Add(new DiagnosticRow(entries[i]));
+                _rows.Add(new DiagnosticRow(entry));
             }
+        }
 
+        _emptyBorder.IsVisible = _rows.Count == 0;
+        ScrollToEnd();
+    }
+
+    private static bool MatchesLevel(DiagnosticLevel level, string filter) => filter switch
+    {
+        "all" => true,
+        "info" => level is DiagnosticLevel.Info or DiagnosticLevel.Debug or DiagnosticLevel.Success,
+        "warn" => level == DiagnosticLevel.Warning,
+        "err" => level == DiagnosticLevel.Error,
+        _ => true,
+    };
+
+    private static bool MatchesQuery(DiagnosticEvent e, string q)
+        => string.IsNullOrEmpty(q)
+            || e.Message.Contains(q, StringComparison.OrdinalIgnoreCase)
+            || e.Timestamp.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)
+                .Contains(q, StringComparison.OrdinalIgnoreCase);
+
+    private void OnSearchChanged(object? sender, TextChangedEventArgs args)
+    {
+        if (_viewModel is not null)
+        {
+            SyncRows(_viewModel);
+        }
+    }
+
+    private void OnFilterClicked(object? sender, RoutedEventArgs args)
+    {
+        if (sender is not Button btn)
+        {
             return;
         }
 
-        _rows.Clear();
-        foreach (DshDesktop.Domain.Diagnostics.DiagnosticEvent entry in entries)
+        foreach (Button b in _filterButtons)
         {
-            _rows.Add(new DiagnosticRow(entry));
+            b.Classes.Remove("primary");
+        }
+
+        btn.Classes.Add("primary");
+        _levelFilter = btn.Name switch
+        {
+            "FilterInfo" => "info",
+            "FilterWarn" => "warn",
+            "FilterErr" => "err",
+            _ => "all",
+        };
+        if (_viewModel is not null)
+        {
+            SyncRows(_viewModel);
         }
     }
 
@@ -123,4 +187,24 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
             _viewModel.ExportDiagnosticsBundleCommand.Execute(file.Path.LocalPath);
         }
     }
+}
+
+/// <summary>
+/// 把 <see cref="DiagnosticRow"/> 映射为级别短标签（OK / INFO / WARN / ERROR），供 log-level 列展示。
+/// </summary>
+internal sealed class DiagnosticLevelConverter : IValueConverter
+{
+    /// <inheritdoc />
+    public object? Convert(object? value, Type? targetType, object? parameter, CultureInfo? culture)
+        => value switch
+        {
+            DiagnosticRow { IsOk: true } => "OK",
+            DiagnosticRow { IsWarning: true } => "WARN",
+            DiagnosticRow { IsError: true } => "ERROR",
+            _ => "INFO",
+        };
+
+    /// <inheritdoc />
+    public object? ConvertBack(object? value, Type? targetType, object? parameter, CultureInfo? culture)
+        => throw new NotSupportedException();
 }

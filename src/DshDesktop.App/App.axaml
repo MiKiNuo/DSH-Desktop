@@ -7,5 +7,6 @@
         <FluentTheme />
         <!-- DSH 暗色主题（Phase 8 Issue 02）：原型色板 + class 语义样式族，各视图按 Classes 引用。 -->
         <StyleInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshTheme.axaml" />
+        <StyleInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshIcons.axaml" />
     </Application.Styles>
 </Application>

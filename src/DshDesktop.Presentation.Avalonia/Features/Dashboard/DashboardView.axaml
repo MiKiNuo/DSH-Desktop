@@ -5,181 +5,164 @@
     xmlns:vm="clr-namespace:DshDesktop.Presentation.Avalonia.Features.Dashboard;assembly=DshDesktop.Presentation.Avalonia"
     x:DataType="vm:DashboardViewModel">
     <!--
-      Dashboard 概览页（Phase 8 Issue 03，视觉基准 docs/DSH-Desktop-UI-Prototype.html 106-150 行）：
-      hero（就绪行 + 副文案 + 三按钮）+ 运行健康度卡 + 统计卡×4 + 启动 timeline + 最近活动。
-      数据全部为独立 DashboardStore 的投影（兄弟 Store 经 BindSiblingState 回流，§11.2）；
-      导航按钮 → Intent → Effect → Mediator NavigateRequest（§28）。
+      Dashboard 概览页（UI 重设计）：Hero 条 + 指标条（发丝线分隔，非卡片）
+      + 两栏非对称网格（启动性能瀑布图 / 运行健康度）+ 最近活动流。
+      全部数据为 DashboardStore 的投影；导航/动作按钮 → Intent → Effect → Mediator。
     -->
+    <UserControl.Resources>
+        <!-- 把阶段耗时占比（0-100）映射为 GridLength.Star，让 wf-fill 按占比占据轨道。 -->
+        <vm:PercentColumnConverter x:Key="PctFill" />
+        <vm:PercentColumnConverter x:Key="PctRemainder" Remainder="True" />
+    </UserControl.Resources>
+
     <ScrollViewer>
         <StackPanel Margin="24" Spacing="14">
 
-            <!-- ===== hero：1.6fr 主区 + 0.8fr 运行健康度卡 ===== -->
-            <Grid ColumnDefinitions="1.6*,0.8*" ColumnSpacing="14">
-                <Border Classes="card hero-main" Grid.Column="0">
-                    <StackPanel Spacing="12">
-                        <TextBlock Classes="eyebrow" Text="RUNTIME STATUS" />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Border x:Name="ReadyIconBox" Classes="ready-icon">
-                                <TextBlock x:Name="ReadyIconText" Text="○" />
-                            </Border>
-                            <TextBlock Classes="hero-title" Text="{Binding HeroTitle}" />
-                        </StackPanel>
+            <!-- ===== Hero 条：左侧 2px 竖条 + 柔和底色渐隐（由 Border.hero 提供） ===== -->
+            <Border Classes="hero">
+                <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                    <Border x:Name="ReadyIconBox" Classes="hero-icon" Grid.Column="0" Margin="0,0,14,0">
+                        <Path x:Name="ReadyIconPath"
+                              Classes="icon icon-lg"
+                              Data="{DynamicResource IconCheck}"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Classes="hero-title" Text="{Binding HeroTitle}" />
                         <TextBlock Classes="hero-sub" Text="{Binding HeroSubtitle}" />
-                        <StackPanel Orientation="Horizontal" Spacing="10">
-                            <Button
-                                Classes="btn primary"
-                                Command="{Binding OpenWorkbenchCommand}"
-                                Content="打开 DSH 工作台" />
-                            <Button
-                                Classes="btn"
-                                Command="{Binding OpenStartupLogCommand}"
-                                Content="查看启动日志" />
-                            <Button
-                                Classes="btn"
-                                Command="{Binding OpenRuntimeCommand}"
-                                Content="运行环境" />
+                        <StackPanel Margin="0,9,0,0" Orientation="Horizontal">
+                            <TextBlock Classes="hero-fact" Text="{Binding StartupElapsedText, StringFormat='启动 {0}'}" />
+                            <TextBlock Classes="hero-fact" Text="{Binding HealthText, StringFormat='健康 {0}'}" />
                         </StackPanel>
                     </StackPanel>
-                </Border>
 
-                <Border Classes="card" Grid.Column="1">
-                    <StackPanel Margin="16" Spacing="10">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <TextBlock Classes="card-title" Text="运行健康度" />
-                            <TextBlock
-                                x:Name="HealthStatus"
-                                Classes="health-status"
-                                Grid.Column="1"
-                                Text="{Binding HealthText}" />
-                        </Grid>
-                        <Grid ColumnDefinitions="56,*,44">
-                            <TextBlock Classes="metric-label" Text="CPU" />
-                            <ProgressBar
-                                Classes="bar"
-                                Grid.Column="1"
-                                Value="{Binding CpuBarValue}" />
-                            <TextBlock
-                                Classes="metric-value"
-                                Grid.Column="2"
-                                Text="{Binding CpuText}" />
-                        </Grid>
-                        <Grid ColumnDefinitions="56,*,44">
-                            <TextBlock Classes="metric-label" Text="Memory" />
-                            <ProgressBar
-                                Classes="bar"
-                                Grid.Column="1"
-                                Value="{Binding MemoryBarValue}" />
-                            <TextBlock
-                                Classes="metric-value"
-                                Grid.Column="2"
-                                Text="{Binding MemoryText}" />
-                        </Grid>
-                        <Grid ColumnDefinitions="56,*,44">
-                            <TextBlock Classes="metric-label" Text="启动耗时" />
-                            <ProgressBar
-                                Classes="bar"
-                                Grid.Column="1"
-                                Value="{Binding StartupBarValue}" />
-                            <TextBlock
-                                Classes="metric-value"
-                                Grid.Column="2"
-                                Text="{Binding StartupElapsedText}" />
-                        </Grid>
-                        <Grid ColumnDefinitions="56,*,44">
-                            <TextBlock Classes="metric-label" Text="插件" />
-                            <ProgressBar
-                                Classes="bar"
-                                Grid.Column="1"
-                                Value="{Binding PluginBarValue}" />
-                            <TextBlock
-                                Classes="metric-value"
-                                Grid.Column="2"
-                                Text="{Binding PluginCount}" />
-                        </Grid>
+                    <StackPanel Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                        <Button Classes="btn ghost" Command="{Binding OpenStartupLogCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Path Classes="icon icon-sm"
+                                      Data="{DynamicResource IconActivity}"
+                                      Stroke="{Binding $parent[Button].Foreground}" />
+                                <TextBlock Text="启动日志" />
+                            </StackPanel>
+                        </Button>
+                        <Button Classes="btn primary lg" Command="{Binding OpenWorkbenchCommand}">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Path Classes="icon icon-sm"
+                                      Data="{DynamicResource IconTerminal}"
+                                      Stroke="{Binding $parent[Button].Foreground}" />
+                                <TextBlock Text="打开 DSH 工作台" />
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
-                </Border>
-            </Grid>
+                </Grid>
+            </Border>
 
-            <!-- ===== 统计卡×4 ===== -->
-            <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="14">
-                <Border Classes="card" Grid.Column="0">
-                    <StackPanel Margin="15,13">
-                        <TextBlock Classes="stat-label" Text="Desktop 版本" />
-                        <TextBlock Classes="stat-value" Text="{Binding DesktopVersion}" />
-                        <TextBlock Classes="stat-foot" Text="{Binding DesktopChannelFooter}" />
-                    </StackPanel>
-                </Border>
-                <Border Classes="card" Grid.Column="1">
-                    <StackPanel Margin="15,13">
-                        <TextBlock Classes="stat-label" Text="DSH Runtime" />
-                        <TextBlock
-                            Classes="stat-value"
-                            Text="{Binding DshVersion, FallbackValue='—', TargetNullValue='—'}" />
-                        <TextBlock Classes="stat-foot" Text="{Binding NodeVersionFooter}" />
-                    </StackPanel>
-                </Border>
-                <Border Classes="card" Grid.Column="2">
-                    <StackPanel Margin="15,13">
-                        <TextBlock Classes="stat-label" Text="已安装插件" />
-                        <TextBlock Classes="stat-value" Text="{Binding PluginCount}" />
-                        <TextBlock Classes="stat-foot" Text="{Binding PluginsFooterText}" />
-                    </StackPanel>
-                </Border>
-                <Border Classes="card" Grid.Column="3">
-                    <StackPanel Margin="15,13">
-                        <TextBlock Classes="stat-label" Text="最近启动" />
-                        <TextBlock Classes="stat-value" Text="{Binding StartupElapsedText}" />
-                        <TextBlock Classes="stat-foot" Text="{Binding StartupComparisonText}" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+            <!-- ===== 指标条：Border.statbar 容器 + 4×Border.stat 发丝线分隔 ===== -->
+            <Border Classes="statbar">
+                <Grid ColumnDefinitions="1*,1*,1*,1*">
+                    <Border Classes="stat" Grid.Column="0" BorderThickness="0">
+                        <StackPanel>
+                            <TextBlock Classes="stat-key" Text="Desktop 版本" />
+                            <TextBlock Classes="stat-value" Text="{Binding DesktopVersion}" />
+                            <TextBlock Classes="stat-foot" Text="{Binding DesktopChannelFooter}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="stat" Grid.Column="1">
+                        <StackPanel>
+                            <TextBlock Classes="stat-key" Text="DSH Runtime" />
+                            <TextBlock
+                                Classes="stat-value"
+                                Text="{Binding DshVersion, FallbackValue='—', TargetNullValue='—'}" />
+                            <TextBlock Classes="stat-foot" Text="{Binding NodeVersionFooter}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="stat" Grid.Column="2">
+                        <StackPanel>
+                            <TextBlock Classes="stat-key" Text="已安装插件" />
+                            <TextBlock Classes="stat-value" Text="{Binding PluginCount}" />
+                            <TextBlock Classes="stat-foot" Text="{Binding PluginsFooterText}" />
+                        </StackPanel>
+                    </Border>
+                    <Border Classes="stat" Grid.Column="3">
+                        <StackPanel>
+                            <TextBlock Classes="stat-key" Text="最近启动" />
+                            <TextBlock Classes="stat-value" Text="{Binding StartupElapsedText}" />
+                            <TextBlock Classes="stat-foot" Text="{Binding StartupComparisonText}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
 
-            <!-- ===== 启动 timeline + 最近活动 ===== -->
-            <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
-                <Border Classes="card" Grid.Column="0">
+            <!-- ===== 两栏非对称网格：左 2fr 启动性能 / 右 1fr 运行健康度 ===== -->
+            <Grid ColumnDefinitions="2*,1*" ColumnSpacing="14">
+
+                <!-- 启动性能：瀑布图 -->
+                <Border Classes="panel" Grid.Column="0">
                     <Grid RowDefinitions="Auto,*">
-                        <Border Classes="card-head" Grid.Row="0">
+                        <Border Classes="panel-head" Grid.Row="0">
                             <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel>
-                                    <TextBlock Classes="card-title" Text="启动性能" />
-                                    <TextBlock Classes="card-subtitle" Text="最近一次冷启动阶段耗时" />
+                                    <TextBlock Classes="panel-title" Text="启动性能" />
+                                    <TextBlock Classes="panel-sub" Text="最近一次冷启动阶段耗时" />
                                 </StackPanel>
-                                <Button
-                                    Classes="btn small"
-                                    Grid.Column="1"
-                                    Command="{Binding OpenStartupLogCommand}"
-                                    Content="完整日志" />
+                                <Button Classes="btn ghost sm"
+                                        Grid.Column="1"
+                                        Command="{Binding OpenStartupLogCommand}"
+                                        Content="完整日志" />
                             </Grid>
                         </Border>
-                        <Border Classes="card-body" Grid.Row="1">
+                        <Border Classes="panel-body" Grid.Row="1">
                             <StackPanel Spacing="10">
                                 <ItemsControl
                                     ItemsSource="{Binding TimelineRows}"
                                     IsVisible="{Binding HasTimeline}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:DashboardTimelineRow">
-                                            <Grid
-                                                ColumnDefinitions="16,150,*,60"
-                                                Margin="0,0,0,10">
-                                                <TextBlock Classes="timeline-check" Text="✓" />
+                                            <Grid ColumnDefinitions="112,*,62" Margin="0,0,0,10">
                                                 <TextBlock
-                                                    Classes="timeline-name"
-                                                    Grid.Column="1"
+                                                    Classes="kv-key"
+                                                    Grid.Column="0"
                                                     Text="{Binding Name}" />
-                                                <ProgressBar
-                                                    Classes="bar"
-                                                    Grid.Column="2"
-                                                    Value="{Binding WidthPercent}" />
+                                                <Border Classes="wf-track" Grid.Column="1">
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="{Binding WidthPercent, Converter={StaticResource PctFill}}" />
+                                                            <ColumnDefinition Width="{Binding WidthPercent, Converter={StaticResource PctRemainder}}" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Classes="wf-fill" Grid.Column="0" HorizontalAlignment="Stretch" />
+                                                    </Grid>
+                                                </Border>
                                                 <TextBlock
-                                                    Classes="timeline-time"
-                                                    Grid.Column="3"
+                                                    Classes="kv-value"
+                                                    Grid.Column="2"
                                                     Text="{Binding DurationText}" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+
+                                <!-- 合计行（数据来自现有投影 StartupElapsedText） -->
+                                <Grid ColumnDefinitions="112,*,62" Margin="0,0,0,10">
+                                    <TextBlock
+                                        Classes="kv-key"
+                                        FontWeight="SemiBold"
+                                        Grid.Column="0"
+                                        Text="合计" />
+                                    <Border Classes="wf-track" Grid.Column="1" IsVisible="False" />
+                                    <TextBlock
+                                        Classes="kv-value"
+                                        FontWeight="SemiBold"
+                                        Grid.Column="2"
+                                        Text="{Binding StartupElapsedText}" />
+                                </Grid>
+
                                 <TextBlock
-                                    Classes="card-subtitle"
+                                    Classes="panel-sub"
                                     IsVisible="{Binding !HasTimeline}"
                                     Text="尚无启动数据：Runtime 就绪后投影阶段耗时。" />
                             </StackPanel>
@@ -187,49 +170,123 @@
                     </Grid>
                 </Border>
 
-                <Border Classes="card" Grid.Column="1">
+                <!-- 运行健康度：4 行 kv-row -->
+                <Border Classes="panel" Grid.Column="1">
                     <Grid RowDefinitions="Auto,*">
-                        <Border Classes="card-head" Grid.Row="0">
-                            <StackPanel>
-                                <TextBlock Classes="card-title" Text="最近活动" />
-                                <TextBlock Classes="card-subtitle" Text="Runtime、插件和更新事件" />
-                            </StackPanel>
-                        </Border>
-                        <Border Classes="card-body" Grid.Row="1">
-                            <StackPanel Spacing="10">
-                                <ItemsControl
-                                    ItemsSource="{Binding ActivityItems}"
-                                    IsVisible="{Binding HasActivities}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:DashboardActivityItem">
-                                            <Grid ColumnDefinitions="14,*" Margin="0,0,0,10">
-                                                <Ellipse
-                                                    Width="6"
-                                                    Height="6"
-                                                    Margin="0,5,0,0"
-                                                    VerticalAlignment="Top"
-                                                    Fill="{DynamicResource DshGreenBrush}" />
-                                                <StackPanel Grid.Column="1" Spacing="2">
-                                                    <TextBlock
-                                                        Classes="activity-title"
-                                                        Text="{Binding Title}" />
-                                                    <TextBlock
-                                                        Classes="activity-time"
-                                                        Text="{Binding TimeText}" />
-                                                </StackPanel>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                        <Border Classes="panel-head" Grid.Row="0">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Classes="panel-title" Text="运行健康度" />
                                 <TextBlock
-                                    Classes="card-subtitle"
-                                    IsVisible="{Binding !HasActivities}"
-                                    Text="暂无活动事件。" />
+                                    x:Name="HealthStatus"
+                                    Grid.Column="1"
+                                    Text="{Binding HealthText}" />
+                            </Grid>
+                        </Border>
+                        <Border Classes="panel-body" Grid.Row="1">
+                            <StackPanel>
+                                <Border Classes="kv-row" BorderThickness="0">
+                                    <Grid ColumnDefinitions="56,*,52">
+                                        <TextBlock Classes="kv-key" Text="CPU" />
+                                        <ProgressBar
+                                            Classes="bar"
+                                            Grid.Column="1"
+                                            Value="{Binding CpuBarValue}" />
+                                        <TextBlock
+                                            Classes="kv-value"
+                                            Grid.Column="2"
+                                            Text="{Binding CpuText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="kv-row">
+                                    <Grid ColumnDefinitions="56,*,52">
+                                        <TextBlock Classes="kv-key" Text="Memory" />
+                                        <ProgressBar
+                                            Classes="bar"
+                                            Grid.Column="1"
+                                            Value="{Binding MemoryBarValue}" />
+                                        <TextBlock
+                                            Classes="kv-value"
+                                            Grid.Column="2"
+                                            Text="{Binding MemoryText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="kv-row">
+                                    <Grid ColumnDefinitions="56,*,52">
+                                        <TextBlock Classes="kv-key" Text="启动耗时" />
+                                        <ProgressBar
+                                            Classes="bar"
+                                            Grid.Column="1"
+                                            Value="{Binding StartupBarValue}" />
+                                        <TextBlock
+                                            Classes="kv-value"
+                                            Grid.Column="2"
+                                            Text="{Binding StartupElapsedText}" />
+                                    </Grid>
+                                </Border>
+                                <Border Classes="kv-row">
+                                    <Grid ColumnDefinitions="56,*,52">
+                                        <TextBlock Classes="kv-key" Text="插件" />
+                                        <ProgressBar
+                                            Classes="bar"
+                                            Grid.Column="1"
+                                            Value="{Binding PluginBarValue}" />
+                                        <TextBlock
+                                            Classes="kv-value"
+                                            Grid.Column="2"
+                                            Text="{Binding PluginCount}" />
+                                    </Grid>
+                                </Border>
+                                <Button
+                                    Classes="btn ghost sm"
+                                    Margin="0,6,0,0"
+                                    Command="{Binding OpenRuntimeCommand}"
+                                    Content="运行环境" />
                             </StackPanel>
                         </Border>
                     </Grid>
                 </Border>
             </Grid>
+
+            <!-- ===== 最近活动 ===== -->
+            <Border Classes="panel">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Classes="panel-head" Grid.Row="0">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel>
+                                <TextBlock Classes="panel-title" Text="最近活动" />
+                                <TextBlock Classes="panel-sub" Text="Runtime、插件和更新事件" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border Classes="panel-body" Grid.Row="1">
+                        <StackPanel>
+                            <ItemsControl
+                                ItemsSource="{Binding ActivityItems}"
+                                IsVisible="{Binding HasActivities}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DashboardActivityItem">
+                                        <Grid Classes="stream-item" ColumnDefinitions="16,*">
+                                            <Ellipse Classes="stream-dot" Grid.Column="0" />
+                                            <StackPanel Grid.Column="1" Spacing="2">
+                                                <TextBlock
+                                                    Classes="stream-title"
+                                                    Text="{Binding Title}" />
+                                                <TextBlock
+                                                    Classes="stream-meta"
+                                                    Text="{Binding TimeText}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock
+                                Classes="panel-sub"
+                                IsVisible="{Binding !HasActivities}"
+                                Text="暂无活动事件。" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
