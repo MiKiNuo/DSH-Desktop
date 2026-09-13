@@ -77,6 +77,10 @@ public sealed partial class PluginsView : MviAvaloniaView<PluginsViewModel>
 
         viewModel.PropertyChanged += handler;
         bindings.Add(() => viewModel.PropertyChanged -= handler);
+
+        // 页面级加载：每次导航新建本 View，OnBind 每次执行 → 每次进页刷新清单。
+        // 触发权属本 Feature（§5 规则 1/6）；此前由 MainWindow 壳越权 Dispatch（候选 03）。
+        viewModel.LoadPluginsCommand.Execute(null);
     }
 
     private void OnSearchTextChanged(object? sender, TextChangedEventArgs args)

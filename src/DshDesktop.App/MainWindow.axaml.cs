@@ -454,22 +454,6 @@ public sealed partial class MainWindow : Window
         };
 
         _rootContent.Content = view;
-
-        // 进入 Plugins 页即刷新清单（View 只产生 Intent，页面级加载由导航方发起）。
-        if (_shellViewModel.CurrentPage is ShellPage.Plugins)
-        {
-            IMviStore<PluginsState, PluginsIntent, PluginsEffect> store =
-                _resolver.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
-            _ = store.DispatchAsync(new PluginsIntent.LoadPlugins());
-        }
-
-        // 进入 Settings 页即加载设置（同 Plugins 先例）。
-        if (_shellViewModel.CurrentPage is ShellPage.Settings)
-        {
-            IMviStore<SettingsState, SettingsIntent, SettingsEffect> store =
-                _resolver.Resolve<IMviStore<SettingsState, SettingsIntent, SettingsEffect>>();
-            _ = store.DispatchAsync(new SettingsIntent.LoadSettings());
-        }
     }
 
     private TControl FindRequiredControl<TControl>(string name)

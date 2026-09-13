@@ -24,10 +24,10 @@ public sealed partial class ThemeResourceTests
     [Test]
     public async Task EveryReferencedThemeKey_IsDefinedInDshTheme()
     {
-        var root = FindRepositoryRoot();
+        var root = XamlScan.FindRepositoryRoot();
         await Assert.That(root).IsNotNull();
 
-        var sources = EnumerateViews(root!).ToList();
+        var sources = XamlScan.EnumerateViews(root!).ToList();
         await Assert.That(sources).IsNotEmpty();
 
         // 定义可以出现在主题字典里，也可以出现在任何视图的局部 Resources 里——
@@ -77,11 +77,11 @@ public sealed partial class ThemeResourceTests
         // 一个只被某个页面用到的动画，足以把整个应用打死在启动之前（实测过）。
         //
         // 要动 transform，请动画具体分量：ScaleTransform.ScaleX 是 double，有动画器。
-        var root = FindRepositoryRoot();
+        var root = XamlScan.FindRepositoryRoot();
         await Assert.That(root).IsNotNull();
 
         var offenders = new List<string>();
-        foreach (var file in EnumerateViews(root!))
+        foreach (var file in XamlScan.EnumerateViews(root!))
         {
             foreach (Match frame in KeyFrameElement().Matches(File.ReadAllText(file)))
             {
@@ -99,7 +99,7 @@ public sealed partial class ThemeResourceTests
     public async Task EveryIconGeometry_HasPathData()
     {
         // 空的几何数据不会报错，只会让图标静默消失。这条守住「图标有轮廓可画」。
-        var root = FindRepositoryRoot();
+        var root = XamlScan.FindRepositoryRoot();
         await Assert.That(root).IsNotNull();
 
         var iconsFile = Path.Combine(
@@ -122,9 +122,6 @@ public sealed partial class ThemeResourceTests
     [GeneratedRegex("Selector=\"([^\"]+)\"")]
     private static partial Regex StyleSelector();
 
-    [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
-    private static partial Regex XmlComment();
-
     [Test]
     public async Task EveryClassesMember_IsTargetedBySomeStyleSelector()
     {
@@ -140,10 +137,10 @@ public sealed partial class ThemeResourceTests
             "page-title", "page-desc", "runtime-mini-text",
         };
 
-        var root = FindRepositoryRoot();
+        var root = XamlScan.FindRepositoryRoot();
         await Assert.That(root).IsNotNull();
 
-        var sources = EnumerateViews(root!).ToList();
+        var sources = XamlScan.EnumerateViews(root!).ToList();
         var targeted = sources
             .SelectMany(f => StyleSelector().Matches(File.ReadAllText(f)))
             .SelectMany(m => m.Groups[1].Value.Split(['.', ':', ' '], StringSplitOptions.RemoveEmptyEntries))
@@ -152,7 +149,7 @@ public sealed partial class ThemeResourceTests
         var orphans = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var file in sources)
         {
-            var text = XmlComment().Replace(await File.ReadAllTextAsync(file), string.Empty);
+            var text = XamlScan.StripComments(await File.ReadAllTextAsync(file));
             foreach (Match m in ClassAttribute().Matches(text))
             {
                 foreach (var cls in m.Groups[1].Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
@@ -166,30 +163,5 @@ public sealed partial class ThemeResourceTests
         }
 
         await Assert.That(string.Join(Environment.NewLine, orphans)).IsEmpty();
-    }
-
-    private static IEnumerable<string> EnumerateViews(string root)
-    {
-        var src = Path.Combine(root, "src");
-        return Directory
-            .EnumerateFiles(src, "*.axaml", SearchOption.AllDirectories)
-            .Where(p => !p.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
-                     && !p.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"));
-    }
-
-    private static string? FindRepositoryRoot()
-    {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "DshDesktop.slnx")))
-            {
-                return dir.FullName;
-            }
-
-            dir = dir.Parent;
-        }
-
-        return null;
     }
 }

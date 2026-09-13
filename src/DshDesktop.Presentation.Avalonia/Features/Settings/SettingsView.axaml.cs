@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
+using MiKiNuo.Mvi.Presentation.Disposables;
 
 namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 
@@ -37,6 +38,16 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
             ?? throw new InvalidOperationException("无法找到 NavGeneral 控件。"));
         _navButtons.Add(this.FindControl<Button>("NavEnv")
             ?? throw new InvalidOperationException("无法找到 NavEnv 控件。"));
+    }
+
+    /// <inheritdoc />
+    protected override void OnBind(SettingsViewModel viewModel, MviDisposableBag bindings)
+    {
+        base.OnBind(viewModel, bindings);
+
+        // 页面级加载：每次导航新建本 View，OnBind 每次执行 → 每次进页重读设置。
+        // 触发权属本 Feature（§5 规则 1/6）；此前由 MainWindow 壳越权 Dispatch（候选 03）。
+        viewModel.LoadSettingsCommand.Execute(null);
     }
 
     private void OnNavClicked(object? sender, RoutedEventArgs args)

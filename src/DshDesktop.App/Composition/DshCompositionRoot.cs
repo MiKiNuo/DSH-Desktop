@@ -221,7 +221,12 @@ public sealed partial class DshCompositionRoot
 
         _config = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
         await ProfileSeeder
-            .SeedIfNeededAsync(_config.DshHome, _config.SeedProfileFrom, cancellationToken)
+            .SeedIfNeededAsync(
+                _config.DshHome,
+                _config.SeedProfileFrom,
+                _config.NodePath,
+                _config.PnpmCjsPath,
+                cancellationToken)
             .ConfigureAwait(false);
 
         DshProcessHost processHost = new();
@@ -696,7 +701,7 @@ public sealed partial class DshCompositionRoot
         List<PluginUpdateInfo> pluginUpdates = [];
         foreach (PluginInfo plugin in plugins.Where(p => p is { IsCore: false, Enabled: true }))
         {
-            string? latest = await _runtimeRepository.GetLatestPluginVersionAsync(plugin.Name, cancellationToken)
+            string? latest = await _runtimeRepository!.GetLatestPluginVersionAsync(plugin.Name, cancellationToken)
                 .ConfigureAwait(false);
             if (latest is not null && latest != plugin.Version)
             {
@@ -704,7 +709,7 @@ public sealed partial class DshCompositionRoot
             }
         }
 
-        IReadOnlyList<DshRuntimeInfo> runtimes = await _runtimeRepository
+        IReadOnlyList<DshRuntimeInfo> runtimes = await _runtimeRepository!
             .ListRuntimesAsync(_config!.ActiveDshRuntime, cancellationToken).ConfigureAwait(false);
         string? currentDsh = runtimes.FirstOrDefault(r => r.IsActive)?.Version;
 
