@@ -949,6 +949,14 @@
 
     <!-- ============================================================
          提示条
+         布局契约（由 NoticeLayoutTests 固化，XAML 编译器看不见）：
+         ① info 型提示条（图标 + 正文 [+ 尾部操作]）统一用 Grid 三列 Auto,*,Auto；
+         ② notice 内 TextBlock 全局开启换行（根因：不换行才撑爆）；
+         ③ notice 内禁用 HorizontalAlignment=Right——Grid 三列下尾部操作自成
+            Auto 列，无需对齐属性；而它在 StackPanel 中本就不生效。
+         禁止「横向 StackPanel + 长文案 + 尾部按钮」：StackPanel 沿主轴按期望宽度
+         顺序排布，没有"剩余空间"，长文案会把父级撑爆（Runtime 安全模式提示条实证）。
+         纵向 StackPanel 形态（如 Failed 恢复面板）不受限。
          ============================================================ -->
     <Style Selector="Border.notice">
         <Setter Property="Padding" Value="13,10" />
@@ -959,6 +967,7 @@
     </Style>
     <Style Selector="Border.notice TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DshText2Brush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style Selector="Border.notice.info">
         <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />

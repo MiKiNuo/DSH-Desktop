@@ -64,7 +64,11 @@
 
                         <!-- 状态机 stepper：正常流转 Stopped→Starting→Running→Stopping -->
                         <StackPanel Spacing="10">
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <StackPanel
+                                HorizontalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="6"
+                                VerticalAlignment="Center">
                                 <TextBlock Classes="fsm-label" Text="正常流转" />
                                 <Border x:Name="PillStopped" Classes="state off">
                                     <TextBlock Text="Stopped" />
@@ -84,7 +88,11 @@
                             </StackPanel>
 
                             <!-- 异常流转 Failed→Recovering -->
-                            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <StackPanel
+                                HorizontalAlignment="Center"
+                                Orientation="Horizontal"
+                                Spacing="6"
+                                VerticalAlignment="Center">
                                 <TextBlock Classes="fsm-label" Text="异常流转" />
                                 <Border x:Name="PillFailed" Classes="state off">
                                     <TextBlock Text="Failed" />
@@ -116,21 +124,26 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- 安全模式提示（保留 SafeMode 可见性绑定） -->
+                        <!-- 安全模式提示（保留 SafeMode 可见性绑定）。
+                             布局走全局 .notice 契约：Auto,*,Auto 三列 = 图标 / 可换行正文 / 尾部操作。 -->
                         <Border Classes="notice info" IsVisible="{Binding SafeMode}">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <Path Classes="icon" Data="{DynamicResource IconShield}" VerticalAlignment="Center" />
-                                <StackPanel VerticalAlignment="Center">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Path
+                                    Classes="icon"
+                                    Grid.Column="0"
+                                    Data="{DynamicResource IconShield}"
+                                    VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                     <TextBlock Classes="notice-title" Text="安全模式" />
-                                    <TextBlock
-                                        Text="自动启动已抑制，可管理插件与配置。退出安全模式后 Runtime 将按正常链路启动。" />
+                                    <TextBlock Text="自动启动已抑制，可管理插件与配置。退出安全模式后 Runtime 将按正常链路启动。" />
                                 </StackPanel>
                                 <Button
                                     Classes="btn secondary sm"
-                                    HorizontalAlignment="Right"
+                                    Grid.Column="2"
+                                    VerticalAlignment="Center"
                                     Command="{Binding ExitSafeModeCommand}"
                                     Content="退出安全模式" />
-                            </StackPanel>
+                            </Grid>
                         </Border>
                     </StackPanel>
                 </Border>
