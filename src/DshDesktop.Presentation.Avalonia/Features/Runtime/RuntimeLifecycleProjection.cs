@@ -1,5 +1,6 @@
 using Avalonia.Media;
 using DshDesktop.Domain.Runtime;
+using DshDesktop.Presentation.Avalonia.Themes;
 
 namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 
@@ -36,13 +37,13 @@ public static class RuntimeLifecycleProjection
         return lifecycle switch
         {
             RuntimeLifecycle.Running => new(
-                "IconCheck", RuntimeLifecycleBrushes.Running, RuntimeLifecycleBrushes.TintRunning),
+                DshIconKeys.Check, RuntimeLifecycleBrushes.Running, RuntimeLifecycleBrushes.TintRunning),
             RuntimeLifecycle.Failed => new(
-                "IconAlert", RuntimeLifecycleBrushes.Failed, RuntimeLifecycleBrushes.TintFailed),
+                DshIconKeys.Alert, RuntimeLifecycleBrushes.Failed, RuntimeLifecycleBrushes.TintFailed),
             RuntimeLifecycle.Stopped => new(
-                "IconPower", RuntimeLifecycleBrushes.Stopped, RuntimeLifecycleBrushes.TintStopped),
+                DshIconKeys.Power, RuntimeLifecycleBrushes.Stopped, RuntimeLifecycleBrushes.TintStopped),
             _ => new(
-                "IconRefresh", RuntimeLifecycleBrushes.Transition, RuntimeLifecycleBrushes.TintTransition),
+                DshIconKeys.Refresh, RuntimeLifecycleBrushes.Transition, RuntimeLifecycleBrushes.TintTransition),
         };
     }
 }
