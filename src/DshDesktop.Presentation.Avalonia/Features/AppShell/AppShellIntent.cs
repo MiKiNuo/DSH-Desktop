@@ -44,11 +44,6 @@ public abstract partial record AppShellIntent : IMviIntent
     public sealed partial record ShowSettings : AppShellIntent;
 
     /// <summary>
-    /// 表示切换侧边栏折叠状态意图。
-    /// </summary>
-    public sealed partial record ToggleSidebar : AppShellIntent;
-
-    /// <summary>
     /// 表示 Runtime 生命周期投影变化的回流意图（BindSiblingState 自 RuntimeStore 投影，§11.2）。
     /// </summary>
     /// <param name="Lifecycle">最新 Runtime 生命周期。</param>
@@ -69,7 +64,7 @@ public abstract partial record AppShellIntent : IMviIntent
     public sealed partial record RuntimeEndpointChanged(int? ProcessId, int? Port) : AppShellIntent;
 
     /// <summary>
-    /// 表示当前 DSH 版本投影变化的回流意图（侧栏 runtime-mini；BindSiblingState 自
+    /// 表示当前 DSH 版本投影变化的回流意图（状态栏 DSH 版本段；BindSiblingState 自
     /// UpdatesStore.CurrentDshVersion 投影，§11.2）。
     /// </summary>
     /// <param name="Version">当前激活的 DSH 版本；未知为 null。</param>

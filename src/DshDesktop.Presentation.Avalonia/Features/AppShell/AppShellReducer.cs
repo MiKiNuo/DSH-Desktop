@@ -90,17 +90,6 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
-    /// 处理切换侧边栏折叠状态意图。
-    /// </summary>
-    [MviReduce(typeof(AppShellIntent.ToggleSidebar))]
-    private MviReduceResult<AppShellState, UnitEffect> HandleToggleSidebar(
-        AppShellState state,
-        AppShellIntent.ToggleSidebar intent)
-    {
-        return Unchanged(state with { SidebarCollapsed = !state.SidebarCollapsed });
-    }
-
-    /// <summary>
     /// 处理 Runtime 生命周期投影变化回流意图（§14：仅投影字段，不保存 Runtime 业务状态）。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.RuntimeIndicatorChanged))]
@@ -134,7 +123,7 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
-    /// 处理当前 DSH 版本投影变化回流意图（§14：仅投影字段，runtime-mini 数据源）。
+    /// 处理当前 DSH 版本投影变化回流意图（§14：仅投影字段，状态栏 DSH 版本段数据源）。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.DshVersionChanged))]
     private MviReduceResult<AppShellState, UnitEffect> HandleDshVersionChanged(

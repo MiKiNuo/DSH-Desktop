@@ -8,13 +8,6 @@ namespace DshDesktop.Tests;
 /// </summary>
 public sealed partial class ThemeResourceTests
 {
-    /// <summary>
-    /// 外壳顶栏的行号（<c>MainWindow.axaml</c> 里 <c>Classes="topbar"</c> 所在行）。
-    /// 页面内容从下一行开始，任何页内代码隐藏里的「页内共享状态」都必须在更靠后的行——
-    /// 序号大于它就说明那个控件不在本页，属于复制粘贴来源的残留引用。
-    /// </summary>
-    private const int ShellTopbarLine = 182;
-
     [GeneratedRegex(@"\{(?:Dynamic|Static)Resource\s+([A-Za-z0-9_]+)\s*\}")]
     private static partial Regex ResourceReference();
 
@@ -133,8 +126,8 @@ public sealed partial class ThemeResourceTests
         // 已知例外：布局类名（由 View 自己的容器提供样式，主题不负责渲染它们）。
         var layoutOnly = new HashSet<string>(StringComparer.Ordinal)
         {
-            "brand", "nav-btn", "nav-label", "nav-badge", "topbar", "statusbar",
-            "page-title", "page-desc", "runtime-mini-text",
+            "nav-btn", "nav-badge", "statusbar",
+            "page-title", "page-desc",
         };
 
         var root = XamlScan.FindRepositoryRoot();

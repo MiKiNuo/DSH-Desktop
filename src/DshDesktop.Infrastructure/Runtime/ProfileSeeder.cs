@@ -6,8 +6,9 @@ namespace DshDesktop.Infrastructure.Runtime;
 
 /// <summary>
 /// 表示 Profile 种子复制（Q11-B 决策）：
-/// 首次运行前将既有 harness 的 profiles/web（插件清单与业务文件，不含 sessions/settings/凭证）
-/// 一次性复制到独立 DSH_HOME，随后重建依赖树，保证 Offline First（§34），之后两套数据各自演进。
+/// 首次运行前将既有 harness 的 profiles/web（插件清单、业务文件与 node_modules，不含
+/// sessions/settings/凭证）一次性复制到独立 DSH_HOME——robocopy 跟随符号链接展开真实依赖，
+/// 得到不依赖源盘的自包含副本，保证 Offline First（§34），之后两套数据各自演进。
 /// </summary>
 public static class ProfileSeeder
 {
@@ -21,10 +22,10 @@ public static class ProfileSeeder
 
     /// <summary>
     /// 当 DSH_HOME 下尚无 profiles/web 且种子来源存在时，执行一次性复制，并确保依赖树可用。
-    /// 复制清单元数据与业务文件，但排除 pnpm 派生物（node_modules、.generations）
-    /// 与 .dsh-module-fallback，随后必须真正重建依赖树——
-    /// 只复制清单不装依赖会让 DSH 启动时 resolveBundleDir 抛
-    /// "cannot resolve profile bundle"（2026-09-13 现场：Runtime ExitCode=1）。
+    /// 复制清单元数据、业务文件与 node_modules，仅排除 .generations 与 .dsh-module-fallback。
+    /// 依赖树在复制中即已 materialize；安装只是空壳现场（声明的 bundle 一个都解析不出来）的兜底，
+    /// 缺了它 DSH 启动时 resolveBundleDir 会抛
+    /// "cannot resolve profile bundle"（2026-09-13 / 09-14 两次现场：Runtime ExitCode=1）。
     /// </summary>
     /// <param name="dshHome">DSH_HOME 数据根目录。</param>
     /// <param name="seedProfileFrom">种子来源 harness 数据目录；null 时跳过。</param>
@@ -76,18 +77,23 @@ public static class ProfileSeeder
     }
 
     /// <summary>
-    /// 校验并（必要时）重建 profile 依赖树：清单声明了 bundle 却缺 node_modules 时安装。
-    /// 目标 profile 已存在也校验——复制已完成但依赖缺失的半成功现场必须能自愈，
-    /// 旧实现「目录存在即 return」会让它永久卡死。
-    /// 局限：判据只认 node_modules 目录是否存在，pnpm 半损坏（目录在但包缺失）不在
-    /// 此处识别，交由 DSH 自身报错。
+    /// 校验并（必要时）重建 profile 依赖树：清单声明了 bundle、却一个都解析不出来时安装。
+    /// 目标 profile 已存在也校验——复制已完成但依赖缺失的半成功现场必须能自愈。
+    /// 判据是「声明的 bundle 全部不可解析」而非「node_modules 目录是否存在」：
+    /// 2026-09-14 实机现场 node_modules 存在，但真实依赖被埋在 node_modules/node_modules/
+    /// （一次未完成的安装留下的空壳），旧判据直接跳过，DSH 仍抛
+    /// "cannot resolve profile bundle" → Runtime ExitCode=1，该状态永久无法自愈。
+    /// 反之只要还能解析出任一 bundle 就不重装：pnpm install 会用 link: 悬空链接覆盖已
+    /// materialize 的真实依赖目录（overrides 的 .generations 目标已被排除），
+    /// 把可启动现场改成不可启动现场。
     /// </summary>
     private static async Task EnsureDependenciesAsync(
         string profileDir,
         DependencyInstaller installer,
         CancellationToken cancellationToken)
     {
-        if (Directory.Exists(Path.Combine(profileDir, "node_modules")) || !DeclaresBundles(profileDir))
+        string[] bundles = DeclaredBundles(profileDir);
+        if (bundles.Length == 0 || AnyBundleResolved(profileDir, bundles))
         {
             return;
         }
@@ -102,26 +108,41 @@ public static class ProfileSeeder
     }
 
     /// <summary>
-    /// 清单是否声明了 profile bundle。未声明时 DSH 不加载任何包，不需要依赖树。
+    /// 清单声明的 profile bundle 名称。未声明时为空——DSH 不加载任何包，不需要依赖树；
+    /// 清单损坏时同样返回空，由 DSH 给出更准确的错误，播种期不越权处理。
     /// </summary>
-    private static bool DeclaresBundles(string profileDir)
+    private static string[] DeclaredBundles(string profileDir)
     {
         string manifestPath = Path.Combine(profileDir, "package.json");
         if (!File.Exists(manifestPath))
         {
-            return false;
+            return [];
         }
 
         try
         {
-            return JsonNode.Parse(File.ReadAllText(manifestPath)) is JsonObject manifest
-                && manifest["dsh"]?["profile"]?["bundles"] is JsonArray { Count: > 0 };
+            if (JsonNode.Parse(File.ReadAllText(manifestPath)) is JsonObject manifest
+                && manifest["dsh"]?["profile"]?["bundles"] is JsonArray { Count: > 0 } bundles)
+            {
+                return [.. bundles.Select(bundle => bundle?.GetValue<string>()).OfType<string>()];
+            }
         }
         catch (JsonException)
         {
-            // 清单损坏时由 DSH 自己给出更准确的错误，播种期不越权处理。
-            return false;
         }
+
+        return [];
+    }
+
+    /// <summary>
+    /// node_modules 下能否解析出任意一个声明的 bundle——与 DSH 的 resolveBundleDir 判据同源：
+    /// 认 bundle 的 package.json。仅目录存在不算数——空目录与中断的安装残留（本次现场）都是
+    /// 「目录在、包不在」，正是旧判据误判为就绪的形态。
+    /// </summary>
+    private static bool AnyBundleResolved(string profileDir, string[] bundles)
+    {
+        return bundles.Any(bundle => File.Exists(
+            Path.Combine(profileDir, "node_modules", bundle, "package.json")));
     }
 
     private static async Task CopyProfileAsync(
@@ -131,13 +152,24 @@ public static class ProfileSeeder
     {
         // robocopy 默认跟随联接点复制真实内容，得到自包含副本（不依赖 pnpm store）。
         // 退出码 0-7 均为成功（含"已复制/无额外文件"等非致命状态）。
-        // 排除三类目录，均由随后的依赖重建或 DSH 首启接管：
+        // 只排除两类目录：
         // - .dsh-module-fallback：DSH 启动自愈要求该目录由自己管理
         //   （实目录会报 "exists and is not a symlink or dsh-managed module proxy"）。
-        // - node_modules：pnpm 的符号链接图，其 .pnpm-workspace-state-v1.json / .modules.yaml
-        //   内嵌源盘绝对路径，复制到异盘后 pnpm 报 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 并中止。
         // - .generations：package.json 的 link:../.generations/live/... overrides 目标，
-        //   源盘存在才有效，目标盘需重新生成。
+        //   其内容已由 node_modules 下的符号链接展开承载，无需重复复制。
+        //
+        // ⚠️ node_modules 必须复制（2026-09-14 实机教训）：源 profile 的 node_modules 里
+        // dsh-context / dshmarket 等是指向 profiles/.generations/live/<genId>/ 的符号链接，
+        // robocopy 跟随联接点把它们展开成真实目录，这正是自包含副本的由来。
+        // 一旦排除它，再跑 pnpm install 只能产出 link: 悬空符号链接（overrides 目标同时被排除），
+        // DSH resolveBundleDir 抛 cannot resolve profile bundle → Runtime ExitCode=1。
+        // 为规避「跨盘后 pnpm 操作报 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE」而排除它是本末倒置：
+        // 该报错只影响后续 pnpm 操作，启动可用性由 Node 解析 node_modules/<bundle> 决定，
+        // 根本不读 virtualStoreDir；且 NodeJsToolRunner 已内建该错误的自动重试。
+        // ponytail: 因此不重写 .modules.yaml / .pnpm-workspace-state-v1.json 里的 virtualStoreDir
+        // （那需要解析 YAML 改绝对路径）。该元数据只被 pnpm 读取，跨盘后的首次 pnpm 操作由
+        // NodeJsToolRunner 的 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 重试路径重置虚拟存储即可覆盖；
+        // 若日后出现该重试覆盖不到的场景（如需复用 pnpm store），再改为复制后重写。
         ProcessStartInfo psi = new()
         {
             FileName = "robocopy",
@@ -154,7 +186,6 @@ public static class ProfileSeeder
         psi.ArgumentList.Add("/DCOPY:D");
         psi.ArgumentList.Add("/XD");
         psi.ArgumentList.Add(".dsh-module-fallback");
-        psi.ArgumentList.Add("node_modules");
         psi.ArgumentList.Add(".generations");
         psi.ArgumentList.Add("/NFL");
         psi.ArgumentList.Add("/NDL");

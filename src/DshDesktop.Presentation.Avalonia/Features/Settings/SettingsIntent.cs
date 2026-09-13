@@ -13,7 +13,7 @@ public abstract partial record SettingsIntent : IMviIntent
     public sealed partial record LoadSettings : SettingsIntent;
 
     /// <summary>
-    /// 表示切换安全模式意图（无载荷翻转，与 AppShell ToggleSidebar 同先例）。
+    /// 表示切换安全模式意图（无载荷翻转）。
     /// </summary>
     public sealed partial record ToggleSafeMode : SettingsIntent;
 

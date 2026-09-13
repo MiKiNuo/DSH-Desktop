@@ -8,7 +8,7 @@ using DshDesktop.Presentation.Avalonia.Themes;
 namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 
 /// <summary>
-/// 表示 Runtime 生命周期状态点的共享颜色映射（侧栏指示与 Runtime 页阶段指示同色系）。
+/// 表示 Runtime 生命周期状态点的共享颜色映射（顶部导航状态点与 Runtime 页阶段指示同色系）。
 ///
 /// 取值策略（重要）：
 /// 调用方 <see cref="MainWindow.ApplyIndicators"/> 在**构造期**调用本类，此时 View 尚未挂到

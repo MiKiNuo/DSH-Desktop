@@ -5,12 +5,14 @@ namespace DshDesktop.Tests;
 /// <summary>
 /// Profile 播种测试（Q11-B + ADR-0003 修订）：
 /// 种子复制必须得到「跨盘可迁移」且「依赖树可用」的自包含副本。
-/// pnpm 的 node_modules 是符号链接图（含旧盘绝对路径的 .pnpm-workspace-state-v1.json /
-/// .modules.yaml），.generations 是 package.json 里 link: 约定的目标——二者复制到新盘
-/// 会触发 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 并使 DSH 首启崩溃，故必须排除。
-/// 但排除后必须真正重建依赖树：2026-09-13 现场证明「由 DSH 首启自行重建」从未发生，
-/// 只复制清单不装依赖会让 DSH resolveBundleDir 抛 "cannot resolve profile bundle"
-/// → Runtime ExitCode=1，且旧实现「目录存在即 return」使该状态永久卡死。
+/// node_modules 必须随复制一并保留——其中的 dsh-context / dshmarket 等是指向
+/// profiles/.generations/live/&lt;genId&gt;/ 的符号链接，robocopy 跟随联接点展开为真实目录，
+/// 这是依赖树唯一可行的物化路径；排除它只会让 pnpm install 产出 link: 悬空符号链接
+/// （overrides 目标同时被排除），DSH resolveBundleDir 抛 "cannot resolve profile bundle"
+/// → Runtime ExitCode=1（2026-09-14 现场）。
+/// .generations 本身无需复制，其内容已展开进 node_modules。
+/// 依赖判据与 DSH 同源：声明的 bundle 能否在 node_modules 下解析出来——
+/// 旧实现「node_modules 目录存在即 return」把空壳现场误判为就绪，使该状态永久卡死。
 /// </summary>
 public sealed class ProfileSeederTests : IDisposable
 {
@@ -39,24 +41,32 @@ public sealed class ProfileSeederTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// 复制必须保留 node_modules：robocopy 跟随符号链接把依赖展开为真实目录，
+    /// 这是依赖树唯一可行的物化路径。.generations 是 link: 目标，内容已展开进
+    /// node_modules，无需重复复制。
+    /// </summary>
     [Test]
-    public async Task SeedIfNeededAsync_ExcludesPnpmDerivedDirectories()
+    public async Task SeedIfNeededAsync_KeepsNodeModulesAndExcludesGenerations()
     {
-        // 源 profile 含 pnpm 派生物：node_modules（符号链接图）与 .generations（link: 目标）。
-        Directory.CreateDirectory(Path.Combine(SourceProfile, "node_modules", ".pnpm"));
+        // 源 profile 同时含依赖树与 link: 目标目录。
+        Directory.CreateDirectory(Path.Combine(SourceProfile, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(SourceProfile, "node_modules", "dshmarket", "package.json"),
+            "{}");
         Directory.CreateDirectory(Path.Combine(SourceProfile, ".generations", "live"));
         File.WriteAllText(Path.Combine(SourceProfile, "package.json"), "{}");
-        File.WriteAllText(
-            Path.Combine(SourceProfile, "node_modules", ".pnpm-workspace-state-v1.json"),
-            "{\"projects\":{\"C:\\\\old\":{}}}");
 
-        // pnpm 路径为 null = 未配置 vendored pnpm，本用例只校验复制排除清单，不触发安装。
+        // pnpm 路径为 null = 未配置 vendored pnpm；清单未声明 bundles，故不触发安装。
         await ProfileSeeder.SeedIfNeededAsync(TargetHome, SourceHome, "node", null, CancellationToken.None);
 
         // 普通文件应被复制（种子仍有意义）。
         await Assert.That(File.Exists(Path.Combine(TargetProfile, "package.json"))).IsTrue();
-        // pnpm 派生物不得被复制，否则跨盘后 pnpm 状态冲突。
-        await Assert.That(Directory.Exists(Path.Combine(TargetProfile, "node_modules"))).IsFalse();
+        // 依赖树必须随复制落地：排除它会让重装只能产出 link: 悬空符号链接。
+        await Assert.That(
+                File.Exists(Path.Combine(TargetProfile, "node_modules", "dshmarket", "package.json")))
+            .IsTrue();
+        // .generations 是 link: 目标，内容已展开进 node_modules，不重复复制。
         await Assert.That(Directory.Exists(Path.Combine(TargetProfile, ".generations"))).IsFalse();
     }
 
@@ -142,7 +152,8 @@ public sealed class ProfileSeederTests : IDisposable
     }
 
     /// <summary>
-    /// 依赖树已就绪时不得重复安装（保持一次性语义，避免每次启动都跑 pnpm）。
+    /// 依赖树已就绪（声明的 bundle 均可解析）时不得重复安装（保持一次性语义，
+    /// 避免每次启动都跑 pnpm）。就绪判据与 DSH 同源，而非「node_modules 目录是否存在」。
     /// </summary>
     [Test]
     public async Task SeedIfNeededAsync_DependenciesPresent_DoesNotInstall()
@@ -150,7 +161,15 @@ public sealed class ProfileSeederTests : IDisposable
         Directory.CreateDirectory(SourceProfile);
         File.WriteAllText(Path.Combine(SourceProfile, "package.json"), BundlesManifest);
 
-        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules"));
+        // 依赖树已就绪 = 声明的 bundle 能解析出 package.json（仅目录存在不算就绪）。
+        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules", "@deepseek-ai", "dsh-base"));
+        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(TargetProfile, "node_modules", "@deepseek-ai", "dsh-base", "package.json"),
+            "{}");
+        File.WriteAllText(
+            Path.Combine(TargetProfile, "node_modules", "dshmarket", "package.json"),
+            "{}");
         File.WriteAllText(Path.Combine(TargetProfile, "package.json"), BundlesManifest);
 
         int installCalls = 0;
@@ -222,5 +241,67 @@ public sealed class ProfileSeederTests : IDisposable
                 (_, _) => Task.FromResult((1, "ERR_PNPM_NO_MATCHING_VERSION")),
                 CancellationToken.None))
             .Throws<InvalidOperationException>();
+    }
+
+    /// <summary>
+    /// 回归（2026-09-14 实机）：node_modules 目录存在、但声明的 bundle 一个都解析不出来
+    /// （空壳——真实依赖被埋在 node_modules/node_modules/，或安装中断只留了目录）时，
+    /// 必须重装。旧判据「node_modules 存在即 return」让该状态永久无法自愈，
+    /// DSH 仍抛 "cannot resolve profile bundle" → Runtime ExitCode=1。
+    /// </summary>
+    [Test]
+    public async Task SeedIfNeededAsync_EmptyShellNodeModules_Installs()
+    {
+        Directory.CreateDirectory(SourceProfile);
+        File.WriteAllText(Path.Combine(SourceProfile, "package.json"), BundlesManifest);
+
+        // 空壳现场：node_modules 存在，但 @deepseek-ai/dsh-base 与 dshmarket 都不在其下。
+        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules", "node_modules", ".pnpm"));
+        File.WriteAllText(Path.Combine(TargetProfile, "package.json"), BundlesManifest);
+
+        int installCalls = 0;
+        await ProfileSeeder.SeedIfNeededAsync(
+            TargetHome,
+            SourceHome,
+            (_, _) =>
+            {
+                installCalls++;
+                return Task.FromResult((0, string.Empty));
+            },
+            CancellationToken.None);
+
+        await Assert.That(installCalls).IsEqualTo(1);
+    }
+
+    /// <summary>
+    /// 部分 bundle 可解析时不得重装：pnpm install 会用 link: 悬空链接覆盖已有的
+    /// 真实依赖目录（overrides 的 .generations 目标在排除后不存在），把可启动现场改成
+    /// 不可启动现场。只有「一个都解析不出来」才认定为空壳。
+    /// </summary>
+    [Test]
+    public async Task SeedIfNeededAsync_PartialBundlesResolved_DoesNotInstall()
+    {
+        Directory.CreateDirectory(SourceProfile);
+        File.WriteAllText(Path.Combine(SourceProfile, "package.json"), BundlesManifest);
+
+        // 已 materialize 的现场：node_modules 下能解析出 dshmarket（含 package.json）。
+        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(TargetProfile, "node_modules", "dshmarket", "package.json"),
+            "{}");
+        File.WriteAllText(Path.Combine(TargetProfile, "package.json"), BundlesManifest);
+
+        int installCalls = 0;
+        await ProfileSeeder.SeedIfNeededAsync(
+            TargetHome,
+            SourceHome,
+            (_, _) =>
+            {
+                installCalls++;
+                return Task.FromResult((0, string.Empty));
+            },
+            CancellationToken.None);
+
+        await Assert.That(installCalls).IsEqualTo(0);
     }
 }

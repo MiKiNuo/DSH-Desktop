@@ -4,17 +4,17 @@ using DshDesktop.Presentation.Avalonia.Features.AppShell;
 namespace DshDesktop.Tests;
 
 /// <summary>
-/// AppShell 规约器测试（§14：壳只管理导航与折叠，无业务状态）。
+/// AppShell 规约器测试（§14：壳只管理导航，无业务状态）。
 /// </summary>
 public sealed class AppShellReducerTests
 {
     private readonly AppShellReducer _reducer = new();
 
     [Test]
-    public async Task Initial_DefaultsToDashboard()
+    public async Task Initial_DefaultsToWorkbench()
     {
-        // Phase 8 Issue 02：默认页从 Runtime 改为概览（原型 dashboard）。
-        await Assert.That(AppShellState.Initial.CurrentPage).IsEqualTo(ShellPage.Dashboard);
+        // 顶部导航改造：默认页由概览（Dashboard）改为工作台（DSH Web UI）。
+        await Assert.That(AppShellState.Initial.CurrentPage).IsEqualTo(ShellPage.Workbench);
         await Assert.That(AppShellState.Initial.RuntimeProcessId).IsNull();
         await Assert.That(AppShellState.Initial.RuntimePort).IsNull();
         await Assert.That(AppShellState.Initial.DshVersion).IsNull();
@@ -77,16 +77,6 @@ public sealed class AppShellReducerTests
     }
 
     [Test]
-    public async Task ToggleSidebar_TogglesBothWays()
-    {
-        var collapsed = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.ToggleSidebar());
-        await Assert.That(collapsed.State.SidebarCollapsed).IsTrue();
-
-        var expanded = _reducer.Reduce(collapsed.State, new AppShellIntent.ToggleSidebar());
-        await Assert.That(expanded.State.SidebarCollapsed).IsFalse();
-    }
-
-    [Test]
     public async Task Navigation_NeverProducesEffects()
     {
         var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.ShowSettings());
@@ -139,7 +129,7 @@ public sealed class AppShellReducerTests
     [Test]
     public async Task DshVersionChanged_ProjectsVersion()
     {
-        // Phase 8 Issue 02：侧栏 runtime-mini 的 DSH 版本投影（自 UpdatesStore.CurrentDshVersion）。
+        // 状态栏 DSH 版本段的投影（自 UpdatesStore.CurrentDshVersion）。
         var result = _reducer.Reduce(
             AppShellState.Initial,
             new AppShellIntent.DshVersionChanged("0.1.0-rc.12"));

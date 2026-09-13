@@ -94,28 +94,20 @@
     <!-- ============================================================
          壳层：侧栏 / 顶栏 / 状态栏 / 导航
          ============================================================ -->
-    <Style Selector="Border.sidebar">
+    <!-- 顶部导航条：品牌 + 三组导航 + 右侧动作，底部一条发丝线 -->
+    <Style Selector="Border.topnav">
         <Setter Property="Background" Value="{DynamicResource DshSurface1Brush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
-        <Setter Property="BorderThickness" Value="0,0,1,0" />
-        <Setter Property="Padding" Value="12,14" />
-    </Style>
-
-    <!-- 品牌行 = 折叠开关：整行可点（Phase 9 修订），内容左右铺满 -->
-    <Style Selector="Button.brand">
-        <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="CornerRadius" Value="0" />
-        <Setter Property="Padding" Value="9,0" />
-        <Setter Property="Margin" Value="0,0,0,8" />
-        <Setter Property="Height" Value="56" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
-        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Padding" Value="16,0" />
     </Style>
-    <Style Selector="Button.brand:pointerover">
-        <Setter Property="Background" Value="{DynamicResource DshSurface2Brush}" />
+    <!-- 导航分组之间的竖发丝线 -->
+    <Style Selector="Border.nav-rule">
+        <Setter Property="Width" Value="1" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Margin" Value="8,0" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Background" Value="{DynamicResource DshLineSoftBrush}" />
     </Style>
     <Style Selector="Border.brand-mark">
         <Setter Property="Width" Value="28" />
@@ -139,22 +131,15 @@
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="TextBlock.brand-sub">
-        <Setter Property="Foreground" Value="{DynamicResource DshText3Brush}" />
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
+    <Style Selector="TextBlock.brand-title">
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <Style Selector="TextBlock.nav-label">
-        <Setter Property="Padding" Value="16,6,8,7" />
-        <Setter Property="Foreground" Value="{DynamicResource DshText4Brush}" />
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
-        <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-    </Style>
     <Style Selector="Button.nav-btn">
         <Setter Property="Height" Value="34" />
         <Setter Property="Padding" Value="10,0" />
-        <Setter Property="Margin" Value="0,0,0,3" />
         <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="Transparent" />
@@ -162,7 +147,6 @@
         <Setter Property="Foreground" Value="{DynamicResource DshText2Brush}" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
-        <Setter Property="HorizontalAlignment" Value="Stretch" />
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
         <Setter Property="FontWeight" Value="Medium" />
     </Style>
@@ -181,11 +165,6 @@
         <Setter Property="FontSize" Value="16" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <!-- 折叠态：图标居中 -->
-    <Style Selector="Button.nav-btn.collapsed">
-        <Setter Property="Padding" Value="0" />
-        <Setter Property="HorizontalContentAlignment" Value="Center" />
-    </Style>
     <Style Selector="Border.nav-badge">
         <Setter Property="MinWidth" Value="18" />
         <Setter Property="Height" Value="18" />
@@ -203,26 +182,13 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="Border.runtime-mini">
-        <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Background" Value="{DynamicResource DshSurface2Brush}" />
-        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusMedium}" />
-        <Setter Property="Padding" Value="11" />
-    </Style>
-    <Style Selector="TextBlock.runtime-mini-text">
-        <Setter Property="Foreground" Value="{DynamicResource DshText2Brush}" />
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeSmall}" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <!-- 顶栏（cmdbar） -->
-    <Style Selector="Border.topbar">
-        <Setter Property="Height" Value="52" />
+    <!-- 页标题条（顶部导航下方独立一行） -->
+    <Style Selector="Border.pagebar">
+        <Setter Property="Height" Value="30" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
         <Setter Property="Background" Value="{DynamicResource DshSurface1Brush}" />
-        <Setter Property="Padding" Value="20,0" />
+        <Setter Property="Padding" Value="16,0" />
     </Style>
     <Style Selector="TextBlock.page-title">
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeTitle}" />

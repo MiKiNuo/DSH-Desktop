@@ -27,10 +27,10 @@ public sealed class AppShellViewModelTests
         using var shellStore = CreateShellStore();
         var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
-        // 初始页 = 概览（AppShellState.Initial）。
-        await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Dashboard);
-        await Assert.That(viewModel.PageTitle).IsEqualTo("概览");
-        await Assert.That(viewModel.PageSubtitle).IsEqualTo("DSH Desktop 运行状态与快捷入口");
+        // 初始页 = 工作台（AppShellState.Initial，顶部导航改造后的默认页）。
+        await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Workbench);
+        await Assert.That(viewModel.PageTitle).IsEqualTo("DSH 工作台");
+        await Assert.That(viewModel.PageSubtitle).IsEqualTo("官方 Web UI · NativeWebView");
 
         await shellStore.DispatchAsync(new AppShellIntent.ShowSettings());
 
@@ -66,7 +66,7 @@ public sealed class AppShellViewModelTests
     [Test]
     public async Task DshVersion_TracksUpdatesStore()
     {
-        // Phase 8 Issue 02：runtime-mini 的 DSH 版本投影自 UpdatesStore.CurrentDshVersion。
+        // 状态栏 DSH 版本段的投影自 UpdatesStore.CurrentDshVersion。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
         using var shellStore = CreateShellStore();

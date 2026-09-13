@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
 using Avalonia.Markup.Xaml;
-using Avalonia.Media;
 using Avalonia.Threading;
 using System.Threading.Tasks;
 using DshDesktop.Domain.Common;
@@ -23,7 +22,7 @@ using R3;
 namespace DshDesktop.App;
 
 /// <summary>
-/// 表示主窗口（Phase 8 Issue 02 壳）：218px 侧栏导航 + 顶栏 + 按应用壳当前页渲染对应
+/// 表示主窗口（顶部导航改造壳）：52px 顶部导航 + 30px 页标题条 + 按应用壳当前页渲染对应
 /// Feature 视图 + 状态栏 + toast 浮层（视觉基准 docs/DSH-Desktop-UI-Prototype.html）。
 /// </summary>
 public sealed partial class MainWindow : Window
@@ -37,29 +36,14 @@ public sealed partial class MainWindow : Window
     private readonly IMviResolver _resolver;
     private readonly Func<bool>? _minimizeToTrayOnClose;
     private bool _exitRequested;
-    private readonly Grid _shellGrid;
     private readonly ContentControl _rootContent;
     private readonly Ellipse _statusBarDot;
-    private readonly Ellipse _miniStatusDot;
     private readonly Border _updatesBadgeBox;
     private readonly TextBlock _updatesBadgeText;
     private readonly Border _toastBox;
     private readonly TextBlock _toastText;
     private readonly DispatcherTimer _toastTimer;
     private readonly IReadOnlyDictionary<ShellPage, Button> _navButtons;
-
-    // ===== 侧栏折叠表现层（规则见 SidebarLayout，原型 @media(max-width:900px) 降级） =====
-    private readonly Button _sidebarToggle;
-    private readonly Grid _brandRow;
-    private readonly Border _brandMark;
-    private readonly StackPanel _brandTextPanel;
-    private readonly Border _runtimeMini;
-    private readonly IReadOnlyList<TextBlock> _collapsibleSidebarTexts;
-
-    // ===== 折叠态分组标题发丝线（替代隐藏的 nav-label 文本） =====
-    private readonly Border _navRuleWorkspace;
-    private readonly Border _navRuleManagement;
-    private readonly Border _navRuleSystem;
 
     // ===== 二次确认弹层（壳渲染，ConfirmDialog 注册 RequestConfirmAsync） =====
     private readonly Border _confirmScrim;
@@ -90,37 +74,14 @@ public sealed partial class MainWindow : Window
 
         AvaloniaXamlLoader.Load(this);
         DataContext = _shellViewModel;
-        _shellGrid = FindRequiredControl<Grid>("ShellGrid");
-        _sidebarToggle = FindRequiredControl<Button>("SidebarToggle");
-        _brandRow = FindRequiredControl<Grid>("BrandRow");
-        _brandMark = FindRequiredControl<Border>("BrandMark");
-        _brandTextPanel = FindRequiredControl<StackPanel>("BrandTextPanel");
-        _runtimeMini = FindRequiredControl<Border>("RuntimeMini");
-        _navRuleWorkspace = FindRequiredControl<Border>("NavRuleWorkspace");
-        _navRuleManagement = FindRequiredControl<Border>("NavRuleManagement");
-        _navRuleSystem = FindRequiredControl<Border>("NavRuleSystem");
         _confirmScrim = FindRequiredControl<Border>("ConfirmScrim");
         _confirmTitle = FindRequiredControl<TextBlock>("ConfirmTitle");
         _confirmBody = FindRequiredControl<TextBlock>("ConfirmBody");
         _confirmSubject = FindRequiredControl<TextBlock>("ConfirmSubject");
         _confirmOk = FindRequiredControl<Button>("ConfirmOk");
         _confirmCancel = FindRequiredControl<Button>("ConfirmCancel");
-        _collapsibleSidebarTexts =
-        [
-            FindRequiredControl<TextBlock>("NavLabelWorkspace"),
-            FindRequiredControl<TextBlock>("NavDashboardText"),
-            FindRequiredControl<TextBlock>("NavWorkbenchText"),
-            FindRequiredControl<TextBlock>("NavLabelManagement"),
-            FindRequiredControl<TextBlock>("NavPluginsText"),
-            FindRequiredControl<TextBlock>("NavRuntimeText"),
-            FindRequiredControl<TextBlock>("NavUpdatesText"),
-            FindRequiredControl<TextBlock>("NavDiagnosticsText"),
-            FindRequiredControl<TextBlock>("NavLabelSystem"),
-            FindRequiredControl<TextBlock>("NavSettingsText"),
-        ];
         _rootContent = FindRequiredControl<ContentControl>("RootContent");
         _statusBarDot = FindRequiredControl<Ellipse>("StatusBarDot");
-        _miniStatusDot = FindRequiredControl<Ellipse>("MiniStatusDot");
         _updatesBadgeBox = FindRequiredControl<Border>("UpdatesBadgeBox");
         _updatesBadgeText = FindRequiredControl<TextBlock>("UpdatesBadgeText");
         _toastBox = FindRequiredControl<Border>("ToastBox");
@@ -159,10 +120,6 @@ public sealed partial class MainWindow : Window
                 RenderCurrentPage();
                 ApplyNavState();
             }
-            else if (args.PropertyName == nameof(AppShellViewModel.SidebarCollapsed))
-            {
-                ApplySidebarState();
-            }
             else if (args.PropertyName
                 is nameof(AppShellViewModel.RuntimeIndicator)
                 or nameof(AppShellViewModel.UpdateBadge))
@@ -182,9 +139,6 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        // 品牌行即折叠开关（Phase 9 修订）：整行任意位置可点，不再有独立按钮。
-        _sidebarToggle.Click += (_, _) => _shellViewModel.ToggleSidebarCommand.Execute(null);
-
         // 二次确认弹层：取消 / 确认两个按钮收口到同一 TaskCompletionSource。
         _confirmCancel.Click += (_, _) => CompleteConfirm(false);
         _confirmOk.Click += (_, _) => CompleteConfirm(true);
@@ -193,7 +147,6 @@ public sealed partial class MainWindow : Window
         RenderCurrentPage();
         ApplyNavState();
         ApplyIndicators();
-        ApplySidebarState();
         WireToastScenarios();
     }
 
@@ -333,94 +286,28 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 应用侧栏折叠态（原型 @media(max-width:900px) 降级规则，规则集中见 <see cref="SidebarLayout"/>）：
-    /// 列宽 218 ↔ 70；折叠时隐藏品牌文案 / 导航文案 / 分组标签 / 徽标 / runtime-mini，
-    /// 导航按钮图标居中。
-    /// </summary>
-    private void ApplySidebarState()
-    {
-        bool collapsed = _shellViewModel.SidebarCollapsed;
-        bool showText = SidebarLayout.ShowsTextContent(collapsed);
-
-        // 列宽唯一来源：侧栏 Border 填满列 0，故只设 ColumnDefinition（不再重复设 Border.Width）。
-        _shellGrid.ColumnDefinitions[0].Width =
-            new GridLength(SidebarLayout.WidthFor(collapsed));
-
-        _brandTextPanel.IsVisible = showText;
-        _runtimeMini.IsVisible = showText;
-        foreach (TextBlock text in _collapsibleSidebarTexts)
-        {
-            text.IsVisible = showText;
-        }
-
-        // 折叠态分组标题退化为一条发丝线（Avalonia 用 1px Border 代替 HTML 的 ::after）。
-        _navRuleWorkspace.IsVisible = collapsed;
-        _navRuleManagement.IsVisible = collapsed;
-        _navRuleSystem.IsVisible = collapsed;
-
-        foreach (Button button in _navButtons.Values)
-        {
-            if (collapsed)
-            {
-                button.Classes.Add("collapsed");
-            }
-            else
-            {
-                button.Classes.Remove("collapsed");
-            }
-        }
-
-        // 折叠态品牌行居中（原型 .brand{justify-content:center}）：列定义非 AvaloniaProperty，
-        // 不能用 Style Setter，故在此直接切换。
-        // 折叠时文案列隐藏（Auto → 0），仅剩 logo 一个可见子元素；此时把 logo 放进居中的
-        // 中间列、两侧各一个 Star 弹性列，logo 才会呈居中（列数与子元素数无关，多余列宽为 0）。
-        _brandRow.ColumnDefinitions.Clear();
-        if (collapsed)
-        {
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            Grid.SetColumn(_brandMark, 1);
-            Grid.SetColumn(_brandTextPanel, 2);
-        }
-        else
-        {
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
-            _brandRow.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
-            Grid.SetColumn(_brandMark, 0);
-            Grid.SetColumn(_brandTextPanel, 1);
-        }
-
-        ApplyUpdatesBadge();
-    }
-
-    /// <summary>
-    /// 应用壳指示器：状态栏 / runtime-mini 的 Runtime 生命周期状态点 + 更新中心徽标
+    /// 应用壳指示器：状态栏 Runtime 生命周期状态点 + 更新中心徽标
     /// （表现逻辑属于 View；颜色映射共享自 Presentation 层，与 Runtime 页同色系）。
     /// </summary>
     private void ApplyIndicators()
     {
-        IBrush lifecycleBrush = RuntimeLifecycleBrushes.For(_shellViewModel.RuntimeIndicator);
-        _statusBarDot.Fill = lifecycleBrush;
-        _miniStatusDot.Fill = lifecycleBrush;
+        _statusBarDot.Fill = RuntimeLifecycleBrushes.For(_shellViewModel.RuntimeIndicator);
 
         ApplyUpdatesBadge();
     }
 
     /// <summary>
-    /// 更新徽标可见性唯一所有者（依赖 UpdateBadge 与侧栏折叠态两个来源，
-    /// 故由 ApplyIndicators / ApplySidebarState 共用，避免两处各写一半而互相覆盖）。
+    /// 应用更新中心徽标（顶部导航 Updates 项右侧；0 表示隐藏）。
     /// </summary>
     private void ApplyUpdatesBadge()
     {
         int badge = _shellViewModel.UpdateBadge;
-        _updatesBadgeBox.IsVisible =
-            badge > 0 && SidebarLayout.ShowsTextContent(_shellViewModel.SidebarCollapsed);
+        _updatesBadgeBox.IsVisible = badge > 0;
         _updatesBadgeText.Text = badge.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>
-    /// 应用侧栏导航选中态（当前页按钮切换 active 样式类，对应原型 .nav-btn.active）。
+    /// 应用顶部导航选中态（当前页按钮切换 active 样式类，对应原型 .nav-btn.active）。
     /// </summary>
     private void ApplyNavState()
     {

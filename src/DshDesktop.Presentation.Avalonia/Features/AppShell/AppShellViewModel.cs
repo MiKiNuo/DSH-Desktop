@@ -64,19 +64,13 @@ public sealed partial class AppShellViewModel
     public partial ShellPage CurrentPage { get; private set; }
 
     /// <summary>
-    /// 获取侧边栏是否折叠。
-    /// </summary>
-    [MviBind(nameof(AppShellState.SidebarCollapsed), BindingMode = MviBindingMode.OneWay)]
-    public partial bool SidebarCollapsed { get; private set; }
-
-    /// <summary>
-    /// 获取 Runtime 生命周期投影（侧栏状态点）。
+    /// 获取 Runtime 生命周期投影（顶部导航状态点）。
     /// </summary>
     [MviBind(nameof(AppShellState.RuntimeIndicator), BindingMode = MviBindingMode.OneWay)]
     public partial RuntimeLifecycle RuntimeIndicator { get; private set; }
 
     /// <summary>
-    /// 获取可用更新数投影（侧栏 Updates 入口徽标；0 表示无可用更新）。
+    /// 获取可用更新数投影（顶部导航 Updates 项徽标；0 表示无可用更新）。
     /// </summary>
     [MviBind(nameof(AppShellState.UpdateBadge), BindingMode = MviBindingMode.OneWay)]
     public partial int UpdateBadge { get; private set; }
@@ -94,7 +88,7 @@ public sealed partial class AppShellViewModel
     public partial int? RuntimePort { get; private set; }
 
     /// <summary>
-    /// 获取当前 DSH 版本投影（侧栏 runtime-mini；未知为 null，Phase 8 Issue 02）。
+    /// 获取当前 DSH 版本投影（状态栏 DSH 版本段；未知为 null）。
     /// </summary>
     [MviBind(nameof(AppShellState.DshVersion), BindingMode = MviBindingMode.OneWay)]
     public partial string? DshVersion { get; private set; }
@@ -110,7 +104,7 @@ public sealed partial class AppShellViewModel
     public string PageSubtitle => ShellPageText.Subtitle(CurrentPage);
 
     /// <summary>
-    /// 获取 Runtime 生命周期中文状态词（状态栏与 runtime-mini 共用，Phase 8 Issue 02）。
+    /// 获取 Runtime 生命周期中文状态词（状态栏状态点文案）。
     /// </summary>
     public string RuntimeLifecycleText => TrayTooltipText.StatusText(RuntimeIndicator);
 
@@ -163,13 +157,7 @@ public sealed partial class AppShellViewModel
     public partial IMviAsyncCommand ShowSettingsCommand { get; private set; }
 
     /// <summary>
-    /// 获取切换侧边栏折叠状态命令。
-    /// </summary>
-    [MviCommand(typeof(AppShellIntent.ToggleSidebar))]
-    public partial IMviAsyncCommand ToggleSidebarCommand { get; private set; }
-
-    /// <summary>
-    /// 获取 Desktop 版本（编译期常量，非状态；§50 侧栏常显）。
+    /// 获取 Desktop 版本（编译期常量，非状态；§50 状态栏常显）。
     /// </summary>
     public string DesktopVersion => DesktopInfo.Version;
 

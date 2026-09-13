@@ -4,7 +4,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 /// 表示壳页标题/副标题映射（Phase 8 Issue 02）：文案逐字取自原型
 /// docs/DSH-Desktop-UI-Prototype.html 的 titles 表；映射放表现层静态类（可测），
 /// 顶栏 View 只绑定 <see cref="AppShellViewModel.PageTitle"/> / <see cref="AppShellViewModel.PageSubtitle"/>。
-/// Phase 8 评审 F14：侧栏导航按钮文案同样以此处为单一映射源（MainWindow 构造时写入）。
+/// Phase 8 评审 F14：顶部导航按钮文案同样以此处为单一映射源（MainWindow 构造时写入）。
 /// </summary>
 public static class ShellPageText
 {
