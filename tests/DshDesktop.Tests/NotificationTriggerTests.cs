@@ -110,4 +110,29 @@ public sealed class NotificationTriggerTests
 
         await Assert.That(content).IsNull();
     }
+
+    [Test]
+    public async Task BootstrapFailedEvent_WhenEnabled_Matches()
+    {
+        // 2026-09-13 回归：本地初始化失败（如配置读取异常）此前只有一条日志，
+        // 用户只见「窗口能开、Runtime 不动」而无线索。必须升格为可见通知。
+        NotificationContent? content = NotificationTrigger.TryMatch(
+            Event(DiagnosticEventNames.DesktopBootstrapFailed + " JsonException",
+                source: DiagnosticSource.App),
+            notificationsEnabled: true);
+
+        await Assert.That(content).IsNotNull();
+        await Assert.That(content!.Title).IsEqualTo("Desktop 初始化失败");
+    }
+
+    [Test]
+    public async Task BootstrapFailedEvent_WhenDisabled_DoesNotMatch()
+    {
+        NotificationContent? content = NotificationTrigger.TryMatch(
+            Event(DiagnosticEventNames.DesktopBootstrapFailed + " JsonException",
+                source: DiagnosticSource.App),
+            notificationsEnabled: false);
+
+        await Assert.That(content).IsNull();
+    }
 }

@@ -71,19 +71,10 @@ public static class RuntimeLifecycleBrushes
     /// <summary>次要文本（灰）。</summary>
     public static readonly IBrush Muted = Resolve("DshText2Brush", Text2Hex);
 
-    /// <summary>按生命周期取就绪图标半透明底色画刷。</summary>
-    public static IBrush TintFor(RuntimeLifecycle lifecycle)
-    {
-        return lifecycle switch
-        {
-            RuntimeLifecycle.Running => TintRunning,
-            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering => TintTransition,
-            RuntimeLifecycle.Failed => TintFailed,
-            _ => TintStopped,
-        };
-    }
-
-    /// <summary>按生命周期取状态点画刷。</summary>
+    /// <summary>
+    /// 按生命周期取状态点画刷。图标键与底色的合并映射见
+    /// <see cref="RuntimeLifecycleProjection"/>（就绪图标三要素的唯一出处）。
+    /// </summary>
     public static IBrush For(RuntimeLifecycle lifecycle)
     {
         return lifecycle switch

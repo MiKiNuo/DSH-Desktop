@@ -207,11 +207,18 @@ public sealed partial class DshCompositionRoot
     }
 
     /// <summary>
-    /// 后台初始化 Runtime 监管：加载配置 → Profile 种子复制 → 注册 Mediator 路由 → 订阅快照与退出事件。
+    /// 后台初始化 Runtime 监管：注册 Mediator 路由 → 加载配置 → Profile 种子复制 → 订阅快照与退出事件。
     /// </summary>
     /// <param name="cancellationToken">取消标记。</param>
     public async Task InitializeRuntimeAsync(CancellationToken cancellationToken = default)
     {
+        // 路由注册先于一切可能抛错的操作（配置加载 / Profile 种子 / 各编排构造）：
+        // 注册只依赖构造函数已就绪的 _container.Mediator，不触碰 _config。
+        // 否则配置加载抛错时此处被跳过，运行态是「窗口可用但路由表为空」，
+        // 任意页面动作都退化为「未找到中介者路由」（2026-09-13 设置页报错回归）。
+        // 处理器内部的 ThrowIfNotInitialized 守卫负责给出语义化错误。
+        RegisterRoutes();
+
         _config = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
         await ProfileSeeder
             .SeedIfNeededAsync(_config.DshHome, _config.SeedProfileFrom, cancellationToken)
@@ -259,7 +266,6 @@ public sealed partial class DshCompositionRoot
                 () => Environment.ProcessPath ?? string.Empty);
         }
 
-        RegisterRoutes();
         _supervisor.SnapshotChanged += OnRuntimeSnapshotChanged;
         _supervisor.Exited += OnRuntimeExited;
 

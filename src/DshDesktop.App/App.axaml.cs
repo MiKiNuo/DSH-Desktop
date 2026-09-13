@@ -1,6 +1,7 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using DshDesktop.App.Composition;
+using DshDesktop.Application.Diagnostics;
 using DshDesktop.Application.Updates;
 using MiKiNuo.Mvi.Platforms.Avalonia.Threading;
 
@@ -69,8 +70,16 @@ public sealed partial class App : global::Avalonia.Application
         }
         catch (Exception exception)
         {
-            // 初始化失败不影响窗口可用性，但必须留痕（§45：失败进诊断流）。
-            Serilog.Log.Error(exception, "Desktop.Bootstrap.Failed");
+            // 初始化失败不影响窗口可用性，但必须留痕。用结构化事件名（而非自由文本）：
+            // 它经 Serilog → DiagnosticsHub 进诊断流，并由 NotificationTrigger 触发用户可见通知。
+            // 缺了这一步，Runtime 起不来时用户只见「窗口能开、Runtime 不动」而毫无线索（2026-09-13 回归）。
+            // 异常消息拼在事件名之后：DiagnosticsSink 只取 RenderMessage（丢弃异常对象），
+            // 不拼进来用户看到的正文就只有事件名，仍无可用信息。
+            Serilog.Log.Error(
+                exception,
+                "{Event} {Error}",
+                DiagnosticEventNames.DesktopBootstrapFailed,
+                exception.Message);
         }
     }
 }

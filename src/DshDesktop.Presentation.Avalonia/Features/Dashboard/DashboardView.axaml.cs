@@ -36,8 +36,8 @@ public sealed class PercentColumnConverter : IValueConverter
 
 /// <summary>
 /// 表示 Dashboard 视图（Phase 8 Issue 03：独立 DashboardViewModel 投影直显）。
-/// 就绪图标 / 健康状态点的颜色映射属表现逻辑，随生命周期在 View 层计算
-/// （与 RuntimeView.ApplyIndicators 同先例，画刷复用 RuntimeLifecycleBrushes）。
+/// 就绪图标的图标 / 着色 / 底色取自 <see cref="RuntimeLifecycleProjection"/>（与 Runtime 页同一口径），
+/// 健康状态点的着色取自 <see cref="RuntimeLifecycleBrushes"/>；View 只负责把结果贴到控件上。
 /// </summary>
 public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 {
@@ -82,21 +82,15 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
 
     private void ApplyLifecycleIndicator(RuntimeLifecycle lifecycle)
     {
-        string iconKey = lifecycle switch
-        {
-            RuntimeLifecycle.Running => "IconCheck",
-            RuntimeLifecycle.Starting or RuntimeLifecycle.Stopping or RuntimeLifecycle.Recovering => "IconActivity",
-            RuntimeLifecycle.Failed => "IconAlert",
-            _ => "IconInfo",
-        };
+        LifecycleProjection projection = RuntimeLifecycleProjection.For(lifecycle);
 
-        if (this.FindResource(iconKey) is StreamGeometry geometry)
+        if (this.FindResource(projection.IconKey) is StreamGeometry geometry)
         {
             _readyIconPath.Data = geometry;
-            _readyIconPath.Stroke = RuntimeLifecycleBrushes.For(lifecycle);
+            _readyIconPath.Stroke = projection.Color;
         }
 
-        _readyIconBox.Background = RuntimeLifecycleBrushes.TintFor(lifecycle);
+        _readyIconBox.Background = projection.Tint;
     }
 
     private void ApplyHealthIndicator(RuntimeHealth health)

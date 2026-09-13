@@ -78,7 +78,8 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 
     /// <summary>
     /// 应用状态机指示：当前态 state 高亮（.current-ok 绿 / .current 强调 / .off 虚线灰）、
-    /// 生命周期图标（Path，按状态取图标与着色，与壳状态点同色系）、Failed 恢复面板显隐（ADR-0004）。
+    /// 生命周期图标（Path，取值自 <see cref="RuntimeLifecycleProjection"/>）、
+    /// Failed 恢复面板显隐（ADR-0004）。
     /// </summary>
     private void ApplyIndicators(RuntimeViewModel viewModel)
     {
@@ -100,22 +101,15 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
             }
         }
 
-        (string iconKey, IBrush color, IBrush tint) = lifecycle switch
-        {
-            RuntimeLifecycle.Running => ("IconCheck", RuntimeLifecycleBrushes.Running, RuntimeLifecycleBrushes.TintRunning),
-            RuntimeLifecycle.Failed => ("IconAlert", RuntimeLifecycleBrushes.Failed, RuntimeLifecycleBrushes.TintFailed),
-            RuntimeLifecycle.Stopped => ("IconPower", RuntimeLifecycleBrushes.Stopped, RuntimeLifecycleBrushes.TintStopped),
-            _ => ("IconRefresh", RuntimeLifecycleBrushes.Transition, RuntimeLifecycleBrushes.TintTransition),
-        };
-
-        if (this.FindResource(iconKey) is StreamGeometry geometry)
+        LifecycleProjection projection = RuntimeLifecycleProjection.For(lifecycle);
+        if (this.FindResource(projection.IconKey) is StreamGeometry geometry)
         {
             _lifecycleIcon.Data = geometry;
         }
 
-        _lifecycleIcon.Stroke = color;
-        _lifecycleIconBorder.Background = tint;
-        _lifecycleIconBorder.BorderBrush = color;
+        _lifecycleIcon.Stroke = projection.Color;
+        _lifecycleIconBorder.Background = projection.Tint;
+        _lifecycleIconBorder.BorderBrush = projection.Color;
 
         _recoverPanel.IsVisible = lifecycle is RuntimeLifecycle.Failed;
     }

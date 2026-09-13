@@ -8,7 +8,8 @@ namespace DshDesktop.Application.Notifications;
 /// 触发点——Runtime 崩溃（<see cref="DiagnosticEventNames.RuntimeCrashDetected"/>）+
 /// 插件事务失败回滚（<see cref="DiagnosticEventNames.PluginInstallRollback"/> /
 /// <see cref="DiagnosticEventNames.PluginRollbackPrefix"/>*）+
-/// 连续失败自动安全模式（<see cref="DiagnosticEventNames.RuntimeAutoSafeModeEntered"/>）。
+/// 连续失败自动安全模式（<see cref="DiagnosticEventNames.RuntimeAutoSafeModeEntered"/>）+
+/// Desktop 初始化失败（<see cref="DiagnosticEventNames.DesktopBootstrapFailed"/>）。
 /// 事件名以生产侧常量为单源。
 /// </summary>
 public static class NotificationTrigger
@@ -48,6 +49,12 @@ public static class NotificationTrigger
         if (message.StartsWith(DiagnosticEventNames.RuntimeAutoSafeModeEntered, StringComparison.Ordinal))
         {
             return new NotificationContent("自动进入安全模式", message);
+        }
+
+        // Desktop 初始化失败：Runtime 起不来但窗口可见，必须让用户知道原因（2026-09-13 回归）。
+        if (message.StartsWith(DiagnosticEventNames.DesktopBootstrapFailed, StringComparison.Ordinal))
+        {
+            return new NotificationContent("Desktop 初始化失败", message);
         }
 
         return null;

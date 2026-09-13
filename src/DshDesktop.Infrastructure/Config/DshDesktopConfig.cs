@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Serilog;
 
 namespace DshDesktop.Infrastructure.Config;
 
@@ -276,14 +277,7 @@ public static class DshDesktopConfigStore
 
         if (File.Exists(ConfigPath))
         {
-            DshDesktopConfig? loaded;
-            await using (FileStream readStream = File.OpenRead(ConfigPath))
-            {
-                loaded = await JsonSerializer
-                    .DeserializeAsync(readStream, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-
+            DshDesktopConfig? loaded = await LoadFromPathAsync(ConfigPath, cancellationToken).ConfigureAwait(false);
             if (loaded is not null)
             {
                 // 配置迁移：老配置缺少工具路径时推导补全并回写。
@@ -316,7 +310,7 @@ public static class DshDesktopConfigStore
 
                 if (dirty)
                 {
-                    await SaveAsync(loaded, cancellationToken).ConfigureAwait(false);
+                    await TrySaveAsync(loaded, cancellationToken).ConfigureAwait(false);
                 }
 
                 return loaded;
@@ -324,8 +318,27 @@ public static class DshDesktopConfigStore
         }
 
         DshDesktopConfig detected = Detect();
-        await SaveAsync(detected, cancellationToken).ConfigureAwait(false);
+        await TrySaveAsync(detected, cancellationToken).ConfigureAwait(false);
         return detected;
+    }
+
+    /// <summary>
+    /// 尽力回写配置：写盘失败（并发实例持有目标文件、目录只读、磁盘满）不中断启动链。
+    /// 配置是**派生数据**——探测结果已在内存中可用，写盘只为下次启动省一次探测；
+    /// 为它中断启动是本回归的原始症状（窗口能开、Runtime 起不来），代价与收益严重不对等。
+    /// </summary>
+    private static async Task TrySaveAsync(DshDesktopConfig config, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await SaveAsync(config, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            // 写盘失败留痕即可（诊断流可见），不影响本次启动。
+            Log.Logger.Warning("Config.Save.Failed {Error}", exception.Message);
+        }
     }
 
     /// <summary>
@@ -338,7 +351,7 @@ public static class DshDesktopConfigStore
 
     /// <summary>
     /// 确保配置文件所在目录存在（首次全新安装时数据根内尚无 config 目录，
-    /// 而 File.Create 不创建父目录——缺此步骤会以 DirectoryNotFoundException 中断启动）。
+    /// 而写临时文件与 Move 均不创建父目录——缺此步骤会以 DirectoryNotFoundException 中断启动）。
     /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
     /// </summary>
     /// <param name="configPath">配置文件完整路径。</param>
@@ -352,7 +365,49 @@ public static class DshDesktopConfigStore
     }
 
     /// <summary>
+    /// 从指定路径读取配置（路径可注入，供测试覆盖）。
+    /// 文件不存在、为空、仅空白或 JSON 不完整 / 损坏时一律返回 null，由调用方走探测重建，
+    /// 绝不抛异常中断启动。
+    /// </summary>
+    /// <remarks>
+    /// 容错的必要性：历史版本用「截断 + 逐块序列化」两步写，进程被并发实例打断或强杀时，
+    /// 磁盘上会留下 0 字节或半截 JSON 这两种**结构合法但内容无效**的中间态
+    /// （现写入端已改原子写，此容错保留以兼容已存在的损坏文件与外部改动）。
+    /// 把这种中间态当致命错误会让整个 Runtime 初始化被静默跳过（表现为"窗口能开、Runtime 永不起来"）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </remarks>
+    /// <param name="configPath">目标配置文件路径。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>配置实例；不可用时为 null。</returns>
+    internal static async Task<DshDesktopConfig?> LoadFromPathAsync(
+        string configPath,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(configPath);
+
+        try
+        {
+            await using FileStream readStream = File.OpenRead(configPath);
+            return await JsonSerializer
+                .DeserializeAsync(readStream, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (
+            exception is JsonException or IOException or UnauthorizedAccessException
+                or NotSupportedException or ArgumentException)
+        {
+            // 认不出来的配置不是致命错误：交给调用方重建（Detect + 回写覆盖）。
+            // IOException 覆盖文件不存在 / 目录不存在 / 被其他进程独占（并发实例原子替换窗口期、
+            // 杀软或备份工具持有句柄）三种形态——它们都不该让启动链中断。
+            // NotSupportedException / ArgumentException 覆盖「合法 JSON 但类型不匹配」
+            // （如 {"port":"abc"}、顶层为数组），这类外部编辑同样只该导致重建而非崩溃。
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 回写配置到指定路径（路径可注入，供测试覆盖首次安装场景）。
+    /// 原子写：先写同目录临时文件，再以覆盖方式 Move 到目标路径，杜绝 0 字节 / 半截 JSON 中间态。
     /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
     /// </summary>
     /// <param name="config">配置实例。</param>
@@ -364,10 +419,80 @@ public static class DshDesktopConfigStore
         CancellationToken cancellationToken = default)
     {
         EnsureConfigDirectory(configPath);
-        await using FileStream writeStream = File.Create(configPath);
-        await JsonSerializer
-            .SerializeAsync(writeStream, config, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
-            .ConfigureAwait(false);
+
+        // 临时名必须唯一：固定名（如 .tmp）在两个实例共写同一路径时会互相撞车，
+        // File.Create 直接抛 IOException，冒出到调用方又变成「启动链中断」——
+        // 即本回归的原始症状换姿势重现。GUID 后缀消除该竞争。
+        string tempPath = $"{configPath}.{Guid.NewGuid():N}.tmp";
+
+        try
+        {
+            await using (FileStream writeStream = new(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None))
+            {
+                await JsonSerializer
+                    .SerializeAsync(writeStream, config, DshConfigJsonContext.Default.DshDesktopConfig, cancellationToken)
+                    .ConfigureAwait(false);
+                await writeStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // Windows 下映射为 MoveFileEx(MOVEFILE_REPLACE_EXISTING)：同卷同目录内的元数据级
+            // 原子替换，读者要么看到旧文件要么看到新文件，不会看到 0 字节中间态。
+            // （非断电持久保证：FlushAsync 只刷到 OS 缓冲；配置可重建，该强度足够。）
+            ReplaceWithRetry(tempPath, configPath);
+        }
+        catch
+        {
+            TryDeleteTemp(tempPath);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 以覆盖方式把临时文件替换为目标文件，遇共享冲突时短促重试。
+    /// </summary>
+    /// <remarks>
+    /// Windows 的 MoveFileEx(REPLACE_EXISTING) 在目标被其他进程持有打开句柄时抛
+    /// <see cref="UnauthorizedAccessException"/>（两个实例共写同一数据根的常见情形）。
+    /// 该竞争是**瞬时**的——对方写入完成即释放，故重试而非直接失败：
+    /// 直接失败会冒泡成「启动链中断」，正是本回归要根除的症状。
+    /// ponytail: 固定 5×40ms 上限；配置写入频率极低，够用即止，不做指数退避。
+    /// </remarks>
+    private static void ReplaceWithRetry(string tempPath, string configPath)
+    {
+        const int maxAttempts = 5;
+        for (int attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(tempPath, configPath, overwrite: true);
+                return;
+            }
+            catch (Exception exception) when (
+                attempt < maxAttempts
+                && exception is UnauthorizedAccessException or IOException)
+            {
+                Thread.Sleep(40);
+            }
+        }
+    }
+
+    private static void TryDeleteTemp(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 清理失败不影响主流程；残留 .tmp 会被下次写入覆盖。
+        }
     }
 
     /// <summary>

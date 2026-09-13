@@ -42,4 +42,11 @@ public static class DiagnosticEventNames
 
     /// <summary>Desktop Bridge 目录选择调用事件名（ADR-0006，WorkbenchView 收到 pick 请求时发）。</summary>
     public const string BridgeDirectoryPickerInvoked = "Bridge.DirectoryPicker.Invoked";
+
+    /// <summary>
+    /// Desktop 初始化失败事件名（App 引导 catch 发）。
+    /// 背景：bootstrap 失败会让 Runtime 永不起来但窗口照常可见，此前仅有一条 Log.Error，
+    /// 用户完全无法察觉；改为结构化事件使其进诊断流并触发通知。
+    /// </summary>
+    public const string DesktopBootstrapFailed = "Desktop.Bootstrap.Failed";
 }
