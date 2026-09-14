@@ -81,6 +81,11 @@ public sealed class ProfileSnapshotter(
         {
             throw new InvalidOperationException($"快照恢复后 pnpm 重建失败（退出码 {exitCode}）。{outputTail}");
         }
+
+        // 回滚后 pnpm install 可能把 overrides 包重置为悬空 symlink/junction（2026-09-14 实机：
+        // 回滚后 Runtime 启动期 resolveBundleDir 抛 cannot resolve profile bundle → ExitCode=1）。
+        // 立即实体化，未显式传种子源时回退默认 harness 路径。
+        ReparsePointMaterializer.Materialize(Path.Combine(profileDir, "node_modules"), sourceNodeModulesDir: null);
     }
 
     private void PruneOldSnapshots()

@@ -26,8 +26,9 @@
       以避开原生标题文字区，该值为估计值，需实机微调。
 
       ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
-      ⚠️ 右侧动作避让 caption 区用运行时的 WindowDecorationMargin，不写死像素：写死的值不随
-      窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算。
+      ⚠️ 右侧动作避让 caption 区由 Border.topnav Padding="0,0,140,0" 统一内缩：写死 140 是
+      从「打开工作台被压扁」实机回归（2026-09-14）回退的可靠方案——运行时
+      WindowDecorationMargin 在 Full + Windows 下 binding 值不可靠，曾把按钮压到只剩图标。
       （品牌 StackPanel 的 Margin 是这条的故意例外：框架只暴露标题栏交互元素的度量，不暴露原生
       标题文字宽度的度量，故 logo 偏移只能是估计值。）
       下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
@@ -41,7 +42,8 @@
             <!-- ===== 顶部导航 ===== -->
             <Border
                 Classes="topnav"
-                Grid.Row="0">
+                Grid.Row="0"
+                Padding="0,0,140,0">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <!-- 品牌：logo 瓦片。原生窗口标题（Title="DSH Desktop"）已绘在该行左上角，
                          故 logo 向右推以避开标题文字区。Margin 为估计值，可能需实机微调。 -->
@@ -140,14 +142,14 @@
                         </Button>
                     </StackPanel>
 
-                    <!-- 右侧避让 caption 按钮区：宽度取运行时的 WindowDecorationMargin
-                         （= 系统度量 × DPI 缩放），不写死像素——写死的 140px 只在 100% 缩放下够用。
+                    <!-- 右侧避让 caption 按钮区：由 Border.topnav Padding="0,0,140,0" 统一内缩，
+                         不依赖运行时 WindowDecorationMargin 绑定——后者在 Full + Windows 下
+                         binding 值不可靠，曾导致按钮被压扁（2026-09-14 实机回归）。
                          窗口拖动由系统标题栏承担（已回退 Full，topnav 不再自报拖拽区）。 -->
                 <Button
                     x:Name="OpenWorkbenchButton"
                     Classes="btn ghost"
                     Grid.Column="2"
-                    Margin="{Binding $parent[Window].WindowDecorationMargin}"
                     VerticalAlignment="Center"
                     Command="{Binding ShowWorkbenchCommand}"
                     Content="打开工作台" />

@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 
 namespace DshDesktop.Infrastructure.Plugins;
 
@@ -7,13 +8,15 @@ namespace DshDesktop.Infrastructure.Plugins;
 /// 替换为源目录的真实内容。修复 robocopy 把源端 junction 原样复制成悬空 junction 的现场
 /// （2026-09-14 实机：悬空 junction 使 DSH resolveBundleDir 抛
 /// "cannot resolve profile bundle" → Runtime ExitCode=1；且后续 robocopy 无法在其中建子目录）。
-/// <see cref="Materialize(string,string?)"/> 供 ProfileSeeder 复制后、PluginProfileRepository 安装后共用同一步骤。
+/// <see cref="Materialize(string,string?)"/> 供 ProfileSeeder 复制后、PluginProfileRepository 安装后、
+/// ProfileSnapshotter 回滚后共用同一步骤。
 /// </summary>
 internal static class ReparsePointMaterializer
 {
     /// <summary>
     /// 遍历 nodeModulesDir 顶层，将目标无法解析的重解析点解除并复制 sourceNodeModulesDir 同名项的真实内容。
-    /// sourceNodeModulesDir 为 null（如插件安装现场、无种子源）时，对悬空联接点不做处理——
+    /// sourceNodeModulesDir 为 null 时回退到默认 harness 种子路径查找（经
+    /// <c>DSH_DESKTOP_TEST_SEED_NODE_MODULES</c> 环境变量覆盖便于测试），仍无源则不做处理——
     /// 无法无中生有，交由上层磁盘校验（PluginProfileRepository 安装后校验）报错而非静默成功。
     /// </summary>
     internal static void Materialize(string nodeModulesDir, string? sourceNodeModulesDir)
@@ -38,12 +41,14 @@ internal static class ReparsePointMaterializer
                 continue;
             }
 
-            if (sourceNodeModulesDir is null)
+            // 未显式传种子源时回退默认 harness 路径；仍无源则不做处理。
+            string? source = sourceNodeModulesDir ?? ResolveDefaultSeedNodeModulesDir();
+            if (source is null)
             {
-                continue; // 无源可实体化，交上层校验。
+                continue;
             }
 
-            string sourceEntry = Path.Combine(sourceNodeModulesDir, info.Name);
+            string sourceEntry = Path.Combine(source, info.Name);
             var sourceInfo = new DirectoryInfo(sourceEntry);
             if (!sourceInfo.Exists
                 || (sourceInfo.Attributes & FileAttributes.Directory) == 0
@@ -56,6 +61,33 @@ internal static class ReparsePointMaterializer
             info.Delete(); // 非递归：junction 是空壳，删除即去掉联接点。
             CopyDirectory(sourceEntry, entry);
         }
+    }
+
+    /// <summary>
+    /// 解析默认 harness 种子 node_modules 路径。测试可经 <c>DSH_DESKTOP_TEST_SEED_NODE_MODULES</c>
+    /// 环境变量覆盖；否则按 Windows Roaming 布局拼出
+    /// <c>%APPDATA%\dsh-desktop\harness\profiles\web\node_modules</c>。仅 Windows；
+    /// 非 Windows 或路径不存在时返回 null。
+    /// </summary>
+    private static string? ResolveDefaultSeedNodeModulesDir()
+    {
+        static string? ExistsOrNull(string path) => Directory.Exists(path) ? path : null;
+
+        string? testOverride = Environment.GetEnvironmentVariable("DSH_DESKTOP_TEST_SEED_NODE_MODULES");
+        if (!string.IsNullOrEmpty(testOverride))
+        {
+            return ExistsOrNull(testOverride);
+        }
+
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return null;
+        }
+
+        string candidate = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "dsh-desktop", "harness", "profiles", "web", "node_modules");
+        return ExistsOrNull(candidate);
     }
 
     private static void CopyDirectory(string source, string destination)

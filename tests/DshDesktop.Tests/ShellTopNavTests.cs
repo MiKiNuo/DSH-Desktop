@@ -20,6 +20,9 @@ public sealed partial class ShellTopNavTests
     /// <summary>导航行高度，同时作为扩展标题栏的高度提示。</summary>
     private const int TopNavHeight = 52;
 
+    /// <summary>顶栏容器为避让 caption 按钮区而右内缩的像素数（含左/上/下 0 的 Thickness 字符串）。</summary>
+    private const string TopNavRightPadding = "0,0,140,0";
+
     private static readonly string[] NavButtonNames =
     [
         "NavDashboard",
@@ -150,19 +153,52 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 右侧动作的避让宽度必须来自运行时的 <c>Window.WindowDecorationMargin</c>，不得写死像素。
-    ///
-    /// 背景：原实现写死 <c>Margin="0,0,140,0"</c> 去躲 caption 按钮区，实机截图上「打开工作台」
-    /// 紧贴该区域。写死的值不随窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算。
-    /// ⚠️ 本测试只守「绑定源是 WindowDecorationMargin」，**守不住视觉间距是否合适**。
+    /// 右侧动作通过「顶栏容器整体内缩 140px」避让 caption 区，不再依赖运行时
+    /// <c>Window.WindowDecorationMargin</c> 绑定——后者在 <c>WindowDecorations="Full"</c> + Windows 下
+    /// binding 拿到的值不可靠（2026-09-14 实机回归：按钮被压扁到只剩一个图标）。
+    /// 此语义反转自 <c>Shell_RightActionAvoidsCaptionAreaWithoutHardcoding</c>：
+    /// 不再硬编码单按钮 Margin，而改为容器 Padding 整体内缩。
     /// </summary>
     [Test]
-    public async Task Shell_RightActionAvoidsCaptionAreaWithoutHardcoding()
+    public async Task Shell_RightActionsAvoidCaptionAreaViaTopNavPadding()
     {
         var text = XamlScan.StripComments(await MainWindowXamlAsync());
 
-        await Assert.That(text.Contains("WindowDecorationMargin", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(text.Contains("Margin=\"0,0,140,0\"", StringComparison.Ordinal)).IsFalse();
+        // 必须改用顶栏容器内缩 140 的方案；禁止回到运行时 binding（已实机证伪）。
+        await Assert.That(text.Contains($"Padding=\"{TopNavRightPadding}\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(text.Contains("$parent[Window].WindowDecorationMargin", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 「打开工作台」按钮自身不得携带 Margin——避让 caption 区由顶栏容器统一内缩承担
+    /// （<c>Border.topnav Padding</c>），单按钮 Margin 会让它在 caption 按钮左侧被压扁。
+    /// 2026-09-14 实机回归：<c>Margin="{Binding $parent[Window].WindowDecorationMargin}"</c>
+    /// 在 WindowDecorations="Full" + Windows 下 binding 值不可靠，按钮被压到只剩图标。
+    /// </summary>
+    [Test]
+    public async Task Shell_OpenWorkbenchButton_HasNoMargin()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        // OpenWorkbenchButton 的开标签里不得出现 Margin= 属性。
+        string openWorkbenchTag = ElementTag(text, "<Button[^>]*x:Name=\"OpenWorkbenchButton\"[^>]*>");
+        await Assert.That(openWorkbenchTag).IsNotEmpty();
+        await Assert.That(openWorkbenchTag.Contains("Margin=", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 顶栏容器统一内缩 140px 避让 caption 区——<c>Border.topnav Padding="0,0,140,0"</c>。
+    /// 与上一轮「WindowDecorationMargin 绑定」等价但更可靠（不依赖运行时 StyledProperty 赋值时序）；
+    /// 140px 与上一次写死 <c>Margin="0,0,140,0"</c> 的验证值保持一致（实机已确认可用）。
+    /// </summary>
+    [Test]
+    public async Task Shell_TopNavHasRightPaddingOf140()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        string topnavTag = ElementTag(text, "<Border[^>]*Classes=\"topnav\"[^>]*>");
+        await Assert.That(topnavTag).IsNotEmpty();
+        await Assert.That(topnavTag.Contains($"Padding=\"{TopNavRightPadding}\"", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>
