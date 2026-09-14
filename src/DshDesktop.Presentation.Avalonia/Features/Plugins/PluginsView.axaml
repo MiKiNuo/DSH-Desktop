@@ -203,7 +203,7 @@
                                                             Classes="btn danger sm"
                                                             Click="OnUninstallClicked"
                                                             Content="卸载"
-                                                            IsVisible="{Binding ShowManage}" />
+                                                            IsVisible="{Binding ShowUninstall}" />
                                                     </StackPanel>
                                                 </Grid>
                                             </Border>

@@ -116,6 +116,10 @@ public sealed partial class UpdatesReducer
     /// <summary>
     /// 处理安装 DSH Runtime 意图。
     /// </summary>
+    /// <remarks>
+    /// 非下载操作一律把 <c>DesktopDownloadProgress</c> 复位为 null：遮罩的「旋转图标 ↔ 确定进度条」
+    /// 互斥切换依赖「进度字段仅在 Desktop 下载期间有值」，残留的旧百分比会让遮罩显示一个卡住的进度条。
+    /// </remarks>
     [MviReduce(typeof(UpdatesIntent.InstallDshRuntime))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleInstallDshRuntime(
         UpdatesState state,
@@ -126,6 +130,7 @@ public sealed partial class UpdatesReducer
             {
                 Status = UpdateStatus.Installing,
                 PendingOperation = $"安装 DSH Runtime {intent.Version}…",
+                DesktopDownloadProgress = null,
                 LastError = null,
             },
             new UpdatesEffect.InstallDshRuntime(intent.Version));
@@ -144,6 +149,7 @@ public sealed partial class UpdatesReducer
             state with
             {
                 PendingOperation = $"切换到 {label} 并重启 Runtime…",
+                DesktopDownloadProgress = null,
                 LastError = null,
             },
             new UpdatesEffect.ActivateDshRuntime(intent.Version));
@@ -161,6 +167,7 @@ public sealed partial class UpdatesReducer
             state with
             {
                 PendingOperation = $"更新 {intent.Name}…",
+                DesktopDownloadProgress = null,
                 LastError = null,
             },
             new UpdatesEffect.UpdatePlugin(intent.Name));
@@ -175,12 +182,15 @@ public sealed partial class UpdatesReducer
         UpdatesIntent.RuntimeListChanged intent)
     {
         DshRuntimeInfo? active = intent.Runtimes.FirstOrDefault(r => r.IsActive);
+        // 终态一并清 DownloadProgress：否则中途失败/中止的下载会把百分比留在状态里，
+        // 遮罩与页面进度条下次操作时会停在旧值上不动（假死观感）。
         return Unchanged(state with
         {
             Runtimes = intent.Runtimes,
             CurrentDshVersion = active?.Version ?? state.CurrentDshVersion,
             Status = UpdateStatus.Idle,
             PendingOperation = null,
+            DesktopDownloadProgress = null,
         });
     }
 
@@ -196,6 +206,7 @@ public sealed partial class UpdatesReducer
         {
             Status = UpdateStatus.Failed,
             PendingOperation = null,
+            DesktopDownloadProgress = null,
             LastError = intent.Error,
         });
     }

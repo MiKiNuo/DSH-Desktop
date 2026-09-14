@@ -31,12 +31,13 @@
                 Foreground="{DynamicResource DshWarnBrush}"
                 FontSize="{DynamicResource DshFontSizeSmall}"
                 Text="{Binding PendingOperation}" />
+            <!-- 仅在 Desktop 下载存在真实百分比时出现；其余更新操作由壳遮罩的旋转图标承载，
+                 不在这里退化为来回扫的不确定进度条（2026-09-15 实机投诉）。 -->
             <ProgressBar
                 Classes="bar"
                 Margin="0,4,0,0"
                 HorizontalAlignment="Stretch"
-                IsVisible="{Binding PendingOperation, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
-                IsIndeterminate="{Binding DesktopDownloadProgress, Converter={x:Static local:Converters.IsNull}}"
+                IsVisible="{Binding DesktopDownloadProgress, Converter={x:Static local:Converters.IsNotNull}}"
                 Value="{Binding DesktopDownloadProgress, FallbackValue=0}" />
             <TextBlock
                 Foreground="{DynamicResource DshErrBrush}"

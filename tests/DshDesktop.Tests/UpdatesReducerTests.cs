@@ -260,6 +260,64 @@ public sealed class UpdatesReducerTests
         await Assert.That(done.PendingOperation).IsNull();
     }
 
+    [Test]
+    public async Task InstallDshRuntime_ResetsStaleDownloadProgress()
+    {
+        // 遮罩「spinner ↔ 确定进度条」互斥依赖"进度字段仅在 Desktop 下载期间有值"：
+        // 非下载操作必须清掉上一次 Desktop 下载残留的百分比，否则遮罩会显示一个卡住的进度条。
+        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+
+        var result = _reducer.Reduce(stale, new UpdatesIntent.InstallDshRuntime("0.1.3"));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task ActivateDshRuntime_ResetsStaleDownloadProgress()
+    {
+        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+
+        var result = _reducer.Reduce(stale, new UpdatesIntent.ActivateDshRuntime("0.1.3"));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task UpdatePlugin_ResetsStaleDownloadProgress()
+    {
+        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+
+        var result = _reducer.Reduce(stale, new UpdatesIntent.UpdatePlugin("dsh-foo"));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task UpdatesOperationFailed_ClearsDownloadProgress()
+    {
+        // 下载失败终态须一并清进度：否则遮罩与页面进度条停在失败前的百分比（假死观感）。
+        UpdatesState downloading = _reducer.Reduce(
+            UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" },
+            new UpdatesIntent.DownloadAndApplyDesktopUpdate()).State;
+        UpdatesState progressed = _reducer.Reduce(downloading, new UpdatesIntent.DesktopDownloadProgress(42)).State;
+        await Assert.That(progressed.DesktopDownloadProgress).IsEqualTo(42);
+
+        var result = _reducer.Reduce(progressed, new UpdatesIntent.UpdatesOperationFailed("下载失败"));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task RuntimeListChanged_ClearsDownloadProgress()
+    {
+        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+        IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
+
+        var result = _reducer.Reduce(stale, new UpdatesIntent.RuntimeListChanged(runtimes));
+
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
     private static UpdatesState CheckingState()
     {
         return UpdatesState.Initial with { Status = UpdateStatus.Checking };

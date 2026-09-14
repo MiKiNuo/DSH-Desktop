@@ -171,7 +171,11 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         }
     }
 
-    private static ProcessStartInfo BuildStartInfo(RuntimeLaunchOptions options, int port)
+    /// <summary>
+    /// 组装启动参数。internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）：PATH 前置与环境变量
+    /// 是「工作台内插件市场能否安装」的判定点，必须在测试里锁住。
+    /// </summary>
+    internal static ProcessStartInfo BuildStartInfo(RuntimeLaunchOptions options, int port)
     {
         ProcessStartInfo startInfo = new()
         {
@@ -200,7 +204,57 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         startInfo.ArgumentList.Add(port.ToString(CultureInfo.InvariantCulture));
 
         startInfo.Environment["DSH_HOME"] = options.DshHome;
+
+        // 上游 Electron 壳的 harness env 平价项（buildHarnessSpawnOptions）：
+        // NO_COLOR 免 DSH 子进程输出色码，两个 side-effects-cache 关掉 pnpm 的副作用缓存
+        // （上游注释记录：相关开关配错会让 install 变成跨盘全量拷贝，几分钟到半小时）。
+        startInfo.Environment["NO_COLOR"] = "1";
+        startInfo.Environment["npm_config_side_effects_cache"] = "false";
+        startInfo.Environment["PNPM_CONFIG_SIDE_EFFECTS_CACHE"] = "false";
+
+        PrependToolPath(startInfo, options);
         return startInfo;
+    }
+
+    /// <summary>
+    /// 把工具垫片目录与 node 所在目录前置进 PATH（顺序：垫片在前），去重、不注入空段。
+    /// </summary>
+    /// <remarks>
+    /// 工作台内的 dsh-market 与其拉起的 dsh CLI 按【名字】调用 pnpm（probePnpm 亦同），
+    /// 搜索范围就是 harness 进程的 PATH ⇒ 垫片目录必须在这里。NodePath 允许是 PATH 上的裸名，
+    /// 此时 Path.GetDirectoryName 返回空串，跳过即可。
+    /// </remarks>
+    private static void PrependToolPath(ProcessStartInfo startInfo, RuntimeLaunchOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ToolBinDirectory))
+        {
+            return;
+        }
+
+        char separator = Path.PathSeparator;
+        string current = startInfo.Environment.TryGetValue("Path", out string? existing) && existing is not null
+            ? existing
+            : string.Empty;
+        List<string> parts = [.. current.Split(separator).Where(part => part.Length > 0)];
+
+        List<string> additions = [];
+        foreach (string? directory in new[] { options.ToolBinDirectory, Path.GetDirectoryName(options.NodePath) })
+        {
+            if (string.IsNullOrWhiteSpace(directory) || parts.Contains(directory) || additions.Contains(directory))
+            {
+                continue;
+            }
+
+            additions.Add(directory);
+        }
+
+        if (additions.Count == 0)
+        {
+            return;
+        }
+
+        parts.InsertRange(0, additions);
+        startInfo.Environment["Path"] = string.Join(separator, parts);
     }
 
     private void TryCaptureReadyUrl(string? line, Launch launch)

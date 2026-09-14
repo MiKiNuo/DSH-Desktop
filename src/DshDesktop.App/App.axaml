@@ -8,5 +8,21 @@
         <!-- DSH 暗色主题（Phase 8 Issue 02）：原型色板 + class 语义样式族，各视图按 Classes 引用。 -->
         <StyleInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshTheme.axaml" />
         <StyleInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshIcons.axaml" />
+
+        <!-- 右上角 caption 按钮组里只隐藏「全屏」按钮（用户决策 2026-09-15：不需要全屏功能）。
+             最小化 / 最大化 / 关闭**保留**——这是几乎所有 Windows 桌面软件都有的标准功能，用户明确要求不要动。
+             该按钮组不是 DWM 原生绘制，而是 Fluent 主题 WindowDrawnDecorations 模板自绘的
+             （MainWindow 的 ExtendClientAreaToDecorationsHint=True + WindowDecorations=Full 触发）：
+             全屏 / 最小化 / 最大化 / 关闭，每个 45 DIP + 间距 2。全屏按钮在组内最左，会越过顶栏右内边距
+             压住右侧内容（2026-09-14 两次「右侧动作被遮挡」的真凶，比按三按钮估算的避让量多出 40 DIP）。
+             显隐本应由 :has-fullscreen 伪类决定，但该伪类源自平台上报的 PlatformAllowedWindowActions，
+             Win32 后端不覆盖（恒为 All），应用侧无从关闭，故与 Fluent 主题自身处理不支持动作的做法一致：
+             直接覆写模板部件 IsVisible。守卫见 ShellTopNavTests.Shell_HidesFullScreenCaptionButton。
+             ⚠️ 只此一条：不要再顺手隐藏最小化/最大化（`Shell_MinMaxCloseStayAvailable` 会红）。
+             ⚠️ 选择器不带 xmlns 前缀：Avalonia.Controls.Chrome 已由 XmlnsDefinition 映射进默认
+             `https://github.com/avaloniaui`（带前缀写 chrome:WindowDrawnDecorations 会 AVLN2000）。 -->
+        <Style Selector="WindowDrawnDecorations /template/ Button#PART_FullScreenButton">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
     </Application.Styles>
 </Application>

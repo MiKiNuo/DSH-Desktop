@@ -9,31 +9,38 @@
     Height="800"
     MinWidth="1100"
     MinHeight="600"
+    CanMaximize="False"
     WindowDecorations="Full"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="52">
     <!--
-      应用壳（顶部导航）：装饰回退为**系统绘制**（WindowDecorations="Full"），客户区扩展到装饰区
-      （ExtendClientAreaToDecorationsHint / ExtendClientAreaTitleBarHeightHint="52"）。
+      应用壳（顶部导航）：客户区扩展到装饰区（ExtendClientAreaToDecorationsHint /
+      ExtendClientAreaTitleBarHeightHint="52"），`WindowDecorations="Full"` 保留系统绘制的边框/阴影/缩放。
+      ⚠️ 但标题栏文字与右上角 caption 按钮是 **Avalonia 自绘**的（WindowDrawnDecorations，见
+      App.axaml 注释与 WindowCaptionButtons.cs 的机制说明；此前记为「系统绘制」是误判）。
 
       ⚠️ 为什么不是 BorderOnly：BorderOnly 在**实机**上验证无效——它并没有去掉原生标题栏，
-      窗口反而渲染成两行（顶部一行原生标题栏带 min/max/close，应用顶栏被挤到第二行），
-      caption 按钮也落在原生那一行，用户看到的就是「按钮消失」。故固定用 Full：系统绘制边框，
-      caption 按钮回到单行的右上角。
+      窗口反而渲染成两行（顶部一行带 min/max/close，应用顶栏被挤到第二行），
+      caption 按钮也落在了那一行，用户看到的就是「按钮消失」。故固定用 Full。
 
-      ⚠️ 品牌只保留 logo 瓦片（brand-mark）：原「DSH Desktop」文字会与 Windows 绘制的原生窗口标题
-      （Title="DSH Desktop"）叠印成重影，正是最初的投诉。logo 向右推（顶栏 StackPanel 的 Margin）
-      以避开原生标题文字区，该值为估计值，需实机微调。
+      ⚠️ 品牌只保留 logo 瓦片（brand-mark）：窗口标题文字（Title="DSH Desktop"）由 **Avalonia 自绘**
+      的标题栏（WindowDrawnDecorations 的 PART_TitleTextPanel）绘在该行左上角，
+      自带的品牌文字会与它叠印成重影，正是最初的投诉。logo 向右推（顶栏 StackPanel 的 Margin）
+      以避开该文字区，该值为估计值，需实机微调。
 
       ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
-      ⚠️ 右侧动作避让 caption 区 = 运行时实测：写死 140px 在 DPI 缩放 >100% 时被 caption 三按钮
-      （150% ≈ 207px）越过压到「打开工作台」（2026-09-14 二次实机回归），WindowDecorationMargin
-      binding 取值也不可靠（同年首次回归）。故由 code-behind 用 Win32 GetSystemMetricsForDpi
-      实测三按钮总宽动态设置 TopNav.Padding（见 WindowCaptionButtons.cs），XAML 不带 Padding。
-      ⚠️ 最大化已禁用（WS_MAXIMIZEBOX：按钮变灰 + 双击顶栏不再最大化，保留边框拉伸）——
-      用户决策「全屏放大功能整体移除」；全屏退出死代码（托盘项/Esc/ExitFullScreen）一并删除。
+      ⚠️ 右侧避让 caption 区 = 运行时实测：右上角按钮组由 Fluent 主题自绘（原为全屏/最小化/最大化/关闭，
+      各 45 DIP + 间距 2），现已在 App.axaml 隐藏全屏与最大化两个按钮（用户决策），只剩最小化/关闭。
+      「全屏」按钮正是 2026-09-14 两次「右侧动作被遮挡」的真凶（隐藏前组宽 186 DIP，超出按三按钮的估算），
+      当时误判为最大化按钮。避让仍由 code-behind 用 Win32 GetSystemMetricsForDpi 实测两按钮总宽动态设置
+      TopNav.Padding（见 WindowCaptionButtons.cs），XAML 不带 Padding。
+      ⚠️ 最大化按钮与功能**一并删除**（同日用户决策：「不是禁用，是去掉删除掉这个功能」）：
+      窗口声明 CanMaximize="False"（Avalonia 原生开关 → 不设 WS_MAXIMIZEBOX，双击顶栏也不会最大化；
+      边框拉伸由 CanResize 单独控制，不受影响），按钮由 App.axaml 隐藏。
+      旧方案（P/Invoke 移除 WS_MAXIMIZEBOX）已删除——它对自绘按钮无效（启用态取 Window.CanMaximize）。
+      全屏退出死代码（托盘项/Esc/ExitFullScreen）已随同一决策删除。
       （品牌 StackPanel 的 Margin 仍是「不写死像素」的故意例外：框架只暴露标题栏交互元素的度量，
-      不暴露原生标题文字宽度的度量，故 logo 偏移只能是估计值。）
+      不暴露标题文字宽度的度量，故 logo 偏移只能是估计值。）
       下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
       （壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
       原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区。
@@ -47,8 +54,9 @@
                 x:Name="TopNav"
                 Classes="topnav"
                 Grid.Row="0">
-                <Grid ColumnDefinitions="Auto,*,Auto">
-                    <!-- 品牌：logo 瓦片。原生窗口标题（Title="DSH Desktop"）已绘在该行左上角，
+                <Grid ColumnDefinitions="Auto,*">
+                    <!-- 品牌：logo 瓦片。窗口标题文字（Title="DSH Desktop"）由 Avalonia 自绘的标题栏
+                         （WindowDrawnDecorations 的 PART_TitleTextPanel）绘在该行左上角，
                          故 logo 向右推以避开标题文字区。Margin 为估计值，可能需实机微调。 -->
                     <StackPanel
                         Orientation="Horizontal"
@@ -145,18 +153,14 @@
                         </Button>
                     </StackPanel>
 
-                    <!-- 右侧避让 caption 按钮区：由 code-behind（MainWindow.ApplyCaptionAvoidance）用
-                         Win32 GetSystemMetricsForDpi 实测三按钮总宽动态设置 TopNav.Padding，
-                         XAML 不写死像素（写死 140px 在 DPI>100% 被三按钮越过、WindowDecorationMargin
-                         binding 在 Full+Windows 取值不可靠，均为 2026-09-14 实机回归）。
-                         窗口拖动由系统标题栏承担（已回退 Full，topnav 不再自报拖拽区）。 -->
-                <Button
-                    x:Name="OpenWorkbenchButton"
-                    Classes="btn ghost"
-                    Grid.Column="2"
-                    VerticalAlignment="Center"
-                    Command="{Binding ShowWorkbenchCommand}"
-                    Content="打开工作台" />
+                    <!-- 顶栏右内边距避让 caption 按钮区：由 code-behind（MainWindow.ApplyCaptionAvoidance）用
+                         Win32 GetSystemMetricsForDpi 实测两按钮（min/close）总宽动态设置 TopNav.Padding。
+                         全屏与最大化按钮已于 2026-09-15 在 App.axaml 隐藏（用户决策）；右侧「打开工作台」
+                         按钮同日移除（与导航「DSH 工作台」重复）。Padding 仍保留，防窄窗口时导航末项撞按钮。
+                         XAML 不写死像素：避让宽度依赖主题的按钮实现，且 WindowDecorationMargin binding
+                         在 Full + Windows 下取值不可靠（均为 2026-09-14 实机回归）。
+                         窗口拖动由标题栏条带承担（Avalonia 对扩展装饰区的 TitleBar 角色走 HTCAPTION 路径，
+                         topnav 不再自报拖拽区）。 -->
                 </Grid>
             </Border>
 
@@ -164,7 +168,10 @@
                 x:Name="RootContent"
                 Grid.Row="1" />
 
-            <!-- ===== 更新中全屏遮罩（阻止导航；复用 scrim 视觉，§11.2 壳投影 UpdateInProgress） ===== -->
+            <!-- ===== 更新中全屏遮罩（阻止导航；复用 scrim 视觉，§11.2 壳投影 UpdateInProgress） =====
+                 loading 框语义（2026-09-15 实机投诉修正）：中央默认是**旋转图标**（等待中），
+                 仅当 Desktop 下载存在真实百分比时才由 code-behind 切成确定进度条——二者互斥。
+                 不得在 XAML 写死 IsIndeterminate 进度条：来回扫的滑块与"进度"不可区分。 -->
             <Border x:Name="UpdateScrim" Classes="scrim" Grid.Row="1" IsVisible="False">
                 <Grid
                     Width="320"
@@ -176,14 +183,23 @@
                         Grid.Row="0"
                         HorizontalAlignment="Center"
                         Text="更新进行中" />
-                    <ProgressBar
-                        x:Name="UpdateProgress"
-                        Classes="bar"
-                        Grid.Row="1"
-                        Margin="0,14,0,0"
-                        Width="280"
-                        IsIndeterminate="True" />
+                    <Panel Grid.Row="1" Height="26" Margin="0,14,0,0">
+                        <Path
+                            x:Name="UpdateSpinner"
+                            Classes="spinner"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Data="M 11 2 A 9 9 0 1 0 20 11" />
+                        <ProgressBar
+                            x:Name="UpdateProgress"
+                            Classes="bar"
+                            Width="280"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsVisible="False" />
+                    </Panel>
                     <TextBlock
+                        x:Name="UpdateScrimText"
                         Classes="modal-body"
                         Grid.Row="2"
                         HorizontalAlignment="Center"

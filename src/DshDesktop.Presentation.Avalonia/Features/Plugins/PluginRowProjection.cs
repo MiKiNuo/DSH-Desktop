@@ -34,8 +34,14 @@ public sealed record PluginRow(PluginInfo Info, bool IsUpdatable = false)
     /// <summary>获取是否显示"启用"操作（已禁用的第三方插件）。</summary>
     public bool ShowEnable => !Info.IsCore && !Info.Enabled;
 
-    /// <summary>获取是否显示"管理"操作组（禁用/卸载；启用的第三方插件）。</summary>
+    /// <summary>获取是否显示"禁用"操作（启用的第三方插件；卸载见 <see cref="ShowUninstall"/>）。</summary>
     public bool ShowManage => !Info.IsCore && Info.Enabled;
+
+    /// <summary>
+    /// 获取是否显示"卸载"操作（第三方插件；与启用状态无关——
+    /// 已禁用的插件同样可卸载，2026-09-15 实机反馈，卸载链路无 Enabled 门槛）。
+    /// </summary>
+    public bool ShowUninstall => !Info.IsCore;
 
     /// <summary>
     /// 获取加载耗时展示文本：DSH 无插件加载耗时数据，列保留为原型视觉恒 "—"

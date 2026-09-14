@@ -33,6 +33,11 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private static readonly TimeSpan ToastDuration = TimeSpan.FromMilliseconds(1800);
 
+    /// <summary>
+    /// 遮罩副标题兜底文案（Updates 状态无 PendingOperation 时用；与 MainWindow.axaml 初值一致）。
+    /// </summary>
+    private const string DefaultUpdateScrimText = "正在处理更新，请稍候…";
+
     private readonly AppShellViewModel _shellViewModel;
     private readonly IMviResolver _resolver;
     private readonly Func<bool>? _minimizeToTrayOnClose;
@@ -47,8 +52,12 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _toastTimer;
     private readonly IReadOnlyDictionary<ShellPage, Button> _navButtons;
     private readonly Border _updateScrim;
+
+    // 必须全限定：本文件隐式 using System.IO，裸写 Path 在 Avalonia.Controls.Shapes.Path
+    // 与 System.IO.Path 间二义（CS0104）。
+    private readonly Avalonia.Controls.Shapes.Path _updateSpinner;
     private readonly ProgressBar _updateProgressBar;
-    private readonly Button _openWorkbenchButton;
+    private readonly TextBlock _updateScrimText;
 
     // ===== 二次确认弹层（壳渲染，ConfirmDialog 注册 RequestConfirmAsync） =====
     private readonly Border _confirmScrim;
@@ -93,8 +102,9 @@ public sealed partial class MainWindow : Window
         _toastBox = FindRequiredControl<Border>("ToastBox");
         _toastText = FindRequiredControl<TextBlock>("ToastText");
         _updateScrim = FindRequiredControl<Border>("UpdateScrim");
+        _updateSpinner = FindRequiredControl<Avalonia.Controls.Shapes.Path>("UpdateSpinner");
         _updateProgressBar = FindRequiredControl<ProgressBar>("UpdateProgress");
-        _openWorkbenchButton = FindRequiredControl<Button>("OpenWorkbenchButton");
+        _updateScrimText = FindRequiredControl<TextBlock>("UpdateScrimText");
         _navButtons = new Dictionary<ShellPage, Button>
         {
             [ShellPage.Dashboard] = FindRequiredControl<Button>("NavDashboard"),
@@ -179,8 +189,8 @@ public sealed partial class MainWindow : Window
             "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
             (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
 
-        // caption 区避让（实测宽度，打开时 + DPI 变化时）+ 禁用最大化（背景见 WindowCaptionButtons 注释）。
-        WindowCaptionButtons.DisableMaximizeBox(this);
+        // caption 区避让（实测宽度，打开时 + DPI 变化时）。最大化已改由 XAML 的 CanMaximize="False"
+        // 关闭（见 MainWindow.axaml 注释），不再需要 Win32 样式操作。
         ApplyCaptionAvoidance();
         ScalingChanged += (_, _) => ApplyCaptionAvoidance();
     }
@@ -389,8 +399,6 @@ public sealed partial class MainWindow : Window
         {
             button.IsEnabled = !running;
         }
-
-        _openWorkbenchButton.IsEnabled = !running;
     }
 
     /// <summary>
@@ -435,8 +443,9 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// 接线遮罩进度条：订阅 Updates Store，Desktop 下载进度存在时显示确定进度，否则保持不确定态
-    /// （遮罩弹出时 UpdatesView 的确定进度条被其遮住，故在遮罩上直接呈现真实进度，§22）。
+    /// 接线遮罩内容：订阅 Updates Store，按「是否存在真实下载百分比」在**旋转图标（等待中）**与
+    /// **确定进度条（真实进度）**之间互斥切换，并同步副标题为具体操作描述（§22）。
+    /// 不再使用不确定态进度条：中段来回扫的滑块与「进度在推进」不可区分（2026-09-15 实机投诉）。
     /// </summary>
     private void WireUpdateScrimProgress()
     {
@@ -455,13 +464,17 @@ public sealed partial class MainWindow : Window
 
         if (state.DesktopDownloadProgress is { } percent)
         {
-            _updateProgressBar.IsIndeterminate = false;
+            _updateSpinner.IsVisible = false;
+            _updateProgressBar.IsVisible = true;
             _updateProgressBar.Value = percent;
         }
         else
         {
-            _updateProgressBar.IsIndeterminate = true;
+            _updateSpinner.IsVisible = true;
+            _updateProgressBar.IsVisible = false;
         }
+
+        _updateScrimText.Text = state.PendingOperation ?? DefaultUpdateScrimText;
     }
 
     private void RenderCurrentPage()

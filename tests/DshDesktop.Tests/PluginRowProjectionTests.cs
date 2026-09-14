@@ -87,6 +87,35 @@ public sealed class PluginRowProjectionTests
         await Assert.That(new PluginRow(Sample[2]).LoadTime).IsEqualTo("—");
     }
 
+    // ===== 卸载按钮可见性（2026-09-15 实机反馈：已禁用插件也应可卸载）=====
+
+    [Test]
+    public async Task Row_DisabledThirdParty_ShowsUninstall()
+    {
+        // 卸载与启用状态无关：禁用的第三方插件同时显示「启用」+「卸载」。
+        PluginRow row = new(Sample[2]);
+
+        await Assert.That(row.ShowEnable).IsTrue();
+        await Assert.That(row.ShowUninstall).IsTrue();
+    }
+
+    [Test]
+    public async Task Row_EnabledThirdParty_ShowsUninstall()
+    {
+        PluginRow row = new(Sample[0]);
+
+        await Assert.That(row.ShowUninstall).IsTrue();
+    }
+
+    [Test]
+    public async Task Row_CorePlugin_NoUninstall()
+    {
+        // 核心插件不可卸载（GuardThirdParty 同语义）。
+        PluginRow row = new(Sample[1]);
+
+        await Assert.That(row.ShowUninstall).IsFalse();
+    }
+
     [Test]
     public async Task CountText_FormatsTotal()
     {

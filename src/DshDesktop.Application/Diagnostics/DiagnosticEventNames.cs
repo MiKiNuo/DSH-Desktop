@@ -49,4 +49,11 @@ public static class DiagnosticEventNames
     /// 用户完全无法察觉；改为结构化事件使其进诊断流并触发通知。
     /// </summary>
     public const string DesktopBootstrapFailed = "Desktop.Bootstrap.Failed";
+
+    /// <summary>
+    /// 工具垫片（&lt;dshHome&gt;\.desktop-bin）生成失败事件名。
+    /// 非致命：应用照常启动，但工作台内的 dsh-market 会因找不到按名可解析的 pnpm 而装不了插件
+    /// （顶部常驻「安装插件前需要先配置 pnpm 环境」）。缺 resources\pnpm-runner.mjs 或数据根不可写时发。
+    /// </summary>
+    public const string ToolBinProvisionFailed = "Runtime.ToolBin.ProvisionFailed";
 }

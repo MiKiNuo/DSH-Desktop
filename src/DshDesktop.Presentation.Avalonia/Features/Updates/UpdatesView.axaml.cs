@@ -63,8 +63,8 @@ internal static class Converters
     /// <summary>是否为本机副本（!IsActive &amp;&amp; !IsBorrowed）。</summary>
     public static LocalCopyConverter LocalCopy { get; } = new();
 
-    /// <summary>值是否为 null（ProgressBar 在下载进度缺失时退化为不确定态）。</summary>
-    public static IsNullConverter IsNull { get; } = new();
+    /// <summary>值是否非 null（页面进度条仅在 Desktop 下载存在真实百分比时出现）。</summary>
+    public static IsNotNullConverter IsNotNull { get; } = new();
 }
 
 internal sealed class LocalCopyConverter : IValueConverter
@@ -76,10 +76,10 @@ internal sealed class LocalCopyConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-internal sealed class IsNullConverter : IValueConverter
+internal sealed class IsNotNullConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is null;
+        => value is not null;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

@@ -150,27 +150,27 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 「打开工作台」按钮自身不得携带 Margin——避让 caption 区由顶栏容器统一内缩承担
-    /// （<c>Border.topnav Padding</c>），单按钮 Margin 会让它在 caption 按钮左侧被压扁。
-    /// 2026-09-14 实机回归：<c>Margin="{Binding $parent[Window].WindowDecorationMargin}"</c>
-    /// 在 WindowDecorations="Full" + Windows 下 binding 值不可靠，按钮被压到只剩图标。
+    /// 右侧「打开工作台」按钮已按用户决策移除（2026-09-15）：顶部导航的「DSH 工作台」项
+    /// 已覆盖同一 <c>ShowWorkbenchCommand</c> 入口，再显示即冗余。XAML 与 code-behind 均不得复活。
     /// </summary>
     [Test]
-    public async Task Shell_OpenWorkbenchButton_HasNoMargin()
+    public async Task Shell_HasNoOpenWorkbenchButton()
     {
         var text = XamlScan.StripComments(await MainWindowXamlAsync());
 
-        // OpenWorkbenchButton 的开标签里不得出现 Margin= 属性。
-        string openWorkbenchTag = ElementTag(text, "<Button[^>]*x:Name=\"OpenWorkbenchButton\"[^>]*>");
-        await Assert.That(openWorkbenchTag).IsNotEmpty();
-        await Assert.That(openWorkbenchTag.Contains("Margin=", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(text.Contains("OpenWorkbenchButton", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(text.Contains("打开工作台", StringComparison.Ordinal)).IsFalse();
+
+        var codeBehind = await AppSourceAsync("MainWindow.axaml.cs");
+        await Assert.That(codeBehind.Contains("OpenWorkbenchButton", StringComparison.Ordinal)).IsFalse();
     }
 
     /// <summary>
     /// 右侧动作避让 caption 区 = 运行时实测：XAML 不得携带任何写死 Padding 或 WindowDecorationMargin 绑定。
-    /// 写死 140px 在 DPI 缩放 &gt;100% 时被 caption 三按钮（150% ≈ 207px）越过压到「打开工作台」
-    /// （2026-09-14 二次实机回归）；WindowDecorationMargin binding 在 Full + Windows 下取值不可靠
-    /// （同年首次回归）。避让改由 code-behind 实测设置（见 Shell_TopNavPaddingIsMeasuredAtRuntime）。
+    /// 写死 140px 在实机上被 caption 按钮组越过压到右侧动作（2026-09-14 二次实机回归；真因是当时仍在显示的
+    /// 第 4 个「全屏」按钮使组宽达 186 DIP，而非当时推断的 DPI 缩放）；WindowDecorationMargin binding 在
+    /// Full + Windows 下取值不可靠（同年首次回归）。避让改由 code-behind 实测设置
+    /// （见 Shell_TopNavPaddingIsMeasuredAtRuntime）。
     /// </summary>
     [Test]
     public async Task Shell_RightActionsAvoidCaptionAreaDynamically()
@@ -201,20 +201,60 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 最大化功能已按用户决策禁用（WS_MAXIMIZEBOX 移除：按钮变灰 + 双击顶栏不再最大化，
-    /// 保留边框拉伸）。三锚点：常量存在 + 位被清除（<c>&amp; ~</c>）+ OnOpened 接线——
-    /// 只查常量字符串会在位运算方向被改（&amp; ~ 改成 |）或接线被删时假绿（code-review M2）。
-    /// Windows 上禁用后按钮仍占位，故 caption 区宽度仍按三按钮实测。
+    /// 最小化 / 最大化 / 关闭必须**保留**（用户说明 2026-09-15：「最小、最大、关闭是（几乎）所有桌面软件
+    /// 都有的功能」，本次只需删除「全屏」按钮）。故：
+    /// ① `App.axaml` 不得隐藏 `PART_MaximizeButton`（只隐藏全屏按钮）；
+    /// ② 窗口不得声明 `CanMaximize="False"`（那会让最大化按钮变灰、窗口不可最大化）；
+    /// ③ 也不得复活旧的 `WS_MAXIMIZEBOX` P/Invoke 方案 —— 它既不隐藏也不置灰自绘按钮，却会连带让
+    ///    「双击顶栏最大化」失效（2026-09-14 引入、2026-09-15 删除，勿回退）。
+    /// ⚠️ 本守卫只锚属性值与代码级符号；按钮实际可见性只有实机能确认（沙箱无法截图 Avalonia 窗口）。
     /// </summary>
     [Test]
-    public async Task Shell_MaximizeBoxIsDisabled()
+    public async Task Shell_MinMaxCloseStayAvailable()
     {
+        var app = XamlScan.StripComments(await AppXamlAsync());
+        await Assert.That(app.Contains("PART_MaximizeButton", StringComparison.Ordinal)).IsFalse();
+
+        var xaml = XamlScan.StripComments(await MainWindowXamlAsync());
+        await Assert.That(xaml.Contains("CanMaximize=", StringComparison.Ordinal)).IsFalse();
+
         var helper = await AppSourceAsync("WindowCaptionButtons.cs");
-        await Assert.That(helper.Contains("WS_MAXIMIZEBOX", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(helper.Contains("& ~WS_MAXIMIZEBOX", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(helper.Contains("& ~WS_MAXIMIZEBOX", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(helper.Contains("SetWindowLongPtr", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(helper.Contains("DisableMaximizeBox", StringComparison.Ordinal)).IsFalse();
 
         var codeBehind = await AppSourceAsync("MainWindow.axaml.cs");
-        await Assert.That(codeBehind.Contains("WindowCaptionButtons.DisableMaximizeBox(", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(codeBehind.Contains("DisableMaximizeBox", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 「全屏」caption 按钮必须隐藏（用户决策：不需要全屏功能，2026-09-15）。
+    ///
+    /// 右上角按钮组**不是** DWM 原生绘制，而是 Fluent 主题 <c>WindowDrawnDecorations</c> 模板自绘的
+    /// 四个按钮：全屏 / 最小化 / 最大化 / 关闭（<c>CaptionButtonWidth</c> 45 DIP + <c>Spacing</c> 2）。
+    /// 全屏按钮是组内**最左**一个，比三按钮避让宽度多出 47 DIP，故会越过顶栏 Padding 压住右侧内容
+    /// ——2026-09-14 两次「右侧动作被遮挡」的真凶即它（当时误判为最大化按钮，故改错了对象）。
+    /// 它的显隐由 <c>:has-fullscreen</c> 伪类驱动，伪类源自平台上报的
+    /// <c>PlatformAllowedWindowActions</c>；Win32 后端不覆盖该属性（恒为 All），应用侧关不掉，
+    /// 故只能覆写模板部件显隐（与 Fluent 主题自身对不支持动作的处理方式一致）。
+    /// ⚠️ 本守卫只锚定样式声明；「按钮真的消失」只有实机能确认（沙箱无法截图 Avalonia 窗口）。
+    /// </summary>
+    [Test]
+    public async Task Shell_HidesFullScreenCaptionButton()
+    {
+        var text = XamlScan.StripComments(await AppXamlAsync());
+
+        Match style = Regex.Match(
+            text,
+            "<Style(?=[^>]*PART_FullScreenButton)[^>]*>(?<body>.*?)</Style>",
+            RegexOptions.Singleline);
+
+        await Assert.That(style.Success).IsTrue();
+        await Assert.That(style.Value.Contains("WindowDrawnDecorations", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(
+            style.Groups["body"].Value.Contains("Property=\"IsVisible\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(
+            style.Groups["body"].Value.Contains("Value=\"False\"", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>
@@ -259,6 +299,16 @@ public sealed partial class ShellTopNavTests
         await Assert.That(root).IsNotNull();
 
         var path = Path.Combine(root!, "src", "DshDesktop.App", "MainWindow.axaml");
+        await Assert.That(File.Exists(path)).IsTrue();
+        return await File.ReadAllTextAsync(path);
+    }
+
+    private static async Task<string> AppXamlAsync()
+    {
+        var root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var path = Path.Combine(root!, "src", "DshDesktop.App", "App.axaml");
         await Assert.That(File.Exists(path)).IsTrue();
         return await File.ReadAllTextAsync(path);
     }

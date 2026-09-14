@@ -1037,11 +1037,40 @@ public sealed partial class DshCompositionRoot
             NodePath: _config.NodePath,
             EntryPath: entryPath,
             HarnessNodeEntryPath: _config.HarnessNodeEntryPath,
+            ToolBinDirectory: EnsureToolBinDirectory(),
             WorkingDirectory: workingDirectory,
             DshHome: _config.DshHome,
             Host: _config.Host,
             Port: _config.Port,
             StartupTimeout: TimeSpan.FromSeconds(_config.StartupTimeoutSeconds));
+    }
+
+    /// <summary>
+    /// 确保工具垫片（&lt;dshHome&gt;\.desktop-bin 的 pnpm.cmd / node.cmd）存在并返回其目录。
+    /// </summary>
+    /// <remarks>
+    /// 工作台内的 dsh-market 与其拉起的 dsh CLI 按【名字】调用 pnpm，而 vendored pnpm 只是
+    /// pnpm.cjs（非可执行名）⇒ 必须靠垫片让它按名可解析，否则市场顶部常驻
+    /// 「安装插件前需要先配置 pnpm 环境」且安装被拦停。
+    /// 失败只告警不阻断：装不了插件 ≠ 应用起不来，用户仍可用宿主的插件管理页。
+    /// 因而不做异常类型过滤（ArgumentException / PathTooLongException 等同样必须吞掉）——
+    /// 这里唯一的正确行为是"垫片尽力而为，绝不影响启动"。
+    /// </remarks>
+    private string? EnsureToolBinDirectory()
+    {
+        try
+        {
+            return DesktopBinProvisioner.Ensure(
+                _config!.DshHome,
+                _config.NodePath,
+                _config.PnpmCjsPath ?? string.Empty,
+                DesktopBinProvisioner.ResolveRunnerPath(AppContext.BaseDirectory));
+        }
+        catch (Exception ex)
+        {
+            Log.Logger.Warning(ex, DiagnosticEventNames.ToolBinProvisionFailed);
+            return null;
+        }
     }
 
     private async ValueTask<bool> HandleStopRuntimeAsync(
