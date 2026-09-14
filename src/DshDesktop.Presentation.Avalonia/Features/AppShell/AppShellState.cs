@@ -12,17 +12,19 @@ namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 /// <param name="RuntimeProcessId">DSH 进程 ID 投影（状态栏 PID；未运行为 null，Phase 8 Issue 02）。</param>
 /// <param name="RuntimePort">实际监听端口投影（状态栏 Port；未运行为 null，Phase 8 Issue 02）。</param>
 /// <param name="DshVersion">当前 DSH 版本投影（状态栏 DSH 版本段；自 UpdatesStore.CurrentDshVersion，未知为 null）。</param>
+/// <param name="UpdateInProgress">是否有更新操作进行中投影（BindSiblingState 自 UpdatesStore.PendingOperation，§11.2；true 时壳显示全屏遮罩并锁定导航）。</param>
 public sealed record AppShellState(
     ShellPage CurrentPage,
     RuntimeLifecycle RuntimeIndicator,
     int UpdateBadge,
     int? RuntimeProcessId,
     int? RuntimePort,
-    string? DshVersion) : IMviState
+    string? DshVersion,
+    bool UpdateInProgress) : IMviState
 {
     /// <summary>
     /// 获取初始状态（顶部导航改造：默认页 = 工作台，即 DSH 官方 Web UI）。
     /// </summary>
     public static AppShellState Initial { get; } = new(
-        ShellPage.Workbench, RuntimeLifecycle.Stopped, 0, null, null, null);
+        ShellPage.Workbench, RuntimeLifecycle.Stopped, 0, null, null, null, false);
 }

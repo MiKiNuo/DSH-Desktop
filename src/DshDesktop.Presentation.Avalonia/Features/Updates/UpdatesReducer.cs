@@ -20,8 +20,10 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.CheckUpdates intent)
     {
+        // 清 PendingOperation：检查更新是插件更新成功后的终态回流（§23），不清会令壳遮罩永久卡死。
+        // 其它进行中操作（Desktop 下载 / Runtime 安装）期间，壳遮罩已锁住"检查更新"按钮，不会并发触发此处。
         return WithEffect(
-            state with { Status = UpdateStatus.Checking, LastError = null },
+            state with { Status = UpdateStatus.Checking, LastError = null, PendingOperation = null },
             new UpdatesEffect.CheckUpdates());
     }
 

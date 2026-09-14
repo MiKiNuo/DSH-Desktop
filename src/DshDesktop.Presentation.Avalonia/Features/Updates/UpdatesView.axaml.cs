@@ -62,12 +62,24 @@ internal static class Converters
 {
     /// <summary>是否为本机副本（!IsActive &amp;&amp; !IsBorrowed）。</summary>
     public static LocalCopyConverter LocalCopy { get; } = new();
+
+    /// <summary>值是否为 null（ProgressBar 在下载进度缺失时退化为不确定态）。</summary>
+    public static IsNullConverter IsNull { get; } = new();
 }
 
 internal sealed class LocalCopyConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is DshRuntimeInfo info && !info.IsActive && !info.IsBorrowed;
+
+    public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+internal sealed class IsNullConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is null;
 
     public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

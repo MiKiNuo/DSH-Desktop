@@ -174,6 +174,45 @@ public sealed class UpdatesReducerTests
         await Assert.That(result.State.PendingOperation).IsNotNull();
     }
 
+    [Test]
+    public async Task PluginUpdate_SuccessPath_ClearsPendingOperation()
+    {
+        // 插件更新成功回流检查更新（§23）；终态必须清空 PendingOperation，否则壳遮罩永久卡死。
+        UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
+        await Assert.That(busy.PendingOperation).IsNotNull();
+
+        UpdatesState afterCheck = _reducer.Reduce(busy, new UpdatesIntent.CheckUpdates()).State;
+        await Assert.That(afterCheck.PendingOperation).IsNull();
+
+        var response = new CheckUpdatesResponse("0.1.2", "0.1.2", [], [], null);
+        UpdatesState done = _reducer.Reduce(afterCheck, new UpdatesIntent.CheckUpdatesCompleted(response)).State;
+        await Assert.That(done.PendingOperation).IsNull();
+    }
+
+    [Test]
+    public async Task InstallDshRuntime_SuccessPath_ClearsPendingOperation()
+    {
+        // DSH Runtime 安装成功 → RuntimeListChanged 终态清空 PendingOperation。
+        UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.InstallDshRuntime("0.1.3")).State;
+        await Assert.That(busy.PendingOperation).IsNotNull();
+
+        IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
+        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes)).State;
+        await Assert.That(done.PendingOperation).IsNull();
+    }
+
+    [Test]
+    public async Task ActivateDshRuntime_SuccessPath_ClearsPendingOperation()
+    {
+        // 激活 Runtime 成功 → RuntimeListChanged 终态清空 PendingOperation。
+        UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.ActivateDshRuntime("0.1.3")).State;
+        await Assert.That(busy.PendingOperation).IsNotNull();
+
+        IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
+        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes)).State;
+        await Assert.That(done.PendingOperation).IsNull();
+    }
+
     private static UpdatesState CheckingState()
     {
         return UpdatesState.Initial with { Status = UpdateStatus.Checking };

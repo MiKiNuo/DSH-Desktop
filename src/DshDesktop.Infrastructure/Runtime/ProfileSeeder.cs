@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using DshDesktop.Infrastructure.Plugins;
 
 namespace DshDesktop.Infrastructure.Runtime;
 
@@ -92,8 +93,8 @@ public static class ProfileSeeder
         DependencyInstaller installer,
         CancellationToken cancellationToken)
     {
-        string[] bundles = DeclaredBundles(profileDir);
-        if (bundles.Length == 0 || AnyBundleResolved(profileDir, bundles))
+        string[] bundles = ProfileBundleProbe.DeclaredBundles(profileDir);
+        if (bundles.Length == 0 || bundles.Any(bundle => ProfileBundleProbe.IsBundleResolved(profileDir, bundle)))
         {
             return;
         }
@@ -105,44 +106,6 @@ public static class ProfileSeeder
             throw new InvalidOperationException(
                 $"Profile 依赖树重建失败（pnpm 退出码 {exitCode}）：{profileDir}。{outputTail}");
         }
-    }
-
-    /// <summary>
-    /// 清单声明的 profile bundle 名称。未声明时为空——DSH 不加载任何包，不需要依赖树；
-    /// 清单损坏时同样返回空，由 DSH 给出更准确的错误，播种期不越权处理。
-    /// </summary>
-    private static string[] DeclaredBundles(string profileDir)
-    {
-        string manifestPath = Path.Combine(profileDir, "package.json");
-        if (!File.Exists(manifestPath))
-        {
-            return [];
-        }
-
-        try
-        {
-            if (JsonNode.Parse(File.ReadAllText(manifestPath)) is JsonObject manifest
-                && manifest["dsh"]?["profile"]?["bundles"] is JsonArray { Count: > 0 } bundles)
-            {
-                return [.. bundles.Select(bundle => bundle?.GetValue<string>()).OfType<string>()];
-            }
-        }
-        catch (JsonException)
-        {
-        }
-
-        return [];
-    }
-
-    /// <summary>
-    /// node_modules 下能否解析出任意一个声明的 bundle——与 DSH 的 resolveBundleDir 判据同源：
-    /// 认 bundle 的 package.json。仅目录存在不算数——空目录与中断的安装残留（本次现场）都是
-    /// 「目录在、包不在」，正是旧判据误判为就绪的形态。
-    /// </summary>
-    private static bool AnyBundleResolved(string profileDir, string[] bundles)
-    {
-        return bundles.Any(bundle => File.Exists(
-            Path.Combine(profileDir, "node_modules", bundle, "package.json")));
     }
 
     private static async Task CopyProfileAsync(
@@ -202,6 +165,13 @@ public static class ProfileSeeder
             throw new InvalidOperationException(
                 $"Profile 种子复制失败（robocopy 退出码 {process.ExitCode}）：{sourceProfile} → {targetProfile}");
         }
+
+        // robocopy 可能把源端 junction 原样复制成悬空 junction（源端 .generations 在复制根之外、
+        // 目标端必然悬空）→ DSH 启动期 resolveBundleDir 失败。复制后立即实体化：把悬空联接点
+        // 替换为种子源端的真实内容（2026-09-14 实机根因）。
+        ReparsePointMaterializer.Materialize(
+            Path.Combine(targetProfile, "node_modules"),
+            Path.Combine(sourceProfile, "node_modules"));
 
         // 跨盘后把虚拟存储指向重写为本 profile，从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 根因。
         RewriteVirtualStoreDir(targetProfile);

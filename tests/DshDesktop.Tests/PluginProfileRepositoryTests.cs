@@ -115,6 +115,70 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     }
 
     [Test]
+    public async Task InstallAsync_DeclaredBundleUnresolvable_Throws()
+    {
+        // 回归（2026-09-14 实机）：清单声明了 bundle "dsh-myrules"，但磁盘上无法解析
+        // （悬空 junction / 缺失）。pnpm add 退出码 0 不代表 bundle 可解析——
+        // 旧实现直接返回成功，错误只在 Runtime 重启时才暴露。
+        SeedProfile(
+            dependencies: ["dsh-foo"],
+            bundles: ["dsh-myrules"]);
+        // 模拟 pnpm add 成功装入了 dsh-newplugin（含 dsh.bundle.patch），
+        // 但 dsh-myrules 仍不可解析。
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-newplugin"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-newplugin", "package.json"),
+            "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+
+        // 需要一个存在的 pnpm 路径以通过前置检查（真实执行被 runOnce 桩拦截）。
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        Func<string, string, string, string[], CancellationToken, Task<(int, string)>> runOnce =
+            (_, _, _, _, _) => Task.FromResult((0, string.Empty));
+        var repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+
+        InvalidOperationException? caught = null;
+        try
+        {
+            await repository.InstallAsync("dsh-newplugin", CancellationToken.None);
+        }
+        catch (InvalidOperationException exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).Contains("dsh-myrules");
+    }
+
+    [Test]
+    public async Task InstallAsync_AllDeclaredBundlesResolvable_Succeeds()
+    {
+        // 对照：全部声明 bundle 均可解析时不得误报失败。
+        SeedProfile(
+            dependencies: ["dsh-foo"],
+            bundles: ["dsh-myrules"]);
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-myrules"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-myrules", "package.json"),
+            "{}");
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-newplugin"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-newplugin", "package.json"),
+            "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        Func<string, string, string, string[], CancellationToken, Task<(int, string)>> runOnce =
+            (_, _, _, _, _) => Task.FromResult((0, string.Empty));
+        var repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+
+        string installed = await repository.InstallAsync("dsh-newplugin", CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-newplugin");
+    }
+
+    [Test]
     public async Task ListPluginsAsync_ReadsDescriptionFromInstalledManifest()
     {
         // Phase 8 评审 F3（Spec a.1）：description 读自 node_modules/<pkg>/package.json，缺失为空串。

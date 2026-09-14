@@ -132,4 +132,15 @@ public sealed partial class AppShellReducer
     {
         return Unchanged(state with { DshVersion = intent.Version });
     }
+
+    /// <summary>
+    /// 处理更新操作进行中投影变化回流意图（§14：仅投影字段，壳全屏遮罩 + 导航锁定的数据源）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.UpdateInProgressChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleUpdateInProgressChanged(
+        AppShellState state,
+        AppShellIntent.UpdateInProgressChanged intent)
+    {
+        return Unchanged(state with { UpdateInProgress = intent.InProgress });
+    }
 }

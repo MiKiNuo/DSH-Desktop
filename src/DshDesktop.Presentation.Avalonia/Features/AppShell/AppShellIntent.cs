@@ -69,4 +69,11 @@ public abstract partial record AppShellIntent : IMviIntent
     /// </summary>
     /// <param name="Version">当前激活的 DSH 版本；未知为 null。</param>
     public sealed partial record DshVersionChanged(string? Version) : AppShellIntent;
+
+    /// <summary>
+    /// 表示更新操作进行中投影变化的回流意图（壳全屏遮罩 + 导航锁定；BindSiblingState 自
+    /// UpdatesStore.PendingOperation 投影，§11.2；true = 有更新操作未完成）。
+    /// </summary>
+    /// <param name="InProgress">是否有更新操作进行中。</param>
+    public sealed partial record UpdateInProgressChanged(bool InProgress) : AppShellIntent;
 }

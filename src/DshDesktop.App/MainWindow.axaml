@@ -143,19 +143,48 @@
                     <!-- 右侧避让 caption 按钮区：宽度取运行时的 WindowDecorationMargin
                          （= 系统度量 × DPI 缩放），不写死像素——写死的 140px 只在 100% 缩放下够用。
                          窗口拖动由系统标题栏承担（已回退 Full，topnav 不再自报拖拽区）。 -->
-                    <Button
-                        Classes="btn ghost"
-                        Grid.Column="2"
-                        Margin="{Binding $parent[Window].WindowDecorationMargin}"
-                        VerticalAlignment="Center"
-                        Command="{Binding ShowWorkbenchCommand}"
-                        Content="打开工作台" />
+                <Button
+                    x:Name="OpenWorkbenchButton"
+                    Classes="btn ghost"
+                    Grid.Column="2"
+                    Margin="{Binding $parent[Window].WindowDecorationMargin}"
+                    VerticalAlignment="Center"
+                    Command="{Binding ShowWorkbenchCommand}"
+                    Content="打开工作台" />
                 </Grid>
             </Border>
 
             <ContentControl
                 x:Name="RootContent"
                 Grid.Row="1" />
+
+            <!-- ===== 更新中全屏遮罩（阻止导航；复用 scrim 视觉，§11.2 壳投影 UpdateInProgress） ===== -->
+            <Border x:Name="UpdateScrim" Classes="scrim" Grid.Row="1" IsVisible="False">
+                <Grid
+                    Width="320"
+                    VerticalAlignment="Center"
+                    HorizontalAlignment="Center"
+                    RowDefinitions="Auto,Auto,Auto">
+                    <TextBlock
+                        Classes="modal-title"
+                        Grid.Row="0"
+                        HorizontalAlignment="Center"
+                        Text="更新进行中" />
+                    <ProgressBar
+                        x:Name="UpdateProgress"
+                        Classes="bar"
+                        Grid.Row="1"
+                        Margin="0,14,0,0"
+                        Width="280"
+                        IsIndeterminate="True" />
+                    <TextBlock
+                        Classes="modal-body"
+                        Grid.Row="2"
+                        HorizontalAlignment="Center"
+                        Margin="0,10,0,0"
+                        Text="正在处理更新，请稍候…" />
+                </Grid>
+            </Border>
 
             <!-- 状态栏：分段式，段间 1px 竖发丝线；数值用等宽字体。 -->
             <Border Classes="statusbar" Grid.Row="2">

@@ -103,6 +103,28 @@ public sealed class PluginOrchestratorTests
     }
 
     [Test]
+    public async Task InstallAsync_WhenPluginDeclaredButUnresolvable_ValidationFails()
+    {
+        // 回归（2026-09-14）：仅断言 manifest 的 Enabled 不够——声明-but-未物化
+        // （悬空 junction）的插件会让 DSH 启动期 resolveBundleDir 抛错。
+        // 校验必须要求磁盘可解析（IsResolvable），否则失败并回滚。
+        var pluginManager = new DeclaredButUnresolvableManager();
+        var snapshotter = new FakeProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+
+        await Assert.That(async () => await orchestrator.InstallAsync("dsh-foo", CancellationToken.None))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(snapshotter.RestoredSnapshotId).IsEqualTo("snap-1"); // 校验失败也回滚
+    }
+
+    [Test]
     public async Task DisableAllThirdPartyAsync_OnlyDisablesEnabledThirdParty()
     {
         var pluginManager = new MixedPluginManager();
@@ -150,7 +172,6 @@ public sealed class PluginOrchestratorTests
     private sealed class MixedPluginManager : IPluginManager
     {
         public List<(string Name, bool Enabled)> SetCalls { get; } = [];
-
         public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
         {
             return Task.FromResult<IReadOnlyList<PluginInfo>>(
@@ -175,6 +196,31 @@ public sealed class PluginOrchestratorTests
         public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
         {
             return Task.FromResult(source);
+        }
+    }
+
+    private sealed class DeclaredButUnresolvableManager : IPluginManager
+    {
+        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
+        {
+            // 已声明、已启用，但磁盘不可解析（悬空 junction / 中断安装残留）。
+            return Task.FromResult<IReadOnlyList<PluginInfo>>(
+                [new PluginInfo("dsh-foo", "1.0.0", false, true, "", IsResolvable: false)]);
+        }
+
+        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task UninstallAsync(string name, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+        {
+            return Task.FromResult("dsh-foo");
         }
     }
 

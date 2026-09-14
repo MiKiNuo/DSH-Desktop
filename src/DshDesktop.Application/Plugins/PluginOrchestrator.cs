@@ -45,13 +45,15 @@ public sealed class PluginOrchestrator(
             _logger.Information("Plugin.Install.Installed {PluginName}", pluginName);
 
             Publish(PluginOperationStage.Validating, pluginName, null);
-            // 文件级一致性校验（Q3-A）：列表解析必须能找到已安装且启用的插件。
+            // 文件级一致性校验（Q3-A）：列表解析必须能找到已安装、启用且磁盘可解析的插件。
+            // 仅断言 manifest 的 Enabled 不够——声明-but-未物化（悬空 junction / 中断安装残留）的插件
+            // 会让 DSH 启动期 resolveBundleDir 抛错（2026-09-14 实机），必须以磁盘可解析为准。
             IReadOnlyList<PluginInfo> plugins = await pluginManager
                 .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-            if (!plugins.Any(p => p.Name == pluginName && p.Enabled))
+            if (!plugins.Any(p => p.Name == pluginName && p.Enabled && p.IsResolvable))
             {
                 throw new InvalidOperationException(
-                    $"安装后校验失败：{pluginName} 未出现在启用插件清单中。");
+                    $"安装后校验失败：{pluginName} 未出现在启用且可解析的插件清单中。");
             }
 
             Publish(PluginOperationStage.StartingRuntime, pluginName, null);

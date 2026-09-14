@@ -89,6 +89,12 @@ public sealed partial class AppShellViewModel
     public partial string? DshVersion { get; private set; }
 
     /// <summary>
+    /// 获取更新操作进行中投影（壳全屏遮罩 + 导航锁定；自 UpdatesStore.PendingOperation，§11.2）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.UpdateInProgress), BindingMode = MviBindingMode.OneWay)]
+    public partial bool UpdateInProgress { get; private set; }
+
+    /// <summary>
     /// 获取 Runtime 生命周期中文状态词（状态栏状态点文案）。
     /// </summary>
     public string RuntimeLifecycleText => TrayTooltipText.StatusText(RuntimeIndicator);
@@ -174,6 +180,12 @@ public sealed partial class AppShellViewModel
         if (updatesState.CurrentDshVersion != Store.CurrentState.DshVersion)
         {
             _ = DispatchAsync(new AppShellIntent.DshVersionChanged(updatesState.CurrentDshVersion));
+        }
+
+        bool inProgress = updatesState.PendingOperation is not null;
+        if (inProgress != Store.CurrentState.UpdateInProgress)
+        {
+            _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
         }
     }
 }

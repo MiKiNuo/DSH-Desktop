@@ -167,10 +167,15 @@ public sealed partial class DshCompositionRoot
         NativeMenu trayMenu = new();
         NativeMenuItem showItem = new("显示主窗口");
         showItem.Click += (_, _) => ShowMainWindow(window);
+        NativeMenuItem exitFullScreenItem = new("退出全屏");
+        // 与 Esc 共用同一退出全屏代码路径；ExitFullScreen 在非全屏时是安全 no-op，故保持常启用
+        // （启用/禁用需额外订阅窗口状态变化，收益甚微）。
+        exitFullScreenItem.Click += (_, _) => window.ExitFullScreen();
         NativeMenuItem exitItem = new("退出");
         // Phase 8 Issue 05：托盘退出是显式真实退出意图，须绕过"最小化到托盘"关窗拦截。
         exitItem.Click += (_, _) => window.RequestExit();
         trayMenu.Add(showItem);
+        trayMenu.Add(exitFullScreenItem);
         trayMenu.Add(exitItem);
         trayIcon.Menu = trayMenu;
         TrayIcon.SetIcons(global::Avalonia.Application.Current!, [trayIcon]);

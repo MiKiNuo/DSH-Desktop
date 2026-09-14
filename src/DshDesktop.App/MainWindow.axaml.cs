@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System.Threading.Tasks;
@@ -44,6 +45,13 @@ public sealed partial class MainWindow : Window
     private readonly TextBlock _toastText;
     private readonly DispatcherTimer _toastTimer;
     private readonly IReadOnlyDictionary<ShellPage, Button> _navButtons;
+    private readonly Border _updateScrim;
+    private readonly Button _openWorkbenchButton;
+
+    // 退出全屏时回到的窗口状态：被动记住最近一次非全屏态（最大化→最大化，否则→普通）。
+    // 已知限制：全屏由内嵌 WebView2 经浏览器 Fullscreen API 触发，桌面宿主无进入入口，
+    // 故只能在状态变化时记录上一个非全屏态，不主动探测。
+    private WindowState _priorWindowState = WindowState.Normal;
 
     // ===== 二次确认弹层（壳渲染，ConfirmDialog 注册 RequestConfirmAsync） =====
     private readonly Border _confirmScrim;
@@ -86,6 +94,8 @@ public sealed partial class MainWindow : Window
         _updatesBadgeText = FindRequiredControl<TextBlock>("UpdatesBadgeText");
         _toastBox = FindRequiredControl<Border>("ToastBox");
         _toastText = FindRequiredControl<TextBlock>("ToastText");
+        _updateScrim = FindRequiredControl<Border>("UpdateScrim");
+        _openWorkbenchButton = FindRequiredControl<Button>("OpenWorkbenchButton");
         _navButtons = new Dictionary<ShellPage, Button>
         {
             [ShellPage.Dashboard] = FindRequiredControl<Button>("NavDashboard"),
@@ -137,6 +147,10 @@ public sealed partial class MainWindow : Window
                     _lastUpdateBadge = badge;
                 }
             }
+            else if (args.PropertyName == nameof(AppShellViewModel.UpdateInProgress))
+            {
+                ApplyUpdateScrim();
+            }
         };
 
         // 二次确认弹层：取消 / 确认两个按钮收口到同一 TaskCompletionSource。
@@ -163,7 +177,17 @@ public sealed partial class MainWindow : Window
         RenderCurrentPage();
         ApplyNavState();
         ApplyIndicators();
+        ApplyUpdateScrim();
         WireToastScenarios();
+
+        // 记住最近一次非全屏窗口状态，供 Esc / 托盘"退出全屏"回退（见 ExitFullScreen）。
+        this.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == WindowStateProperty && WindowState != WindowState.FullScreen)
+            {
+                _priorWindowState = WindowState;
+            }
+        };
     }
 
     /// <inheritdoc />
@@ -296,6 +320,34 @@ public sealed partial class MainWindow : Window
             as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
+    /// <summary>
+    /// 退出全屏（Esc 与托盘"退出全屏"共用同一代码路径）：仅当当前处于全屏时回退到进入前的窗口状态。
+    /// 已知限制：全屏由内嵌 WebView2 经浏览器 Fullscreen API 触发；WebView2 获焦时原生子控件自行消费
+    /// Esc，窗口 KeyDown 可能永不触发，故托盘项正是为该情形兜底。Esc 是否有效无法在本机验证
+    /// （无截图/驱动真实窗口的手段），切勿声称已验证。
+    /// </summary>
+    public void ExitFullScreen()
+    {
+        if (WindowState == WindowState.FullScreen)
+        {
+            WindowState = _priorWindowState;
+        }
+    }
+
+    /// <inheritdoc />
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        // Esc 退出全屏（已知限制见 ExitFullScreen：WebView2 获焦时可能不触发，靠托盘兜底）。
+        if (e.Key == Key.Escape && WindowState == WindowState.FullScreen)
+        {
+            ExitFullScreen();
+            e.Handled = true;
+            return;
+        }
+
+        base.OnKeyDown(e);
+    }
+
     /// <inheritdoc />
     protected override void OnClosing(WindowClosingEventArgs e)
     {
@@ -351,6 +403,29 @@ public sealed partial class MainWindow : Window
                 button.Classes.Remove("active");
             }
         }
+    }
+
+    /// <summary>
+    /// 应用更新中全屏遮罩：有更新操作进行中时显示遮罩并锁定导航按钮，否则移除遮罩并恢复导航。
+    /// 壳 ViewModel 的 PropertyChanged 可能在后台派发线程上触发（§11.2 兄弟 Store 投影），
+    /// 触及控件前必须编组到 UI 线程（同 <see cref="ShowToast"/> 的收口方式）。
+    /// </summary>
+    private void ApplyUpdateScrim()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ApplyUpdateScrim);
+            return;
+        }
+
+        bool running = _shellViewModel.UpdateInProgress;
+        _updateScrim.IsVisible = running;
+        foreach ((_, Button button) in _navButtons)
+        {
+            button.IsEnabled = !running;
+        }
+
+        _openWorkbenchButton.IsEnabled = !running;
     }
 
     private void RenderCurrentPage()

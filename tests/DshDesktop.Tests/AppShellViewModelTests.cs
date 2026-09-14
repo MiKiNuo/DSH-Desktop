@@ -151,6 +151,29 @@ public sealed class AppShellViewModelTests
         await Assert.That(viewModel.UpdateBadge).IsEqualTo(0);
     }
 
+    [Test]
+    public async Task UpdateInProgress_ProjectsFromPendingOperation()
+    {
+        // §11.2：壳经 BindSiblingState 投影 UpdatesStore.PendingOperation（非空 = 更新中），
+        // 驱动全屏遮罩 + 导航锁定（NavigationBlocked 决策的单一真值源）。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+
+        updatesStore.Push(UpdatesState.Initial with { PendingOperation = "安装 DSH Runtime 0.1.3…" });
+
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.UpdateInProgress).IsTrue();
+
+        updatesStore.Push(UpdatesState.Initial with { PendingOperation = null });
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+        await Assert.That(shellStore.CurrentState.UpdateInProgress).IsFalse();
+    }
+
     private static MviStore<AppShellState, AppShellIntent, UnitEffect> CreateShellStore()
     {
         return new MviStore<AppShellState, AppShellIntent, UnitEffect>(

@@ -12,10 +12,14 @@ namespace DshDesktop.Infrastructure.Plugins;
 public sealed class PluginProfileRepository(
     string profileDir,
     string nodePath,
-    string? pnpmCjsPath) : IPluginManager
+    string? pnpmCjsPath,
+    Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runOnce = null)
+    : IPluginManager
 {
     private const string CoreScope = "@deepseek-ai/";
     private const string CoreMarketName = "dshmarket";
+
+    private readonly Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? _runOnce = runOnce;
 
     private string ManifestPath => Path.Combine(profileDir, "package.json");
     private string PatchPath => Path.Combine(profileDir, "cordis.patch.yml");
@@ -32,12 +36,15 @@ public sealed class PluginProfileRepository(
             foreach ((string name, JsonNode? _) in dependencies)
             {
                 (string version, string description) = ReadInstalledInfo(name);
+                bool resolvable = File.Exists(
+                    Path.Combine(profileDir, "node_modules", name, "package.json"));
                 plugins.Add(new PluginInfo(
                     name,
                     version,
                     IsCore(name),
                     bundles.Contains(name),
-                    description));
+                    description,
+                    resolvable));
             }
         }
 
@@ -127,7 +134,7 @@ public sealed class PluginProfileRepository(
             : ["add", source];
 
         (int exitCode, string outputTail) = await NodeJsToolRunner.RunAsync(
-            nodePath, pnpmCjsPath!, profileDir, arguments, cancellationToken).ConfigureAwait(false);
+            nodePath, pnpmCjsPath!, profileDir, arguments, cancellationToken, _runOnce).ConfigureAwait(false);
         if (exitCode != 0)
         {
             throw new InvalidOperationException($"pnpm add 失败（退出码 {exitCode}）。{outputTail}");
@@ -160,6 +167,41 @@ public sealed class PluginProfileRepository(
         {
             ((System.Collections.Generic.ICollection<JsonNode?>)bundles).Add(JsonValue.Create(pluginName));
             WriteManifest(manifest);
+        }
+
+        // 安装后磁盘校验（2026-09-14 实机：pnpm add 退出码 0 不代表 bundle 可解析——
+        // 悬空 junction / 中断安装残留会让 DSH 启动期 resolveBundleDir 抛
+        // "cannot resolve profile bundle" → Runtime ExitCode=1，而错误只在重启时才暴露）。
+        // 先把复制/安装可能遗留的悬空联接点实体化（无种子源时仅尽力），再校验全部声明 bundle。
+        ReparsePointMaterializer.Materialize(
+            Path.Combine(profileDir, "node_modules"), sourceNodeModulesDir: null);
+        string[] unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
+        if (unresolved.Length > 0)
+        {
+            // 修复路径：重建 lockfile（pnpm install --no-frozen-lockfile）让依赖树重新物化。
+            // 修复失败也要落到「命名不可解析 bundle」的精确报错，而非被 lockfile 错误掩盖。
+            try
+            {
+                await RebuildLockfileAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception repairEx)
+            {
+                unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
+                if (unresolved.Length > 0)
+                {
+                    throw new InvalidOperationException(
+                        $"插件安装后仍有不可解析的 bundle：{string.Join(", ", unresolved)}。" +
+                        $"依赖树重建也失败（{repairEx.Message}）。请检查 Profile 依赖树或重新种子 Profile。");
+                }
+            }
+
+            unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
+            if (unresolved.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    $"插件安装后仍有不可解析的 bundle：{string.Join(", ", unresolved)}。" +
+                    "请检查 Profile 依赖树或重新种子 Profile。");
+            }
         }
 
         return pluginName;
@@ -364,12 +406,12 @@ public sealed class PluginProfileRepository(
         // 优先 --offline（§34 Offline First）；失败后允许联网重试一次（变更路径不在启动主路径）。
         (int exitCode, string outputTail) = await NodeJsToolRunner.RunAsync(
             nodePath, pnpmCjsPath, profileDir,
-            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
+            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken, _runOnce).ConfigureAwait(false);
         if (exitCode != 0)
         {
             (exitCode, outputTail) = await NodeJsToolRunner.RunAsync(
                 nodePath, pnpmCjsPath, profileDir,
-                ["install", "--no-frozen-lockfile"], cancellationToken).ConfigureAwait(false);
+                ["install", "--no-frozen-lockfile"], cancellationToken, _runOnce).ConfigureAwait(false);
         }
 
         if (exitCode != 0)

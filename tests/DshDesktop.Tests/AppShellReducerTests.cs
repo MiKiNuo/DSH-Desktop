@@ -137,4 +137,22 @@ public sealed class AppShellReducerTests
         await Assert.That(result.State.DshVersion).IsEqualTo("0.1.0-rc.12");
         await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
+
+    [Test]
+    public async Task UpdateInProgressChanged_ProjectsFlag()
+    {
+        // 壳全屏遮罩 + 导航锁定的决策真值源：true = 有更新操作未完成。
+        var busy = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.UpdateInProgressChanged(true));
+
+        await Assert.That(busy.State.UpdateInProgress).IsTrue();
+        await Assert.That(busy.Effects.Count).IsEqualTo(0);
+
+        var idle = _reducer.Reduce(
+            busy.State,
+            new AppShellIntent.UpdateInProgressChanged(false));
+
+        await Assert.That(idle.State.UpdateInProgress).IsFalse();
+    }
 }
