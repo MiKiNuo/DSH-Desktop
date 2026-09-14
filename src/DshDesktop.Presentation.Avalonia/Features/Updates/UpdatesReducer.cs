@@ -1,3 +1,4 @@
+using System;
 using DshDesktop.Domain.Updates;
 using MiKiNuo.Mvi.Application.MVI.Reducer;
 using MiKiNuo.Mvi.Domain.DI;
@@ -20,8 +21,21 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.CheckUpdates intent)
     {
-        // 清 PendingOperation：检查更新是插件更新成功后的终态回流（§23），不清会令壳遮罩永久卡死。
-        // 其它进行中操作（Desktop 下载 / Runtime 安装）期间，壳遮罩已锁住"检查更新"按钮，不会并发触发此处。
+        // 仅当"当前进行中操作即本次检查自身"时才清空 PendingOperation：空闲检查本就为空；
+        // 插件更新成功经此处终态回流（§23）需清空其自身标记。后台静默检查
+        // （App.axaml.cs 启动路径 BackgroundCheckUpdatesAsync，绕过按钮）可能在 Desktop 下载 / Runtime 安装 /
+        // 激活进行中抵达，若无条件清空会释放遮罩与导航锁（§22）。插件标记前缀须与 HandleUpdatePlugin 的
+        // PendingOperation 文案保持一致。
+        const string PluginPendingPrefix = "更新";
+        bool canClearPending = state.PendingOperation is null
+            || state.PendingOperation.StartsWith(PluginPendingPrefix, StringComparison.Ordinal);
+        if (!canClearPending)
+        {
+            return WithEffect(
+                state with { Status = UpdateStatus.Checking, LastError = null },
+                new UpdatesEffect.CheckUpdates());
+        }
+
         return WithEffect(
             state with { Status = UpdateStatus.Checking, LastError = null, PendingOperation = null },
             new UpdatesEffect.CheckUpdates());
@@ -84,6 +98,14 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.DesktopDownloadProgress intent)
     {
+        // 防"终态事件之后的进度回流"复活 PendingOperation（§22：进度回调 fire-and-forget，操作失败/成功后
+        // 仍可能有一个进度回调在队列中）。仅当确有进行中操作时才更新进度文本/百分比；否则原样返回——
+        // 否则壳遮罩会被凭空拉起并永久卡死（用户无法关闭）。
+        if (state.PendingOperation is null)
+        {
+            return Unchanged(state);
+        }
+
         return Unchanged(state with
         {
             DesktopDownloadProgress = intent.Percent,

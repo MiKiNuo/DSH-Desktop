@@ -26,11 +26,14 @@
       以避开原生标题文字区，该值为估计值，需实机微调。
 
       ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
-      ⚠️ 右侧动作避让 caption 区由 Border.topnav Padding="0,0,140,0" 统一内缩：写死 140 是
-      从「打开工作台被压扁」实机回归（2026-09-14）回退的可靠方案——运行时
-      WindowDecorationMargin 在 Full + Windows 下 binding 值不可靠，曾把按钮压到只剩图标。
-      （品牌 StackPanel 的 Margin 是这条的故意例外：框架只暴露标题栏交互元素的度量，不暴露原生
-      标题文字宽度的度量，故 logo 偏移只能是估计值。）
+      ⚠️ 右侧动作避让 caption 区 = 运行时实测：写死 140px 在 DPI 缩放 >100% 时被 caption 三按钮
+      （150% ≈ 207px）越过压到「打开工作台」（2026-09-14 二次实机回归），WindowDecorationMargin
+      binding 取值也不可靠（同年首次回归）。故由 code-behind 用 Win32 GetSystemMetricsForDpi
+      实测三按钮总宽动态设置 TopNav.Padding（见 WindowCaptionButtons.cs），XAML 不带 Padding。
+      ⚠️ 最大化已禁用（WS_MAXIMIZEBOX：按钮变灰 + 双击顶栏不再最大化，保留边框拉伸）——
+      用户决策「全屏放大功能整体移除」；全屏退出死代码（托盘项/Esc/ExitFullScreen）一并删除。
+      （品牌 StackPanel 的 Margin 仍是「不写死像素」的故意例外：框架只暴露标题栏交互元素的度量，
+      不暴露原生标题文字宽度的度量，故 logo 偏移只能是估计值。）
       下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
       （壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
       原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区。
@@ -41,9 +44,9 @@
         <Grid x:Name="ShellGrid" RowDefinitions="52,*,28">
             <!-- ===== 顶部导航 ===== -->
             <Border
+                x:Name="TopNav"
                 Classes="topnav"
-                Grid.Row="0"
-                Padding="0,0,140,0">
+                Grid.Row="0">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <!-- 品牌：logo 瓦片。原生窗口标题（Title="DSH Desktop"）已绘在该行左上角，
                          故 logo 向右推以避开标题文字区。Margin 为估计值，可能需实机微调。 -->
@@ -142,9 +145,10 @@
                         </Button>
                     </StackPanel>
 
-                    <!-- 右侧避让 caption 按钮区：由 Border.topnav Padding="0,0,140,0" 统一内缩，
-                         不依赖运行时 WindowDecorationMargin 绑定——后者在 Full + Windows 下
-                         binding 值不可靠，曾导致按钮被压扁（2026-09-14 实机回归）。
+                    <!-- 右侧避让 caption 按钮区：由 code-behind（MainWindow.ApplyCaptionAvoidance）用
+                         Win32 GetSystemMetricsForDpi 实测三按钮总宽动态设置 TopNav.Padding，
+                         XAML 不写死像素（写死 140px 在 DPI>100% 被三按钮越过、WindowDecorationMargin
+                         binding 在 Full+Windows 取值不可靠，均为 2026-09-14 实机回归）。
                          窗口拖动由系统标题栏承担（已回退 Full，topnav 不再自报拖拽区）。 -->
                 <Button
                     x:Name="OpenWorkbenchButton"

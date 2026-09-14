@@ -67,6 +67,12 @@ public sealed class ProfileSnapshotter(
             }
         }
 
+        // 恢复出的 package.json 可能含事务前的悬空 pnpm overrides（link:../.generations/...
+        // 目标不随 profile 复制）：重建前剥离，否则 pnpm install 会把已 materialize 的真实依赖
+        // 重建为悬空 junction，把回滚改坏（2026-09-14 实机：回滚后 Runtime 抛
+        // cannot resolve profile bundle → ExitCode=1）。
+        ProfileManifestFixups.StripDanglingOverrides(profileDir);
+
         (int exitCode, string outputTail) = await _runner(
             nodePath, pnpmCjsPath, profileDir,
             ["install", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);

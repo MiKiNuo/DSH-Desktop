@@ -133,6 +133,10 @@ public sealed class PluginProfileRepository(
             ? ["add", source, "--offline"]
             : ["add", source];
 
+        // pnpm add 前剥离悬空 pnpm overrides（link:../.generations/... 目标不随 profile 复制）：
+        // 否则 pnpm add 会把已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
+        ProfileManifestFixups.StripDanglingOverrides(profileDir);
+
         (int exitCode, string outputTail) = await NodeJsToolRunner.RunAsync(
             nodePath, pnpmCjsPath!, profileDir, arguments, cancellationToken, _runOnce).ConfigureAwait(false);
         if (exitCode != 0)

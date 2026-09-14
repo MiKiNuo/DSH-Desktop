@@ -20,9 +20,6 @@ public sealed partial class ShellTopNavTests
     /// <summary>导航行高度，同时作为扩展标题栏的高度提示。</summary>
     private const int TopNavHeight = 52;
 
-    /// <summary>顶栏容器为避让 caption 按钮区而右内缩的像素数（含左/上/下 0 的 Thickness 字符串）。</summary>
-    private const string TopNavRightPadding = "0,0,140,0";
-
     private static readonly string[] NavButtonNames =
     [
         "NavDashboard",
@@ -153,23 +150,6 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 右侧动作通过「顶栏容器整体内缩 140px」避让 caption 区，不再依赖运行时
-    /// <c>Window.WindowDecorationMargin</c> 绑定——后者在 <c>WindowDecorations="Full"</c> + Windows 下
-    /// binding 拿到的值不可靠（2026-09-14 实机回归：按钮被压扁到只剩一个图标）。
-    /// 此语义反转自 <c>Shell_RightActionAvoidsCaptionAreaWithoutHardcoding</c>：
-    /// 不再硬编码单按钮 Margin，而改为容器 Padding 整体内缩。
-    /// </summary>
-    [Test]
-    public async Task Shell_RightActionsAvoidCaptionAreaViaTopNavPadding()
-    {
-        var text = XamlScan.StripComments(await MainWindowXamlAsync());
-
-        // 必须改用顶栏容器内缩 140 的方案；禁止回到运行时 binding（已实机证伪）。
-        await Assert.That(text.Contains($"Padding=\"{TopNavRightPadding}\"", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(text.Contains("$parent[Window].WindowDecorationMargin", StringComparison.Ordinal)).IsFalse();
-    }
-
-    /// <summary>
     /// 「打开工作台」按钮自身不得携带 Margin——避让 caption 区由顶栏容器统一内缩承担
     /// （<c>Border.topnav Padding</c>），单按钮 Margin 会让它在 caption 按钮左侧被压扁。
     /// 2026-09-14 实机回归：<c>Margin="{Binding $parent[Window].WindowDecorationMargin}"</c>
@@ -187,18 +167,72 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 顶栏容器统一内缩 140px 避让 caption 区——<c>Border.topnav Padding="0,0,140,0"</c>。
-    /// 与上一轮「WindowDecorationMargin 绑定」等价但更可靠（不依赖运行时 StyledProperty 赋值时序）；
-    /// 140px 与上一次写死 <c>Margin="0,0,140,0"</c> 的验证值保持一致（实机已确认可用）。
+    /// 右侧动作避让 caption 区 = 运行时实测：XAML 不得携带任何写死 Padding 或 WindowDecorationMargin 绑定。
+    /// 写死 140px 在 DPI 缩放 &gt;100% 时被 caption 三按钮（150% ≈ 207px）越过压到「打开工作台」
+    /// （2026-09-14 二次实机回归）；WindowDecorationMargin binding 在 Full + Windows 下取值不可靠
+    /// （同年首次回归）。避让改由 code-behind 实测设置（见 Shell_TopNavPaddingIsMeasuredAtRuntime）。
     /// </summary>
     [Test]
-    public async Task Shell_TopNavHasRightPaddingOf140()
+    public async Task Shell_RightActionsAvoidCaptionAreaDynamically()
     {
         var text = XamlScan.StripComments(await MainWindowXamlAsync());
 
-        string topnavTag = ElementTag(text, "<Border[^>]*Classes=\"topnav\"[^>]*>");
+        string topnavTag = ElementTag(text, "<Border[^>]*x:Name=\"TopNav\"[^>]*>");
         await Assert.That(topnavTag).IsNotEmpty();
-        await Assert.That(topnavTag.Contains($"Padding=\"{TopNavRightPadding}\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(topnavTag.Contains("Classes=\"topnav\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(topnavTag.Contains("Padding=", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(text.Contains("$parent[Window].WindowDecorationMargin", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 顶栏右内边距必须由 code-behind 按实测 caption 宽度设置（打开时 + DPI 变化时）：
+    /// 锚定实测调用本身（<c>WindowCaptionButtons.MeasureWidthDips(</c>）而非 <c>_topNav.Padding</c> 文本，
+    /// 防止回退到写死 Thickness 仍假绿（code-review M2 同类脆弱性）。实测本身只能实机验证（沙箱无真实窗口）。
+    /// </summary>
+    [Test]
+    public async Task Shell_TopNavPaddingIsMeasuredAtRuntime()
+    {
+        var codeBehind = await AppSourceAsync("MainWindow.axaml.cs");
+        await Assert.That(codeBehind.Contains("WindowCaptionButtons.MeasureWidthDips(", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(codeBehind.Contains("ScalingChanged", StringComparison.Ordinal)).IsTrue();
+
+        var helper = await AppSourceAsync("WindowCaptionButtons.cs");
+        await Assert.That(helper.Contains("GetSystemMetricsForDpi", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>
+    /// 最大化功能已按用户决策禁用（WS_MAXIMIZEBOX 移除：按钮变灰 + 双击顶栏不再最大化，
+    /// 保留边框拉伸）。三锚点：常量存在 + 位被清除（<c>&amp; ~</c>）+ OnOpened 接线——
+    /// 只查常量字符串会在位运算方向被改（&amp; ~ 改成 |）或接线被删时假绿（code-review M2）。
+    /// Windows 上禁用后按钮仍占位，故 caption 区宽度仍按三按钮实测。
+    /// </summary>
+    [Test]
+    public async Task Shell_MaximizeBoxIsDisabled()
+    {
+        var helper = await AppSourceAsync("WindowCaptionButtons.cs");
+        await Assert.That(helper.Contains("WS_MAXIMIZEBOX", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(helper.Contains("& ~WS_MAXIMIZEBOX", StringComparison.Ordinal)).IsTrue();
+
+        var codeBehind = await AppSourceAsync("MainWindow.axaml.cs");
+        await Assert.That(codeBehind.Contains("WindowCaptionButtons.DisableMaximizeBox(", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>
+    /// 全屏退出死代码已清理：全仓从无进入全屏的入口（WebView2 全屏只填充内容区、碰不到顶栏），
+    /// ExitFullScreen / Esc 分支 / _priorWindowState / 托盘「退出全屏」均为不可达代码，
+    /// 随「全屏放大功能整体移除」决策（2026-09-14）一并删除。
+    /// </summary>
+    [Test]
+    public async Task Shell_HasNoFullScreenExitMachinery()
+    {
+        var codeBehind = await AppSourceAsync("MainWindow.axaml.cs");
+        await Assert.That(codeBehind.Contains("ExitFullScreen", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(codeBehind.Contains("_priorWindowState", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(codeBehind.Contains("WindowState.FullScreen", StringComparison.Ordinal)).IsFalse();
+
+        var compositionRoot = await AppSourceAsync("Composition", "DshCompositionRoot.cs");
+        await Assert.That(compositionRoot.Contains("ExitFullScreen", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(compositionRoot.Contains("退出全屏", StringComparison.Ordinal)).IsFalse();
     }
 
     /// <summary>
@@ -225,6 +259,16 @@ public sealed partial class ShellTopNavTests
         await Assert.That(root).IsNotNull();
 
         var path = Path.Combine(root!, "src", "DshDesktop.App", "MainWindow.axaml");
+        await Assert.That(File.Exists(path)).IsTrue();
+        return await File.ReadAllTextAsync(path);
+    }
+
+    private static async Task<string> AppSourceAsync(params string[] relativeSegments)
+    {
+        var root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var path = Path.Combine(new[] { root!, "src", "DshDesktop.App" }.Concat(relativeSegments).ToArray());
         await Assert.That(File.Exists(path)).IsTrue();
         return await File.ReadAllTextAsync(path);
     }

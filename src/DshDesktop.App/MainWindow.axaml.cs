@@ -1,6 +1,6 @@
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System.Threading.Tasks;
@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
     private readonly Func<bool>? _minimizeToTrayOnClose;
     private bool _exitRequested;
     private readonly ContentControl _rootContent;
+    private readonly Border _topNav;
     private readonly Ellipse _statusBarDot;
     private readonly Border _updatesBadgeBox;
     private readonly TextBlock _updatesBadgeText;
@@ -46,12 +47,8 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherTimer _toastTimer;
     private readonly IReadOnlyDictionary<ShellPage, Button> _navButtons;
     private readonly Border _updateScrim;
+    private readonly ProgressBar _updateProgressBar;
     private readonly Button _openWorkbenchButton;
-
-    // 退出全屏时回到的窗口状态：被动记住最近一次非全屏态（最大化→最大化，否则→普通）。
-    // 已知限制：全屏由内嵌 WebView2 经浏览器 Fullscreen API 触发，桌面宿主无进入入口，
-    // 故只能在状态变化时记录上一个非全屏态，不主动探测。
-    private WindowState _priorWindowState = WindowState.Normal;
 
     // ===== 二次确认弹层（壳渲染，ConfirmDialog 注册 RequestConfirmAsync） =====
     private readonly Border _confirmScrim;
@@ -89,12 +86,14 @@ public sealed partial class MainWindow : Window
         _confirmOk = FindRequiredControl<Button>("ConfirmOk");
         _confirmCancel = FindRequiredControl<Button>("ConfirmCancel");
         _rootContent = FindRequiredControl<ContentControl>("RootContent");
+        _topNav = FindRequiredControl<Border>("TopNav");
         _statusBarDot = FindRequiredControl<Ellipse>("StatusBarDot");
         _updatesBadgeBox = FindRequiredControl<Border>("UpdatesBadgeBox");
         _updatesBadgeText = FindRequiredControl<TextBlock>("UpdatesBadgeText");
         _toastBox = FindRequiredControl<Border>("ToastBox");
         _toastText = FindRequiredControl<TextBlock>("ToastText");
         _updateScrim = FindRequiredControl<Border>("UpdateScrim");
+        _updateProgressBar = FindRequiredControl<ProgressBar>("UpdateProgress");
         _openWorkbenchButton = FindRequiredControl<Button>("OpenWorkbenchButton");
         _navButtons = new Dictionary<ShellPage, Button>
         {
@@ -127,25 +126,13 @@ public sealed partial class MainWindow : Window
         {
             if (args.PropertyName == nameof(AppShellViewModel.CurrentPage))
             {
-                RenderCurrentPage();
-                ApplyNavState();
+                ApplyCurrentPageOnUiThread();
             }
             else if (args.PropertyName
                 is nameof(AppShellViewModel.RuntimeIndicator)
                 or nameof(AppShellViewModel.UpdateBadge))
             {
-                ApplyIndicators();
-                if (args.PropertyName == nameof(AppShellViewModel.UpdateBadge))
-                {
-                    // 发现可用更新：徽标上升沿弹一条 toast。
-                    int badge = _shellViewModel.UpdateBadge;
-                    if (badge > _lastUpdateBadge)
-                    {
-                        ShowToast($"发现 {badge} 项可用更新");
-                    }
-
-                    _lastUpdateBadge = badge;
-                }
+                ApplyIndicatorsOnUiThread(args.PropertyName);
             }
             else if (args.PropertyName == nameof(AppShellViewModel.UpdateInProgress))
             {
@@ -179,15 +166,7 @@ public sealed partial class MainWindow : Window
         ApplyIndicators();
         ApplyUpdateScrim();
         WireToastScenarios();
-
-        // 记住最近一次非全屏窗口状态，供 Esc / 托盘"退出全屏"回退（见 ExitFullScreen）。
-        this.PropertyChanged += (_, args) =>
-        {
-            if (args.Property == WindowStateProperty && WindowState != WindowState.FullScreen)
-            {
-                _priorWindowState = WindowState;
-            }
-        };
+        WireUpdateScrimProgress();
     }
 
     /// <inheritdoc />
@@ -199,6 +178,20 @@ public sealed partial class MainWindow : Window
         Serilog.Log.Information(
             "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
             (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
+
+        // caption 区避让（实测宽度，打开时 + DPI 变化时）+ 禁用最大化（背景见 WindowCaptionButtons 注释）。
+        WindowCaptionButtons.DisableMaximizeBox(this);
+        ApplyCaptionAvoidance();
+        ScalingChanged += (_, _) => ApplyCaptionAvoidance();
+    }
+
+    /// <summary>
+    /// 按实测 caption 按钮组宽度设置顶栏右内边距。实测只能运行时做（框架度量在 Full + Windows 下不可靠），
+    /// 沙箱无法验证视觉效果，实机确认边界已在 WindowCaptionButtons 注释中标注。
+    /// </summary>
+    private void ApplyCaptionAvoidance()
+    {
+        _topNav.Padding = new Thickness(0, 0, WindowCaptionButtons.MeasureWidthDips(this), 0);
     }
 
     /// <summary>
@@ -320,34 +313,6 @@ public sealed partial class MainWindow : Window
             as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
-    /// <summary>
-    /// 退出全屏（Esc 与托盘"退出全屏"共用同一代码路径）：仅当当前处于全屏时回退到进入前的窗口状态。
-    /// 已知限制：全屏由内嵌 WebView2 经浏览器 Fullscreen API 触发；WebView2 获焦时原生子控件自行消费
-    /// Esc，窗口 KeyDown 可能永不触发，故托盘项正是为该情形兜底。Esc 是否有效无法在本机验证
-    /// （无截图/驱动真实窗口的手段），切勿声称已验证。
-    /// </summary>
-    public void ExitFullScreen()
-    {
-        if (WindowState == WindowState.FullScreen)
-        {
-            WindowState = _priorWindowState;
-        }
-    }
-
-    /// <inheritdoc />
-    protected override void OnKeyDown(KeyEventArgs e)
-    {
-        // Esc 退出全屏（已知限制见 ExitFullScreen：WebView2 获焦时可能不触发，靠托盘兜底）。
-        if (e.Key == Key.Escape && WindowState == WindowState.FullScreen)
-        {
-            ExitFullScreen();
-            e.Handled = true;
-            return;
-        }
-
-        base.OnKeyDown(e);
-    }
-
     /// <inheritdoc />
     protected override void OnClosing(WindowClosingEventArgs e)
     {
@@ -426,6 +391,77 @@ public sealed partial class MainWindow : Window
         }
 
         _openWorkbenchButton.IsEnabled = !running;
+    }
+
+    /// <summary>
+    /// 应用当前页 + 导航选中态（壳投影可能在后台派发线程触发，触及控件前须编组到 UI 线程，同 <see cref="ApplyUpdateScrim"/>）。
+    /// </summary>
+    private void ApplyCurrentPageOnUiThread()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ApplyCurrentPageOnUiThread);
+            return;
+        }
+
+        RenderCurrentPage();
+        ApplyNavState();
+    }
+
+    /// <summary>
+    /// 应用指示器（状态点 + 更新徽标）与可用更新 toast（壳投影可能在后台派发线程触发，
+    /// 触及控件前须编组到 UI 线程，同 <see cref="ApplyUpdateScrim"/>）。调用顺序与原始分支一致。
+    /// </summary>
+    private void ApplyIndicatorsOnUiThread(string? propertyName)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ApplyIndicatorsOnUiThread(propertyName));
+            return;
+        }
+
+        ApplyIndicators();
+        if (propertyName == nameof(AppShellViewModel.UpdateBadge))
+        {
+            // 发现可用更新：徽标上升沿弹一条 toast。
+            int badge = _shellViewModel.UpdateBadge;
+            if (badge > _lastUpdateBadge)
+            {
+                ShowToast($"发现 {badge} 项可用更新");
+            }
+
+            _lastUpdateBadge = badge;
+        }
+    }
+
+    /// <summary>
+    /// 接线遮罩进度条：订阅 Updates Store，Desktop 下载进度存在时显示确定进度，否则保持不确定态
+    /// （遮罩弹出时 UpdatesView 的确定进度条被其遮住，故在遮罩上直接呈现真实进度，§22）。
+    /// </summary>
+    private void WireUpdateScrimProgress()
+    {
+        IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore =
+            _resolver.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
+        updatesStore.States.Subscribe(OnUpdatesStateForScrim);
+    }
+
+    private void OnUpdatesStateForScrim(UpdatesState state)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnUpdatesStateForScrim(state));
+            return;
+        }
+
+        if (state.DesktopDownloadProgress is { } percent)
+        {
+            _updateProgressBar.IsIndeterminate = false;
+            _updateProgressBar.Value = percent;
+        }
+        else
+        {
+            _updateProgressBar.IsIndeterminate = true;
+        }
     }
 
     private void RenderCurrentPage()

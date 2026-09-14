@@ -99,6 +99,10 @@ public static class ProfileSeeder
             return;
         }
 
+        // 重建前剥离悬空 pnpm overrides（link:../.generations/... 目标不随 profile 复制）：
+        // 否则 pnpm install 会把已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
+        ProfileManifestFixups.StripDanglingOverrides(profileDir);
+
         (int exitCode, string outputTail) = await installer(profileDir, cancellationToken).ConfigureAwait(false);
         if (exitCode != 0)
         {
@@ -175,6 +179,10 @@ public static class ProfileSeeder
 
         // 跨盘后把虚拟存储指向重写为本 profile，从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 根因。
         RewriteVirtualStoreDir(targetProfile);
+
+        // 复制后剥离悬空 pnpm overrides（link:../.generations/... 目标不随 profile 复制）：
+        // 否则首次 pnpm 操作会把已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
+        ProfileManifestFixups.StripDanglingOverrides(targetProfile);
     }
 
     /// <summary>

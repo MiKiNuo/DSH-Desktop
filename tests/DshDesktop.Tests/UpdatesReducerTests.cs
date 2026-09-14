@@ -166,11 +166,58 @@ public sealed class UpdatesReducerTests
     [Test]
     public async Task DesktopDownloadProgress_UpdatesProgressAndPendingText()
     {
-        UpdatesState downloading = UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" };
+        // 真实流程：先进入下载（PendingOperation 已建立），进度回流才更新文本/百分比。
+        UpdatesState downloading = _reducer.Reduce(
+            UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" },
+            new UpdatesIntent.DownloadAndApplyDesktopUpdate()).State;
 
         var result = _reducer.Reduce(downloading, new UpdatesIntent.DesktopDownloadProgress(42));
 
         await Assert.That(result.State.DesktopDownloadProgress).IsEqualTo(42);
+        await Assert.That(result.State.PendingOperation).IsNotNull();
+    }
+
+    [Test]
+    public async Task DesktopDownloadProgress_NoOperationInProgress_DoesNotSetPendingOperation()
+    {
+        // Blocker 1：进度回流是 fire-and-forget，若无进行中操作则不应凭空创建 PendingOperation
+        // （否则遮罩/导航锁会被无中生有地拉起）。
+        UpdatesState idle = UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" };
+
+        var result = _reducer.Reduce(idle, new UpdatesIntent.DesktopDownloadProgress(50));
+
+        await Assert.That(result.State.PendingOperation).IsNull();
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task DesktopDownloadProgress_AfterTerminalFailure_DoesNotResurrectPendingOperation()
+    {
+        // Blocker 1：操作失败已清空 PendingOperation；若仍有排队的进度回流抵达，不得复活它
+        // （否则遮罩永久卡死，用户无法关闭）。
+        UpdatesState downloading = _reducer.Reduce(
+            UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" },
+            new UpdatesIntent.DownloadAndApplyDesktopUpdate()).State;
+        UpdatesState failed = _reducer.Reduce(downloading, new UpdatesIntent.UpdatesOperationFailed("下载失败")).State;
+        await Assert.That(failed.PendingOperation).IsNull();
+
+        UpdatesState resurrected = _reducer.Reduce(failed, new UpdatesIntent.DesktopDownloadProgress(80)).State;
+        await Assert.That(resurrected.PendingOperation).IsNull();
+    }
+
+    [Test]
+    public async Task CheckUpdates_BackgroundCheckDuringInstall_DoesNotReleasePendingOperation()
+    {
+        // Should-fix 2：启动期后台静默检查（App.axaml.cs → BackgroundCheckUpdatesAsync）绕过按钮，
+        // 若安装进行中抵达，不得清空 PendingOperation（否则遮罩/导航锁被提前释放）。
+        UpdatesState installing = UpdatesState.Initial with
+        {
+            Status = UpdateStatus.Installing,
+            PendingOperation = "安装 DSH Runtime 0.1.3…",
+        };
+
+        var result = _reducer.Reduce(installing, new UpdatesIntent.CheckUpdates());
+
         await Assert.That(result.State.PendingOperation).IsNotNull();
     }
 

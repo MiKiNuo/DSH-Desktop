@@ -52,6 +52,15 @@ internal static class ProfileBundleProbe
     internal static string[] UnresolvedBundles(string profileDir)
     {
         string[] bundles = DeclaredBundles(profileDir);
-        return [.. bundles.Where(bundle => !IsBundleResolved(profileDir, bundle))];
+        return [.. bundles.Where(bundle => !IsInBoxBundle(bundle) && !IsBundleResolved(profileDir, bundle))];
     }
+
+    /// <summary>
+    /// DSH in-box bundle：由 DSH 安装体（installation）提供，profile 的 node_modules 中永不含其
+    /// package.json，DSH 的 resolveBundleDir 会先在 installation 侧查找。故 UnresolvedBundles 对其豁免。
+    /// 显式名单、不按 scope 过滤（@openviking/... 等第三方 scope 仍须校验）；不计入 dshmarket——
+    /// dshmarket 是真实 dependency，profile node_modules 中确实存在且需参与校验，豁免它会漏检真实损坏。
+    /// </summary>
+    internal static bool IsInBoxBundle(string bundle)
+        => bundle is "@deepseek-ai/dsh-base" or "@deepseek-ai/dsh-web-app";
 }

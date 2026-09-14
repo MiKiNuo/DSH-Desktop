@@ -49,18 +49,88 @@ internal static class ReparsePointMaterializer
             }
 
             string sourceEntry = Path.Combine(source, info.Name);
-            var sourceInfo = new DirectoryInfo(sourceEntry);
-            if (!sourceInfo.Exists
-                || (sourceInfo.Attributes & FileAttributes.Directory) == 0
-                || sourceInfo.Attributes.HasFlag(FileAttributes.ReparsePoint))
+            string? realSource = ResolveRealDirectory(sourceEntry);
+            if (realSource is null)
             {
-                continue; // 源侧也没有可实体化的真实内容。
+                continue; // 源侧无真实内容可实体化（含悬空/环/跳数超限）。
             }
 
-            // 解除悬空联接点（仅删链接本身，不触碰目标），再复制真实内容。
+            // 解除悬空联接点（仅删链接本身，不触碰目标），再从源侧真实内容复制。
             info.Delete(); // 非递归：junction 是空壳，删除即去掉联接点。
-            CopyDirectory(sourceEntry, entry);
+            CopyDirectory(realSource, entry);
         }
+    }
+
+    /// <summary>
+    /// 把源侧条目（可能是真实目录，也可能是 junction/symlink）解析为「不含重解析点的真实目录」路径；
+    /// 无法解析（目标不存在 / 环 / 跳数超限）返回 null，交由上层校验报错。
+    /// probe 默认走真实文件系统；测试可注入假 probe 覆盖链接跟随分支。
+    /// 链接目标可能相对，需相对链接自身所在目录解析为绝对路径才准。
+    /// </summary>
+    internal static string? ResolveRealDirectory(
+        string entry,
+        Func<string, (bool exists, bool isDir, bool isReparse, string? linkTarget)>? probe = null,
+        int maxHops = 8)
+        => ResolveRealDirectoryCore(entry, probe ?? RealProbe, maxHops);
+
+    private static readonly Func<string, (bool exists, bool isDir, bool isReparse, string? linkTarget)> RealProbe =
+        path =>
+        {
+            DirectoryInfo info;
+            try
+            {
+                info = new DirectoryInfo(path);
+            }
+            catch
+            {
+                return (false, false, false, null);
+            }
+
+            if (!info.Exists)
+            {
+                // 悬空联接点：自身存在但目标不存在 → 无真实内容可复制。
+                return (false, false, false, null);
+            }
+
+            bool isDir = (info.Attributes & FileAttributes.Directory) != 0;
+            bool isReparse = info.Attributes.HasFlag(FileAttributes.ReparsePoint);
+            string? linkTarget = isReparse ? info.LinkTarget : null;
+            return (info.Exists, isDir, isReparse, linkTarget);
+        };
+
+    private static string? ResolveRealDirectoryCore(
+        string start,
+        Func<string, (bool exists, bool isDir, bool isReparse, string? linkTarget)> probe,
+        int maxHops)
+    {
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        string? current = start;
+        int hops = 0;
+        while (current is not null)
+        {
+            // 用 GetFullPath 归一化（斜杠/大小写）作环判定 key，避免 C:/a 与 C:\a 被当成两条路径。
+            if (!visited.Add(Path.GetFullPath(current)))
+            {
+                return null; // 环：已访问路径再次出现 → 放弃，避免死循环。
+            }
+
+            var (exists, isDir, isReparse, linkTarget) = probe(current);
+            if (!exists) return null;       // 目标不存在 → 无源。
+            if (!isDir) return null;        // 不是目录 → 无法复制。
+            if (!isReparse) return current; // 真实目录 → 命中。
+
+            if (hops >= maxHops)
+            {
+                return null; // 跳数上限 → 放弃（链式链接过长/疑似环）。
+            }
+
+            hops++;
+            current = Path.IsPathRooted(linkTarget!)
+                ? Path.GetFullPath(linkTarget!)
+                : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(current)!, linkTarget!));
+        }
+
+        return null;
     }
 
     /// <summary>
