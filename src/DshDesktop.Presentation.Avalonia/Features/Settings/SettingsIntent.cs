@@ -49,6 +49,16 @@ public abstract partial record SettingsIntent : IMviIntent
     public sealed partial record ToggleAutoDownloadUpdates : SettingsIntent;
 
     /// <summary>
+    /// 表示选择浅色主题意图（无载荷，直接指定目标主题）。
+    /// </summary>
+    public sealed partial record UseLightTheme : SettingsIntent;
+
+    /// <summary>
+    /// 表示选择深色主题意图（无载荷，直接指定目标主题）。
+    /// </summary>
+    public sealed partial record UseDarkTheme : SettingsIntent;
+
+    /// <summary>
     /// 表示打开目录意图（载荷来自 State 投影的路径；null/空 = 数据未加载，不产副作用）。
     /// </summary>
     /// <param name="Path">目标目录绝对路径。</param>

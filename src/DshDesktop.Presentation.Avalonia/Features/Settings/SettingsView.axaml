@@ -50,6 +50,12 @@
                             <TextBlock Text="通用" />
                         </StackPanel>
                     </Button>
+                    <Button x:Name="NavAppearance" Classes="nav-btn" Tag="AppearancePanel" Click="OnNavClicked">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Path Classes="icon" Data="{DynamicResource IconSliders}" Stroke="{Binding $parent[Button].Foreground}" />
+                            <TextBlock Text="外观" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="NavEnv" Classes="nav-btn" Tag="EnvPanel" Click="OnNavClicked">
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <Path Classes="icon" Data="{DynamicResource IconInfo}" Stroke="{Binding $parent[Button].Foreground}" />
@@ -254,6 +260,41 @@
                                                 VerticalAlignment="Center"
                                                 SelectionChanged="OnChannelSelectionChanged"
                                                 SelectedItem="{Binding Channel}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- 外观 -->
+                    <Border x:Name="AppearancePanel" Classes="panel">
+                        <Grid RowDefinitions="Auto,*">
+                            <Border Classes="panel-head" Grid.Row="0">
+                                <TextBlock Classes="panel-title" Text="外观" />
+                            </Border>
+                            <Border Classes="panel-body" Grid.Row="1">
+                                <StackPanel>
+                                    <Border Classes="switch-row" BorderThickness="0">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <StackPanel>
+                                                <TextBlock Classes="switch-title" Text="主题" />
+                                                <TextBlock Classes="switch-desc" Text="浅色或深色外观，立即生效并持久保存" />
+                                            </StackPanel>
+                                            <StackPanel
+                                                Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="16"
+                                                VerticalAlignment="Center">
+                                                <RadioButton
+                                                    Click="OnUseLightThemeClicked"
+                                                    Content="浅色"
+                                                    IsChecked="{Binding IsLightTheme}" />
+                                                <RadioButton
+                                                    Click="OnUseDarkThemeClicked"
+                                                    Content="深色"
+                                                    IsChecked="{Binding IsDarkTheme}" />
+                                            </StackPanel>
                                         </Grid>
                                     </Border>
                                 </StackPanel>

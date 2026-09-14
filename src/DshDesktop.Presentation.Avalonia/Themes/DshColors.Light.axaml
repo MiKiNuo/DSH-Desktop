@@ -1,0 +1,55 @@
+<!--
+  DSH Desktop 亮色画刷：与 DshColors.Dark.axaml **逐键对位**，只换值不换键名。
+  派生规则（改色时请沿用，否则两套会失衡）：
+  1. 层级反转 —— 暗色靠"越靠前景越亮"分层，亮色靠"越靠前景越白"：Surface1 最白，其余表面依次
+     加深（Surface4 已比窗口底 Bg 更深）；hover 用的 Surface4 在亮色下**变深**（暗色下变亮）。
+  2. 相对亮度关系保持不变 —— AccentHi 恒比 Accent 亮、AccentLo 恒比 Accent 暗，不因主题翻转。
+  3. 语义色在亮底上对比度不足，故整体加深（#3fbf8f → #0f8a5f 等）；soft/line 系保留原 alpha、
+     只换色相，使 tint 的浓淡手感两套一致。**强调组例外**：AccentSoft 1C→1F、AccentLine 52→59，
+     亮底上 tint 要略浓才看得出来。
+  4. 遮罩与投影在亮底上必须大幅减淡（近黑的 62% 会压死整页）。
+  5. 品牌渐变（brand-mark）、ToggleSwitch 滑块白等不随主题变化的裸色值仍留在 DshTheme.axaml。
+-->
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== 中性基色（契约 §1） ===== -->
+    <SolidColorBrush x:Key="DshBgBrush" Color="#f3f4f6" />
+    <SolidColorBrush x:Key="DshSurface1Brush" Color="#ffffff" />
+    <SolidColorBrush x:Key="DshSurface2Brush" Color="#fafbfc" />
+    <SolidColorBrush x:Key="DshSurface3Brush" Color="#f0f1f4" />
+    <SolidColorBrush x:Key="DshSurface4Brush" Color="#e7e9ee" />
+    <SolidColorBrush x:Key="DshLineBrush" Color="#d5d8de" />
+    <SolidColorBrush x:Key="DshLineSoftBrush" Color="#e8eaef" />
+
+    <!-- ===== 文字 ===== -->
+    <SolidColorBrush x:Key="DshTextBrush" Color="#14161a" />
+    <SolidColorBrush x:Key="DshText2Brush" Color="#565c66" />
+    <SolidColorBrush x:Key="DshText3Brush" Color="#79808a" />
+    <SolidColorBrush x:Key="DshText4Brush" Color="#a8aeb7" />
+
+    <!-- ===== 强调（唯一强调色） ===== -->
+    <SolidColorBrush x:Key="DshAccentBrush" Color="#4664e0" />
+    <SolidColorBrush x:Key="DshAccentHiBrush" Color="#5b7cfa" />
+    <SolidColorBrush x:Key="DshAccentLoBrush" Color="#3550c4" />
+    <SolidColorBrush x:Key="DshAccentSoftBrush" Color="#1F4664E0" />
+    <SolidColorBrush x:Key="DshAccentLineBrush" Color="#594664E0" />
+    <SolidColorBrush x:Key="DshOnAccentBrush" Color="#ffffff" />
+
+    <!-- ===== 语义（亮底需加深） ===== -->
+    <SolidColorBrush x:Key="DshOkBrush" Color="#0f8a5f" />
+    <SolidColorBrush x:Key="DshOkSoftBrush" Color="#1C0F8A5F" />
+    <SolidColorBrush x:Key="DshOkLineBrush" Color="#470F8A5F" />
+    <SolidColorBrush x:Key="DshWarnBrush" Color="#a86f0a" />
+    <SolidColorBrush x:Key="DshWarnSoftBrush" Color="#1CA86F0A" />
+    <SolidColorBrush x:Key="DshWarnLineBrush" Color="#47A86F0A" />
+    <SolidColorBrush x:Key="DshErrBrush" Color="#cc3b34" />
+    <SolidColorBrush x:Key="DshErrSoftBrush" Color="#1CCC3B34" />
+    <SolidColorBrush x:Key="DshErrLineBrush" Color="#4CCC3B34" />
+
+    <!-- ===== 浮层 ===== -->
+    <SolidColorBrush x:Key="DshScrimBrush" Color="#59000000" />
+
+    <!-- ===== 投影（亮底上必须减淡，否则整页发灰） ===== -->
+    <BoxShadows x:Key="DshCardShadow">0 24 56 -16 #33000000, 0 2 8 0 #1F000000</BoxShadows>
+</ResourceDictionary>

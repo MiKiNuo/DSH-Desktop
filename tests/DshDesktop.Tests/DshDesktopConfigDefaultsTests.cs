@@ -27,6 +27,7 @@ public sealed class DshDesktopConfigDefaultsTests
         await Assert.That(config.LaunchOnStartup).IsFalse(); // 原型副文案"默认关闭"
         await Assert.That(config.BackgroundUpdateCheck).IsTrue(); // 原型 switch on：默认开
         await Assert.That(config.AutoDownloadUpdates).IsFalse(); // 原型 switch off：默认关
+        await Assert.That(config.Theme).IsEqualTo("Dark"); // 外观主题默认深色
     }
 
     [Test]

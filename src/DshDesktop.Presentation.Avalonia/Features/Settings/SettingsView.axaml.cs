@@ -36,6 +36,8 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
             ?? throw new InvalidOperationException("无法找到 NavUpdate 控件。"));
         _navButtons.Add(this.FindControl<Button>("NavGeneral")
             ?? throw new InvalidOperationException("无法找到 NavGeneral 控件。"));
+        _navButtons.Add(this.FindControl<Button>("NavAppearance")
+            ?? throw new InvalidOperationException("无法找到 NavAppearance 控件。"));
         _navButtons.Add(this.FindControl<Button>("NavEnv")
             ?? throw new InvalidOperationException("无法找到 NavEnv 控件。"));
     }
@@ -110,6 +112,16 @@ public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
     private void OnAutoDownloadUpdatesToggled(object? sender, RoutedEventArgs args)
     {
         ViewModel.ToggleAutoDownloadUpdatesCommand.Execute(null);
+    }
+
+    private void OnUseLightThemeClicked(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.UseLightThemeCommand.Execute(null);
+    }
+
+    private void OnUseDarkThemeClicked(object? sender, RoutedEventArgs args)
+    {
+        ViewModel.UseDarkThemeCommand.Execute(null);
     }
 
     private void OnOpenDataDirectoryClicked(object? sender, RoutedEventArgs args)

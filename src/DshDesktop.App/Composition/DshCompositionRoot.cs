@@ -1,4 +1,6 @@
 using Avalonia.Controls;
+using Avalonia.Styling;
+using Avalonia.Threading;
 using DshDesktop.App.Logging;
 using DshDesktop.Application.Diagnostics;
 using DshDesktop.Application.Notifications;
@@ -220,6 +222,7 @@ public sealed partial class DshCompositionRoot
         RegisterRoutes();
 
         _config = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
+        ApplyTheme(_config.Theme);
         await ProfileSeeder
             .SeedIfNeededAsync(
                 _config.DshHome,
@@ -429,6 +432,7 @@ public sealed partial class DshCompositionRoot
         mediator.Register<SetDshChannelRequest, bool>(HandleSetDshChannelAsync);
         mediator.Register<SetNotificationsEnabledRequest, bool>(HandleSetNotificationsEnabledAsync);
         mediator.Register<SetMinimizeToTrayOnCloseRequest, bool>(HandleSetMinimizeToTrayOnCloseAsync);
+        mediator.Register<SetThemeRequest, bool>(HandleSetThemeAsync);
         mediator.Register<SetLaunchOnStartupRequest, bool>(HandleSetLaunchOnStartupAsync);
         mediator.Register<SetBackgroundUpdateCheckRequest, bool>(HandleSetBackgroundUpdateCheckAsync);
         mediator.Register<SetAutoDownloadUpdatesRequest, bool>(HandleSetAutoDownloadUpdatesAsync);
@@ -505,7 +509,8 @@ public sealed partial class DshCompositionRoot
             _config.MinimizeToTrayOnClose,
             _config.LaunchOnStartup,
             _config.BackgroundUpdateCheck,
-            _config.AutoDownloadUpdates));
+            _config.AutoDownloadUpdates,
+            _config.Theme));
     }
 
     // ===== Phase 8 Issue 05：桌面行为 / 更新策略开关持久化（照 SetNotificationsEnabled 链路） =====
@@ -519,6 +524,40 @@ public sealed partial class DshCompositionRoot
         await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
         Log.Logger.Information("Settings.MinimizeToTrayOnClose {Enabled}", request.Enabled);
         return true;
+    }
+
+    /// <summary>
+    /// 处理修改外观主题请求（Phase 9：即时套用 + 落盘持久，重启后经 InitializeRuntimeAsync 回流）。
+    /// </summary>
+    private async ValueTask<bool> HandleSetThemeAsync(
+        SetThemeRequest request,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfNotInitialized();
+        _config!.Theme = request.Theme;
+        ApplyTheme(request.Theme);
+        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+        Log.Logger.Information("Settings.Theme {Theme}", request.Theme);
+        return true;
+    }
+
+    /// <summary>
+    /// 套用外观主题到当前 Application（RequestedThemeVariant 为样式属性，须走 UI 线程；
+    /// Application.Current 未就绪时安全跳过）。
+    /// </summary>
+    private static void ApplyTheme(string theme)
+    {
+        global::Avalonia.Application? app = global::Avalonia.Application.Current;
+        if (app is null)
+        {
+            return;
+        }
+
+        ThemeVariant variant = string.Equals(theme, "Light", StringComparison.Ordinal)
+            ? ThemeVariant.Light
+            : ThemeVariant.Dark;
+
+        Dispatcher.UIThread.Post(() => app.RequestedThemeVariant = variant);
     }
 
     private async ValueTask<bool> HandleSetLaunchOnStartupAsync(

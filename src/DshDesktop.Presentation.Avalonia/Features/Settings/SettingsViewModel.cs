@@ -22,6 +22,15 @@ public sealed partial class SettingsViewModel
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
+        // 派生投影（IsLightTheme / IsDarkTheme）跟随 Theme 联动刷新，供 RadioButton.IsChecked 绑定。
+        PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(Theme))
+            {
+                OnPropertyChanged(nameof(IsLightTheme));
+                OnPropertyChanged(nameof(IsDarkTheme));
+            }
+        };
     }
 
     /// <summary>
@@ -97,6 +106,22 @@ public sealed partial class SettingsViewModel
     public partial bool AutoDownloadUpdates { get; private set; }
 
     /// <summary>
+    /// 获取外观主题（"Dark"/"Light"）。
+    /// </summary>
+    [MviBind(nameof(SettingsState.Theme), BindingMode = MviBindingMode.OneWay)]
+    public partial string Theme { get; private set; }
+
+    /// <summary>
+    /// 获取是否为浅色主题（RadioButton 选中态派生投影，随 Theme 联动）。
+    /// </summary>
+    public bool IsLightTheme => string.Equals(Theme, "Light", System.StringComparison.Ordinal);
+
+    /// <summary>
+    /// 获取是否为深色主题（RadioButton 选中态派生投影，随 Theme 联动）。
+    /// </summary>
+    public bool IsDarkTheme => string.Equals(Theme, "Dark", System.StringComparison.Ordinal);
+
+    /// <summary>
     /// 获取 Desktop 版本（编译期常量，非状态——§6 不入 State，同 AppShell/Updates 先例）。
     /// </summary>
     public string DesktopVersion => DesktopInfo.Version;
@@ -160,6 +185,18 @@ public sealed partial class SettingsViewModel
     /// </summary>
     [MviCommand(typeof(SettingsIntent.ToggleAutoDownloadUpdates))]
     public partial IMviAsyncCommand ToggleAutoDownloadUpdatesCommand { get; private set; }
+
+    /// <summary>
+    /// 获取选择浅色主题命令（无载荷，直接指定目标主题）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.UseLightTheme))]
+    public partial IMviAsyncCommand UseLightThemeCommand { get; private set; }
+
+    /// <summary>
+    /// 获取选择深色主题命令（无载荷，直接指定目标主题）。
+    /// </summary>
+    [MviCommand(typeof(SettingsIntent.UseDarkTheme))]
+    public partial IMviAsyncCommand UseDarkThemeCommand { get; private set; }
 
     /// <summary>
     /// 获取打开目录命令（载荷：目录绝对路径）。

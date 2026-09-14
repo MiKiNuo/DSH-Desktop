@@ -91,7 +91,8 @@ public sealed class SettingsReducerTests
             MinimizeToTrayOnClose: false,
             LaunchOnStartup: true,
             BackgroundUpdateCheck: false,
-            AutoDownloadUpdates: true);
+            AutoDownloadUpdates: true,
+            Theme: "Light");
         SettingsState busy = SettingsState.Initial with { PendingOperation = "加载设置…" };
 
         var result = _reducer.Reduce(busy, new SettingsIntent.SettingsLoaded(info));
@@ -108,6 +109,7 @@ public sealed class SettingsReducerTests
         await Assert.That(result.State.LaunchOnStartup).IsTrue();
         await Assert.That(result.State.BackgroundUpdateCheck).IsFalse();
         await Assert.That(result.State.AutoDownloadUpdates).IsTrue();
+        await Assert.That(result.State.Theme).IsEqualTo("Light");
         await Assert.That(result.State.PendingOperation).IsNull();
     }
 
@@ -167,6 +169,29 @@ public sealed class SettingsReducerTests
 
         await Assert.That(result.State.AutoDownloadUpdates).IsTrue();
         await Assert.That(result.Effects[0] is SettingsEffect.SaveAutoDownloadUpdates { Enabled: true }).IsTrue();
+    }
+
+    [Test]
+    public async Task UseLightTheme_SetsThemeWithPersistEffect()
+    {
+        var result = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.UseLightTheme());
+
+        await Assert.That(result.State.Theme).IsEqualTo("Light");
+        await Assert.That(result.Effects[0] is SettingsEffect.SaveTheme { Theme: "Light" }).IsTrue();
+    }
+
+    [Test]
+    public async Task UseDarkTheme_SetsThemeWithPersistEffect()
+    {
+        // 初始投影 Dark（产品默认），再选 Dark 同值守卫不产副作用。
+        var same = _reducer.Reduce(SettingsState.Initial, new SettingsIntent.UseDarkTheme());
+        await Assert.That(same.Effects.Count).IsEqualTo(0);
+
+        SettingsState light = SettingsState.Initial with { Theme = "Light" };
+        var result = _reducer.Reduce(light, new SettingsIntent.UseDarkTheme());
+
+        await Assert.That(result.State.Theme).IsEqualTo("Dark");
+        await Assert.That(result.Effects[0] is SettingsEffect.SaveTheme { Theme: "Dark" }).IsTrue();
     }
 
     [Test]

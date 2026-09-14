@@ -2,6 +2,7 @@
     x:Class="DshDesktop.App.MainWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:chrome="using:Avalonia.Controls.Chrome"
     xmlns:shell="clr-namespace:DshDesktop.Presentation.Avalonia.Features.AppShell;assembly=DshDesktop.Presentation.Avalonia"
     x:DataType="shell:AppShellViewModel"
     Title="DSH Desktop"
@@ -9,25 +10,38 @@
     Height="800"
     MinWidth="1100"
     MinHeight="600"
-    WindowDecorations="Full"
+    WindowDecorations="BorderOnly"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="52">
     <!--
-      应用壳（顶部导航改造 v2）：**导航条占据 Windows 标题栏本身**——客户区扩展到装饰区
-      （ExtendClientAreaToDecorationsHint），系统的最小化/最大化/关闭按钮仍由 Windows 绘制在右上角，
-      因此右侧需留出 caption 按钮区宽度。下方依次为内容区 + 28px 分段式状态栏
-      + toast 浮层 + 二次确认弹层（壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
+      应用壳（顶部导航改造 v3）：**导航条占据 Windows 标题栏位置**——客户区扩展到装饰区
+      （ExtendClientAreaToDecorationsHint），窗口装饰改为**应用自绘**（WindowDecorations="BorderOnly"）。
+      ⚠️ 为什么不用 Full：Full 的语义是「Fully decorated」，Windows 会在左上角绘制原生标题文字
+      （Title="DSH Desktop"），与自绘品牌区叠印成重影（实机截图证实）。BorderOnly = 「无标题栏、
+      仅保留可调整边框」，标题栏与最小化/最大化/关闭按钮改由 Avalonia 的 WindowDrawnDecorations 提供。
+      ⚠️ **待实机确认项**：caption 按钮是否真的可见。离线包内 Avalonia.Themes.Fluent 引用了
+      IWindowDrawnDecorationsTemplate / WindowDrawnDecorationsContent，指向「主题提供默认模板」，
+      但**未经实机证实**。若按钮确实缺失，正解是自备 WindowDrawnDecorations 模板，
+      而不是回退到 Full（回退会把原生标题文字的重影带回来）。
+      ⚠️ 自绘装饰下系统不再提供拖拽区：顶栏必须自行声明
+      chrome:WindowDecorationProperties.ElementRole="TitleBar"（该角色语义 = 点击拖拽即平台窗口移动）。
+      ⚠️ 右侧动作避让 caption 按钮区用运行时的 WindowDecorationMargin，不写死像素：写死的值不随
+      窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算（实机截图上「打开工作台」紧贴 caption 区）。
+      下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
+      （壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
       原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区——工作台页即铺满的
       NativeWebView，不再隔着一行非 harness 区域。
       侧栏与折叠状态机已整块移除；拓扑约束见 tests/DshDesktop.Tests/ShellTopNavTests.cs。
-      ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 三处一致。
-      ⚠️ Avalonia 12 已移除 ExtendClientAreaChromeHints：保留系统按钮靠 WindowDecorations="Full"
-      （None / BorderOnly 会转入「应用自绘装饰」，需自行提供 WindowDrawnDecorations 模板）。
+      ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
+      （Avalonia 12 已移除 ExtendClientAreaChromeHints / TitleBar / CaptionButtons / ChromeOverlayLayer。）
     -->
     <Grid>
         <Grid x:Name="ShellGrid" RowDefinitions="52,*,28">
             <!-- ===== 顶部导航 ===== -->
-            <Border Classes="topnav" Grid.Row="0">
+            <Border
+                Classes="topnav"
+                Grid.Row="0"
+                chrome:WindowDecorationProperties.ElementRole="TitleBar">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <!-- 品牌：logo + 名称 -->
                     <StackPanel
@@ -125,12 +139,13 @@
                         </Button>
                     </StackPanel>
 
-                    <!-- 右侧留出系统 caption 按钮区（Windows 的 min/max/close，约 140px @100% DPI），
-                         避免「打开工作台」被系统按钮遮挡；该空白同时充当窗口拖动手柄。 -->
+                    <!-- 右侧避让 caption 按钮区：宽度取运行时的 WindowDecorationMargin
+                         （= 系统度量 × DPI 缩放），不写死像素——写死的 140px 只在 100% 缩放下够用。
+                         窗口拖动由整个 topnav 的 ElementRole="TitleBar" 承担，无需再靠这段留白。 -->
                     <Button
                         Classes="btn ghost"
                         Grid.Column="2"
-                        Margin="0,0,140,0"
+                        Margin="{Binding $parent[Window].WindowDecorationMargin}"
                         VerticalAlignment="Center"
                         Command="{Binding ShowWorkbenchCommand}"
                         Content="打开工作台" />

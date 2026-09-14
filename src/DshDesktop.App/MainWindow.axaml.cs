@@ -144,6 +144,22 @@ public sealed partial class MainWindow : Window
         _confirmOk.Click += (_, _) => CompleteConfirm(true);
         ConfirmDialog.Register((action, subject) => RequestConfirmAsync(action, subject));
 
+        // 主题切换后必须重建并重算：Dsh*Brush 走 {DynamicResource} 会自动跟随主题字典，但下面这些是
+        // C# 在构造期取出的**画刷引用** —— 状态栏圆点、各页就绪图标的着色与底色
+        // （RuntimeLifecycleBrushes / RuntimeLifecycleProjection），不随主题字典变化重新求值。
+        // 不重建的话，切到浅色后它们仍是深色主题的色值，最刺眼的是 TintStopped = DshSurface3Brush
+        // 会在浅色卡片上留下一块深灰方块。
+        // 必须 global:: 限定：本解决方案里存在 DshDesktop.Application 命名空间，裸写 Application
+        // 会被解析成它而非 Avalonia.Application（CS0234）。
+        if (global::Avalonia.Application.Current is { } themeHost)
+        {
+            themeHost.ActualThemeVariantChanged += (_, _) =>
+            {
+                RenderCurrentPage();
+                ApplyIndicators();
+            };
+        }
+
         RenderCurrentPage();
         ApplyNavState();
         ApplyIndicators();

@@ -64,6 +64,35 @@ public sealed class SettingsEffectDispatcherTests
     }
 
     [Test]
+    public async Task UseLightTheme_PersistsViaMediator()
+    {
+        var mediator = new RecordingMediator();
+        using var store = CreateStore(mediator);
+
+        await store.DispatchAsync(new SettingsIntent.UseLightTheme());
+        await WaitForAsync(() => mediator.Requests.Contains(nameof(SetThemeRequest)));
+
+        await Assert.That(store.CurrentState.Theme).IsEqualTo("Light");
+        await Assert.That(mediator.Requests).Contains(nameof(SetThemeRequest));
+    }
+
+    [Test]
+    public async Task UseDarkTheme_PersistsViaMediator()
+    {
+        var mediator = new RecordingMediator();
+        using var store = CreateStore(mediator);
+
+        // 初始投影 Dark（默认），先切到 Light 再切回 Dark，确保产生副作用。
+        await store.DispatchAsync(new SettingsIntent.UseLightTheme());
+        await WaitForAsync(() => mediator.Requests.Contains(nameof(SetThemeRequest)));
+        await store.DispatchAsync(new SettingsIntent.UseDarkTheme());
+        await WaitForAsync(() => mediator.Requests.Count(r => r == nameof(SetThemeRequest)) >= 2);
+
+        await Assert.That(store.CurrentState.Theme).IsEqualTo("Dark");
+        await Assert.That(mediator.Requests).Contains(nameof(SetThemeRequest));
+    }
+
+    [Test]
     public async Task OpenDirectory_RoutesPathToMediator()
     {
         var mediator = new RecordingMediator();
@@ -131,7 +160,8 @@ public sealed class SettingsEffectDispatcherTests
             {
                 OpenPathRequest open => RecordOpen(open),
                 SetMinimizeToTrayOnCloseRequest or SetLaunchOnStartupRequest
-                    or SetBackgroundUpdateCheckRequest or SetAutoDownloadUpdatesRequest => true,
+                    or SetBackgroundUpdateCheckRequest or SetAutoDownloadUpdatesRequest
+                    or SetThemeRequest => true,
                 _ => throw new NotSupportedException($"未登记的请求：{name}"),
             };
             return ValueTask.FromResult((TResponse)response);

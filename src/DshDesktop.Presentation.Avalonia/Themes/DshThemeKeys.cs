@@ -48,6 +48,9 @@ public static class DshThemeKeys
     public const string ErrSoftBrush = "DshErrSoftBrush";
     public const string ScrimBrush = "DshScrimBrush";
 
+    // ===== 投影 =====
+    public const string CardShadow = "DshCardShadow";
+
     // ===== 字号 =====
     public const string FontSizeHero = "DshFontSizeHero";
     public const string FontSizeTitle = "DshFontSizeTitle";

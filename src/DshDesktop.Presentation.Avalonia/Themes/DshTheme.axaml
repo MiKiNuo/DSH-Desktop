@@ -1,66 +1,49 @@
 <!--
-  DSH Desktop 暗色主题（UI 重设计 · 中性石墨 + 单一强调色）。
-  命名与数值严格遵循 docs/UI-Redesign-Token-Contract.md §1-§5；
-  视觉参数逐条来自 docs/DSH-Desktop-UI-Redesign.html 的 <style> :root 与组件样式。
-  颜色 / 字号 / 圆角集中在本字典，各 Feature 视图按 Classes 引用，禁止散落硬编码。
+  DSH Desktop 样式字典（UI 重设计 · 中性石墨 + 单一强调色）。
+  命名与数值严格遵循 docs/UI-Redesign-Token-Contract.md §1-§5。
+  **颜色已按主题拆出**：Dsh*Brush 分居 DshColors.Dark.axaml / DshColors.Light.axaml，
+  由下方 ThemeDictionaries 随 ThemeVariant 切换；本文件只留与主题无关的字号、圆角与样式族。
+  各 Feature 视图按 Classes 引用，禁止散落硬编码。
   豁免：构造期需要的画刷走 RuntimeLifecycleBrushes（构造期 View 未挂逻辑树，
-  TryFindResource 走不到本字典——运行时实测崩溃，故该文件用 Color.Parse 同值常量）。
-  不在本轮范围：命令面板、明暗双主题（契约 §8）。
+  TryFindResource 走不到主题字典——运行时实测崩溃，故该文件保留 Color.Parse 同值回退常量）。
+  切主题：Application.Current.RequestedThemeVariant = ThemeVariant.Light / Dark。
+  不在本轮范围：命令面板（契约 §8）。
 -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <Styles.Resources>
-        <!-- ===== 中性基色（契约 §1） ===== -->
-        <SolidColorBrush x:Key="DshBgBrush" Color="#0a0b0d" />
-        <SolidColorBrush x:Key="DshSurface1Brush" Color="#111214" />
-        <SolidColorBrush x:Key="DshSurface2Brush" Color="#16181b" />
-        <SolidColorBrush x:Key="DshSurface3Brush" Color="#1d2024" />
-        <SolidColorBrush x:Key="DshSurface4Brush" Color="#24282d" />
-        <SolidColorBrush x:Key="DshLineBrush" Color="#282c32" />
-        <SolidColorBrush x:Key="DshLineSoftBrush" Color="#1e2126" />
+        <ResourceDictionary>
+            <!-- 明暗两套画刷。FluentTheme 只负责控件自身配色，Dsh* 这层语义色必须自己分主题，
+                 否则切到亮色后顶栏/卡片仍是暗的。缺键的一方会静默沿用另一方的值，
+                 故键集合一致性由 ThemeKeyTests 断言。 -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshColors.Dark.axaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <ResourceDictionary.MergedDictionaries>
+                        <ResourceInclude Source="avares://DshDesktop.Presentation.Avalonia/Themes/DshColors.Light.axaml" />
+                    </ResourceDictionary.MergedDictionaries>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
 
-        <!-- ===== 文字 ===== -->
-        <SolidColorBrush x:Key="DshTextBrush" Color="#edeef0" />
-        <SolidColorBrush x:Key="DshText2Brush" Color="#a1a7b0" />
-        <SolidColorBrush x:Key="DshText3Brush" Color="#6d737c" />
-        <SolidColorBrush x:Key="DshText4Brush" Color="#4a4f57" />
+            <!-- ===== 字号（契约 §2，与主题无关） ===== -->
+            <x:Double x:Key="DshFontSizeCaption">10</x:Double>
+            <x:Double x:Key="DshFontSizeSmall">11</x:Double>
+            <x:Double x:Key="DshFontSizeBodySmall">12</x:Double>
+            <x:Double x:Key="DshFontSizeBody">13</x:Double>
+            <x:Double x:Key="DshFontSizeTitle">14.5</x:Double>
+            <x:Double x:Key="DshFontSizeHero">19</x:Double>
 
-        <!-- ===== 强调（唯一强调色） ===== -->
-        <SolidColorBrush x:Key="DshAccentBrush" Color="#5b7cfa" />
-        <SolidColorBrush x:Key="DshAccentHiBrush" Color="#6d8bff" />
-        <SolidColorBrush x:Key="DshAccentLoBrush" Color="#3f5fd6" />
-        <SolidColorBrush x:Key="DshAccentSoftBrush" Color="#1C5B7CFA" />
-        <SolidColorBrush x:Key="DshAccentLineBrush" Color="#525B7CFA" />
-        <SolidColorBrush x:Key="DshOnAccentBrush" Color="#ffffff" />
-
-        <!-- ===== 语义 ===== -->
-        <SolidColorBrush x:Key="DshOkBrush" Color="#3fbf8f" />
-        <SolidColorBrush x:Key="DshOkSoftBrush" Color="#1C3FBF8F" />
-        <SolidColorBrush x:Key="DshOkLineBrush" Color="#473FBF8F" />
-        <SolidColorBrush x:Key="DshWarnBrush" Color="#e0a93f" />
-        <SolidColorBrush x:Key="DshWarnSoftBrush" Color="#1CE0A93F" />
-        <SolidColorBrush x:Key="DshWarnLineBrush" Color="#47E0A93F" />
-        <SolidColorBrush x:Key="DshErrBrush" Color="#ec625d" />
-        <SolidColorBrush x:Key="DshErrSoftBrush" Color="#1CEC625D" />
-        <SolidColorBrush x:Key="DshErrLineBrush" Color="#4CEC625D" />
-
-        <!-- ===== 浮层 ===== -->
-        <SolidColorBrush x:Key="DshScrimBrush" Color="#9E05060A" />
-
-        <!-- ===== 字号（契约 §2） ===== -->
-        <x:Double x:Key="DshFontSizeCaption">10</x:Double>
-        <x:Double x:Key="DshFontSizeSmall">11</x:Double>
-        <x:Double x:Key="DshFontSizeBodySmall">12</x:Double>
-        <x:Double x:Key="DshFontSizeBody">13</x:Double>
-        <x:Double x:Key="DshFontSizeTitle">14.5</x:Double>
-        <x:Double x:Key="DshFontSizeHero">19</x:Double>
-
-        <!-- ===== 圆角（契约 §3） ===== -->
-        <CornerRadius x:Key="DshRadiusBadge">6</CornerRadius>
-        <CornerRadius x:Key="DshRadiusSmall">8</CornerRadius>
-        <CornerRadius x:Key="DshRadiusMedium">10</CornerRadius>
-        <CornerRadius x:Key="DshRadiusCard">14</CornerRadius>
+            <!-- ===== 圆角（契约 §3，与主题无关） ===== -->
+            <CornerRadius x:Key="DshRadiusBadge">6</CornerRadius>
+            <CornerRadius x:Key="DshRadiusSmall">8</CornerRadius>
+            <CornerRadius x:Key="DshRadiusMedium">10</CornerRadius>
+            <CornerRadius x:Key="DshRadiusCard">14</CornerRadius>
+        </ResourceDictionary>
     </Styles.Resources>
 
     <!-- ===== 全局基底：背景 / 前景 / 字体（Window 级设置，靠属性继承下传） ===== -->
@@ -940,7 +923,7 @@
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusCard}" />
-        <Setter Property="BoxShadow" Value="0 24 56 -16 #B8000000, 0 2 8 0 #80000000" />
+        <Setter Property="BoxShadow" Value="{DynamicResource DshCardShadow}" />
         <Setter Property="ClipToBounds" Value="True" />
     </Style>
     <Style Selector="TextBlock.modal-title">
@@ -980,7 +963,7 @@
         <Setter Property="Background" Value="{DynamicResource DshSurface3Brush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="BoxShadow" Value="0 24 56 -16 #B8000000, 0 2 8 0 #80000000" />
+        <Setter Property="BoxShadow" Value="{DynamicResource DshCardShadow}" />
     </Style>
     <Style Selector="Border.toast TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DshTextBrush}" />

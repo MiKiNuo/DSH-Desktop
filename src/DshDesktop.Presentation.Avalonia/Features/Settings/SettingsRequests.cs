@@ -17,6 +17,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// <param name="LaunchOnStartup">开机自动启动。</param>
 /// <param name="BackgroundUpdateCheck">后台检查更新。</param>
 /// <param name="AutoDownloadUpdates">自动下载安装。</param>
+/// <param name="Theme">外观主题（"Dark"/"Light"）。</param>
 public sealed record SettingsInfo(
     bool SafeMode,
     bool NotificationsEnabled,
@@ -29,7 +30,8 @@ public sealed record SettingsInfo(
     bool MinimizeToTrayOnClose,
     bool LaunchOnStartup,
     bool BackgroundUpdateCheck,
-    bool AutoDownloadUpdates);
+    bool AutoDownloadUpdates,
+    string Theme);
 
 /// <summary>
 /// 表示获取设置信息的跨层请求（§28 Mediator）。
@@ -77,3 +79,9 @@ public sealed record SetAutoDownloadUpdatesRequest(bool Enabled) : IMviRequest<b
 /// </summary>
 /// <param name="Path">目标目录绝对路径。</param>
 public sealed record OpenPathRequest(string Path) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示修改外观主题的跨层请求（Phase 9：即时套用 + 落盘持久）。
+/// </summary>
+/// <param name="Theme">目标主题（"Dark"/"Light"）。</param>
+public sealed record SetThemeRequest(string Theme) : IMviRequest<bool>;

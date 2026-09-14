@@ -78,6 +78,9 @@ public sealed class DshDesktopConfig
     /// <summary>关闭窗口最小化到托盘（Phase 8 Issue 05，默认开：关窗拦截为隐藏，宿主与 Runtime 保持运行，托盘菜单可退出）。</summary>
     public bool MinimizeToTrayOnClose { get; set; } = true;
 
+    /// <summary>外观主题（"Dark"/"Light"，默认 Dark：跟随观感偏好，落盘持久、重启后保持）。</summary>
+    public string Theme { get; set; } = "Dark";
+
     /// <summary>开机自动启动（Phase 8 Issue 05，默认关：HKCU Run 键写入当前 exe 路径，未安装形态同样持久化）。</summary>
     public bool LaunchOnStartup { get; set; }
 

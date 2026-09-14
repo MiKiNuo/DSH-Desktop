@@ -17,6 +17,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// <param name="LaunchOnStartup">开机自动启动（默认关）。</param>
 /// <param name="BackgroundUpdateCheck">后台检查更新（默认开，UI Ready 后异步）。</param>
 /// <param name="AutoDownloadUpdates">自动下载安装（默认关，仅提示不自动覆盖）。</param>
+/// <param name="Theme">外观主题（"Dark"/"Light"，默认 Dark）。</param>
 /// <param name="PendingOperation">进行中的操作描述；null 表示空闲。</param>
 /// <param name="LastError">最近一次错误信息。</param>
 public sealed record SettingsState(
@@ -32,12 +33,13 @@ public sealed record SettingsState(
     bool LaunchOnStartup,
     bool BackgroundUpdateCheck,
     bool AutoDownloadUpdates,
+    string Theme,
     string? PendingOperation,
     string? LastError) : IMviState
 {
     /// <summary>
-    /// 获取初始状态（开关默认值与 DshDesktopConfig 默认值一致：托盘开 / 自启关 / 后台检查开 / 自动下载关）。
+    /// 获取初始状态（开关默认值与 DshDesktopConfig 默认值一致：托盘开 / 自启关 / 后台检查开 / 自动下载关 / 主题 Dark）。
     /// </summary>
     public static SettingsState Initial { get; } =
-        new(false, true, "latest", null, null, null, null, null, true, false, true, false, null, null);
+        new(false, true, "latest", null, null, null, null, null, true, false, true, false, "Dark", null, null);
 }

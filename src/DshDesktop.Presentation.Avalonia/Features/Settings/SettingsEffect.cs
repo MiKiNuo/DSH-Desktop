@@ -59,4 +59,10 @@ public abstract partial record SettingsEffect : IMviEffect
     /// </summary>
     /// <param name="Path">目标目录绝对路径。</param>
     public sealed partial record OpenDirectory(string Path) : SettingsEffect;
+
+    /// <summary>
+    /// 表示持久化外观主题副作用（即时套用 + 落盘）。
+    /// </summary>
+    /// <param name="Theme">目标主题（"Dark"/"Light"）。</param>
+    public sealed partial record SaveTheme(string Theme) : SettingsEffect;
 }

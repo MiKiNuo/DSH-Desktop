@@ -143,6 +143,17 @@ public sealed partial class SettingsEffectDispatcher
     }
 
     /// <summary>
+    /// 处理持久化外观主题副作用（State 已乐观更新，失败只回报错误）。
+    /// </summary>
+    [MviEffect(typeof(SettingsEffect.SaveTheme))]
+    private async ValueTask HandleSaveTheme(
+        SettingsEffect.SaveTheme effect,
+        CancellationToken cancellationToken)
+    {
+        await PersistPolicyAsync(new SetThemeRequest(effect.Theme), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// try/catch → SendAsync → 失败回流模板（Phase 8 评审 F11，照 RuntimeEffectDispatcher.PersistPolicyAsync 先例）。
     /// </summary>
     private async ValueTask PersistPolicyAsync(IMviRequest<bool> request, CancellationToken cancellationToken)

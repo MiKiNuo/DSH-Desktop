@@ -84,10 +84,11 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 导航必须**并入 Windows 标题栏**（窗口最顶部那一行），而不是在系统标题栏下方另起一行。
+    /// 导航必须**占据窗口最顶部那一行**，而不是退到系统标题栏下方另起一行。
     ///
-    /// Avalonia 需要客户区扩展到装饰区才会发生这件事；缺了这两个属性，导航会退回到标题栏
-    /// 下方成为独立一行，且窗口出现两个品牌名（系统标题栏 + 导航条各一个）。
+    /// Avalonia 需要客户区扩展到装饰区才会发生这件事；缺了 <c>ExtendClientAreaToDecorationsHint</c>，
+    /// 导航会落回标题栏下方成为独立一行。装饰由应用自绘（<c>BorderOnly</c>）：原来用 <c>Full</c> 时
+    /// Windows 会另画一份原生标题文字，与自绘品牌区叠印成重影（实机截图证实）。
     /// </summary>
     [Test]
     public async Task Shell_ExtendsClientAreaIntoTitleBar()
@@ -102,10 +103,11 @@ public sealed partial class ShellTopNavTests
                 $"ExtendClientAreaTitleBarHeightHint=\"{TopNavHeight}\"",
                 StringComparison.Ordinal)).IsTrue();
 
-        // 保留系统 caption 按钮（用户选定方案）：Avalonia 12 用 WindowDecorations 取代了已移除的
-        // ExtendClientAreaChromeHints，Full = 由系统绘制装饰。改成 None / BorderOnly 会转入「应用自绘
-        // 装饰」，而本窗口并未提供 WindowDrawnDecorations 模板 → 最小化/最大化/关闭按钮会全部消失。
-        await Assert.That(text.Contains("WindowDecorations=\"Full\"", StringComparison.Ordinal)).IsTrue();
+        // 自绘装饰（替换原 Full）：BorderOnly 只留可调整边框、去掉原生标题栏，标题栏与
+        // caption 按钮改由 WindowDrawnDecorations 提供。
+        // ⚠️ 这条只能证明属性值，**证明不了 caption 按钮真的可见**——该回归面只有实机能看出来。
+        // 它同时堵住 ExtendClientAreaChromeHints 复活（该属性在 Avalonia 12 已移除）。
+        await Assert.That(text.Contains("WindowDecorations=\"BorderOnly\"", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>
@@ -130,18 +132,52 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
+    /// 顶栏必须**自己**声明为标题栏拖拽区：改用 <c>WindowDecorations="BorderOnly"</c> 后系统不再提供
+    /// 标题栏，缺 <c>WindowDecorationProperties.ElementRole="TitleBar"</c> 时该区域不参与平台窗口移动
+    /// （该角色语义见 <c>Avalonia.Input.WindowDecorationsElementRole.TitleBar</c>）。
+    /// </summary>
+    [Test]
+    public async Task Shell_TopNavIsTitleBarDragRegion()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        // 必须挂在 topnav 元素本身上：只比字符串先后的话，role 落到别的元素上也会通过。
+        await Assert.That(ElementTag(text, "<Border[^>]*Classes=\"topnav\"[^>]*>"))
+            .Contains("ElementRole=\"TitleBar\"");
+    }
+
+    /// <summary>
+    /// 右侧动作的避让宽度必须来自运行时的 <c>Window.WindowDecorationMargin</c>，不得写死像素。
+    ///
+    /// 背景：原实现写死 <c>Margin="0,0,140,0"</c> 去躲 caption 按钮区，实机截图上「打开工作台」
+    /// 紧贴该区域。写死的值不随窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算。
+    /// ⚠️ 本测试只守「绑定源是 WindowDecorationMargin」，**守不住视觉间距是否合适**。
+    /// </summary>
+    [Test]
+    public async Task Shell_RightActionAvoidsCaptionAreaWithoutHardcoding()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        await Assert.That(text.Contains("WindowDecorationMargin", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(text.Contains("Margin=\"0,0,140,0\"", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
     /// 取元素开标签里声明的 <c>Grid.Row</c>（元素缺失或未声明行号时返回空串，断言即以实际值报错）。
     /// </summary>
     private static string RowIndex(string text, string elementPattern)
     {
-        Match element = Regex.Match(text, elementPattern);
-        if (!element.Success)
-        {
-            return string.Empty;
-        }
-
-        Match row = GridRowAttribute().Match(element.Value);
+        Match row = GridRowAttribute().Match(ElementTag(text, elementPattern));
         return row.Success ? row.Groups[1].Value : string.Empty;
+    }
+
+    /// <summary>
+    /// 取首个匹配元素的开标签文本（未匹配到时返回空串，断言即以实际值报错）。
+    /// </summary>
+    private static string ElementTag(string text, string elementPattern)
+    {
+        Match element = Regex.Match(text, elementPattern);
+        return element.Success ? element.Value : string.Empty;
     }
 
     private static async Task<string> MainWindowXamlAsync()

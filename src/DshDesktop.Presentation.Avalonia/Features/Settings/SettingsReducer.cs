@@ -92,6 +92,7 @@ public sealed partial class SettingsReducer
             LaunchOnStartup = intent.Info.LaunchOnStartup,
             BackgroundUpdateCheck = intent.Info.BackgroundUpdateCheck,
             AutoDownloadUpdates = intent.Info.AutoDownloadUpdates,
+            Theme = intent.Info.Theme,
             PendingOperation = null,
             LastError = null,
         });
@@ -180,5 +181,41 @@ public sealed partial class SettingsReducer
         }
 
         return WithEffect(state, new SettingsEffect.OpenDirectory(intent.Path));
+    }
+
+    /// <summary>
+    /// 处理选择浅色主题意图（直接指定目标主题，乐观更新 + 持久化副作用）。
+    /// </summary>
+    [MviReduce(typeof(SettingsIntent.UseLightTheme))]
+    private MviReduceResult<SettingsState, SettingsEffect> HandleUseLightTheme(
+        SettingsState state,
+        SettingsIntent.UseLightTheme intent)
+    {
+        if (state.Theme == "Light")
+        {
+            return Unchanged(state);
+        }
+
+        return WithEffect(
+            state with { Theme = "Light", LastError = null },
+            new SettingsEffect.SaveTheme("Light"));
+    }
+
+    /// <summary>
+    /// 处理选择深色主题意图（直接指定目标主题，乐观更新 + 持久化副作用）。
+    /// </summary>
+    [MviReduce(typeof(SettingsIntent.UseDarkTheme))]
+    private MviReduceResult<SettingsState, SettingsEffect> HandleUseDarkTheme(
+        SettingsState state,
+        SettingsIntent.UseDarkTheme intent)
+    {
+        if (state.Theme == "Dark")
+        {
+            return Unchanged(state);
+        }
+
+        return WithEffect(
+            state with { Theme = "Dark", LastError = null },
+            new SettingsEffect.SaveTheme("Dark"));
     }
 }
