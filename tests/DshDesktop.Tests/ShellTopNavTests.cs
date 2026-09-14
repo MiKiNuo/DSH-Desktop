@@ -87,8 +87,12 @@ public sealed partial class ShellTopNavTests
     /// 导航必须**占据窗口最顶部那一行**，而不是退到系统标题栏下方另起一行。
     ///
     /// Avalonia 需要客户区扩展到装饰区才会发生这件事；缺了 <c>ExtendClientAreaToDecorationsHint</c>，
-    /// 导航会落回标题栏下方成为独立一行。装饰由应用自绘（<c>BorderOnly</c>）：原来用 <c>Full</c> 时
-    /// Windows 会另画一份原生标题文字，与自绘品牌区叠印成重影（实机截图证实）。
+    /// 导航会落回标题栏下方成为独立一行。
+    ///
+    /// 装饰必须用系统绘制（<c>WindowDecorations="Full"</c>）：<c>BorderOnly</c> 在实机上被验证
+    /// **并不会**去掉原生标题栏——窗口渲染成了两行（顶部一行原生标题栏带 min/max/close，应用顶栏被
+    /// 挤到第二行），caption 按钮也落到了原生那一行，用户看到的就是「按钮消失」。故固定用 Full。
+    /// ⚠️ 这条只守属性值；视觉两行 vs 单行的回归面只有实机能看出来。
     /// </summary>
     [Test]
     public async Task Shell_ExtendsClientAreaIntoTitleBar()
@@ -103,11 +107,9 @@ public sealed partial class ShellTopNavTests
                 $"ExtendClientAreaTitleBarHeightHint=\"{TopNavHeight}\"",
                 StringComparison.Ordinal)).IsTrue();
 
-        // 自绘装饰（替换原 Full）：BorderOnly 只留可调整边框、去掉原生标题栏，标题栏与
-        // caption 按钮改由 WindowDrawnDecorations 提供。
-        // ⚠️ 这条只能证明属性值，**证明不了 caption 按钮真的可见**——该回归面只有实机能看出来。
-        // 它同时堵住 ExtendClientAreaChromeHints 复活（该属性在 Avalonia 12 已移除）。
-        await Assert.That(text.Contains("WindowDecorations=\"BorderOnly\"", StringComparison.Ordinal)).IsTrue();
+        // 系统绘制装饰：BorderOnly 在实机上验证无效（仍留原生标题栏、顶栏被挤到第二行），故用 Full。
+        // 这条只证明属性值；caption 按钮的可见性只有实机能确认。
+        await Assert.That(text.Contains("WindowDecorations=\"Full\"", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>
@@ -132,18 +134,19 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 顶栏必须**自己**声明为标题栏拖拽区：改用 <c>WindowDecorations="BorderOnly"</c> 后系统不再提供
-    /// 标题栏，缺 <c>WindowDecorationProperties.ElementRole="TitleBar"</c> 时该区域不参与平台窗口移动
-    /// （该角色语义见 <c>Avalonia.Input.WindowDecorationsElementRole.TitleBar</c>）。
+    /// 重复的品牌文字（<c>Classes="brand-title" Text="DSH Desktop"</c>）不得回到顶栏：
+    /// 它会与原生窗口标题（Title="DSH Desktop"）叠印成重影，正是最初的投诉来源。
+    /// 品牌只保留 logo 瓦片（<c>brand-mark</c>）。
+    /// ⚠️ 本守卫的边界：只查「元素里」是否出现 brand-title 类名与 "DSH Desktop" 文字；
+    /// 因 XamlScan.StripComments 会剥离 XML 注释，若把这段内容重新塞进注释则本测试漏检。
     /// </summary>
     [Test]
-    public async Task Shell_TopNavIsTitleBarDragRegion()
+    public async Task Shell_HasNoBrandTitle()
     {
         var text = XamlScan.StripComments(await MainWindowXamlAsync());
 
-        // 必须挂在 topnav 元素本身上：只比字符串先后的话，role 落到别的元素上也会通过。
-        await Assert.That(ElementTag(text, "<Border[^>]*Classes=\"topnav\"[^>]*>"))
-            .Contains("ElementRole=\"TitleBar\"");
+        await Assert.That(text.Contains("Classes=\"brand-title\"", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(text.Contains("Text=\"DSH Desktop\"", StringComparison.Ordinal)).IsFalse();
     }
 
     /// <summary>

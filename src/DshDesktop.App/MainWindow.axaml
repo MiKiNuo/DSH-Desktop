@@ -2,7 +2,6 @@
     x:Class="DshDesktop.App.MainWindow"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:chrome="using:Avalonia.Controls.Chrome"
     xmlns:shell="clr-namespace:DshDesktop.Presentation.Avalonia.Features.AppShell;assembly=DshDesktop.Presentation.Avalonia"
     x:DataType="shell:AppShellViewModel"
     Title="DSH Desktop"
@@ -10,29 +9,31 @@
     Height="800"
     MinWidth="1100"
     MinHeight="600"
-    WindowDecorations="BorderOnly"
+    WindowDecorations="Full"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="52">
     <!--
-      应用壳（顶部导航改造 v3）：**导航条占据 Windows 标题栏位置**——客户区扩展到装饰区
-      （ExtendClientAreaToDecorationsHint），窗口装饰改为**应用自绘**（WindowDecorations="BorderOnly"）。
-      ⚠️ 为什么不用 Full：Full 的语义是「Fully decorated」，Windows 会在左上角绘制原生标题文字
-      （Title="DSH Desktop"），与自绘品牌区叠印成重影（实机截图证实）。BorderOnly = 「无标题栏、
-      仅保留可调整边框」，标题栏与最小化/最大化/关闭按钮改由 Avalonia 的 WindowDrawnDecorations 提供。
-      ⚠️ **待实机确认项**：caption 按钮是否真的可见。离线包内 Avalonia.Themes.Fluent 引用了
-      IWindowDrawnDecorationsTemplate / WindowDrawnDecorationsContent，指向「主题提供默认模板」，
-      但**未经实机证实**。若按钮确实缺失，正解是自备 WindowDrawnDecorations 模板，
-      而不是回退到 Full（回退会把原生标题文字的重影带回来）。
-      ⚠️ 自绘装饰下系统不再提供拖拽区：顶栏必须自行声明
-      chrome:WindowDecorationProperties.ElementRole="TitleBar"（该角色语义 = 点击拖拽即平台窗口移动）。
-      ⚠️ 右侧动作避让 caption 按钮区用运行时的 WindowDecorationMargin，不写死像素：写死的值不随
-      窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算（实机截图上「打开工作台」紧贴 caption 区）。
+      应用壳（顶部导航）：装饰回退为**系统绘制**（WindowDecorations="Full"），客户区扩展到装饰区
+      （ExtendClientAreaToDecorationsHint / ExtendClientAreaTitleBarHeightHint="52"）。
+
+      ⚠️ 为什么不是 BorderOnly：BorderOnly 在**实机**上验证无效——它并没有去掉原生标题栏，
+      窗口反而渲染成两行（顶部一行原生标题栏带 min/max/close，应用顶栏被挤到第二行），
+      caption 按钮也落在原生那一行，用户看到的就是「按钮消失」。故固定用 Full：系统绘制边框，
+      caption 按钮回到单行的右上角。
+
+      ⚠️ 品牌只保留 logo 瓦片（brand-mark）：原「DSH Desktop」文字会与 Windows 绘制的原生窗口标题
+      （Title="DSH Desktop"）叠印成重影，正是最初的投诉。logo 向右推（顶栏 StackPanel 的 Margin）
+      以避开原生标题文字区，该值为估计值，需实机微调。
+
+      ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
+      ⚠️ 右侧动作避让 caption 区用运行时的 WindowDecorationMargin，不写死像素：写死的值不随
+      窗口装饰的实际占用宽度变化，而后者由框架按平台/DPI 计算。
+      （品牌 StackPanel 的 Margin 是这条的故意例外：框架只暴露标题栏交互元素的度量，不暴露原生
+      标题文字宽度的度量，故 logo 偏移只能是估计值。）
       下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
       （壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
-      原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区——工作台页即铺满的
-      NativeWebView，不再隔着一行非 harness 区域。
+      原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区。
       侧栏与折叠状态机已整块移除；拓扑约束见 tests/DshDesktop.Tests/ShellTopNavTests.cs。
-      ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
       （Avalonia 12 已移除 ExtendClientAreaChromeHints / TitleBar / CaptionButtons / ChromeOverlayLayer。）
     -->
     <Grid>
@@ -40,18 +41,18 @@
             <!-- ===== 顶部导航 ===== -->
             <Border
                 Classes="topnav"
-                Grid.Row="0"
-                chrome:WindowDecorationProperties.ElementRole="TitleBar">
+                Grid.Row="0">
                 <Grid ColumnDefinitions="Auto,*,Auto">
-                    <!-- 品牌：logo + 名称 -->
+                    <!-- 品牌：logo 瓦片。原生窗口标题（Title="DSH Desktop"）已绘在该行左上角，
+                         故 logo 向右推以避开标题文字区。Margin 为估计值，可能需实机微调。 -->
                     <StackPanel
                         Orientation="Horizontal"
                         Spacing="10"
+                        Margin="110,0,0,0"
                         VerticalAlignment="Center">
                         <Border x:Name="BrandMark" Classes="brand-mark">
                             <TextBlock Classes="brand-mark-text" Text="D" />
                         </Border>
-                        <TextBlock Classes="brand-title" Text="DSH Desktop" />
                     </StackPanel>
 
                     <!-- 导航：三组，组间竖发丝线 -->
@@ -141,7 +142,7 @@
 
                     <!-- 右侧避让 caption 按钮区：宽度取运行时的 WindowDecorationMargin
                          （= 系统度量 × DPI 缩放），不写死像素——写死的 140px 只在 100% 缩放下够用。
-                         窗口拖动由整个 topnav 的 ElementRole="TitleBar" 承担，无需再靠这段留白。 -->
+                         窗口拖动由系统标题栏承担（已回退 Full，topnav 不再自报拖拽区）。 -->
                     <Button
                         Classes="btn ghost"
                         Grid.Column="2"

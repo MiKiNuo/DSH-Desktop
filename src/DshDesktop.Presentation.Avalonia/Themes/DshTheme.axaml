@@ -109,17 +109,6 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <Style Selector="TextBlock.brand-title">
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="TextBlock.brand-title">
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBody}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
     <Style Selector="Button.nav-btn">
         <Setter Property="Height" Value="34" />
         <Setter Property="Padding" Value="10,0" />
