@@ -34,6 +34,9 @@ public sealed partial class ShellTopNavTests
     [GeneratedRegex("MinWidth=\"(\\d+)\"")]
     private static partial Regex MinWidthAttribute();
 
+    [GeneratedRegex("Grid\\.Row=\"(\\d+)\"")]
+    private static partial Regex GridRowAttribute();
+
     /// <summary>
     /// 侧栏已废弃：主窗口不得再出现 <c>Classes="sidebar"</c>。
     /// 回退到竖排侧栏会连带复活已删除的折叠状态机，故守住这条。
@@ -103,6 +106,42 @@ public sealed partial class ShellTopNavTests
         // ExtendClientAreaChromeHints，Full = 由系统绘制装饰。改成 None / BorderOnly 会转入「应用自绘
         // 装饰」，而本窗口并未提供 WindowDrawnDecorations 模板 → 最小化/最大化/关闭按钮会全部消失。
         await Assert.That(text.Contains("WindowDecorations=\"Full\"", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>
+    /// 页标题条（<c>Border.pagebar</c>，30px）已移除：顶栏之下直接是内容区。
+    ///
+    /// 用户诉求是「上面一条菜单、中间直接是原生 DSH harness」——标题条占的正是 harness 上方
+    /// 那一行。它复活后编译照过，只是工作台页顶部多出 30px 非 harness 区域，故由本测试固化。
+    ///
+    /// 行拓扑一并守住：删掉一行定义却漏改 <c>Grid.Row</c> 索引时，内容区会塌到标题条那一行的
+    /// 高度，而编译与其余测试都照过（本次改造实际踩到过）。
+    /// </summary>
+    [Test]
+    public async Task Shell_HasNoPageBar()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        await Assert.That(text.Contains("Classes=\"pagebar\"", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(text.Contains("RowDefinitions=\"52,*,28\"", StringComparison.Ordinal)).IsTrue();
+
+        await Assert.That(RowIndex(text, "<ContentControl[^>]*x:Name=\"RootContent\"[^>]*>")).IsEqualTo("1");
+        await Assert.That(RowIndex(text, "<Border[^>]*Classes=\"statusbar\"[^>]*>")).IsEqualTo("2");
+    }
+
+    /// <summary>
+    /// 取元素开标签里声明的 <c>Grid.Row</c>（元素缺失或未声明行号时返回空串，断言即以实际值报错）。
+    /// </summary>
+    private static string RowIndex(string text, string elementPattern)
+    {
+        Match element = Regex.Match(text, elementPattern);
+        if (!element.Success)
+        {
+            return string.Empty;
+        }
+
+        Match row = GridRowAttribute().Match(element.Value);
+        return row.Success ? row.Groups[1].Value : string.Empty;
     }
 
     private static async Task<string> MainWindowXamlAsync()

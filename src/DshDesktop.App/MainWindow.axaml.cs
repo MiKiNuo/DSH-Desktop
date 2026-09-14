@@ -22,8 +22,8 @@ using R3;
 namespace DshDesktop.App;
 
 /// <summary>
-/// 表示主窗口（顶部导航改造壳）：52px 顶部导航 + 30px 页标题条 + 按应用壳当前页渲染对应
-/// Feature 视图 + 状态栏 + toast 浮层（视觉基准 docs/DSH-Desktop-UI-Prototype.html）。
+/// 表示主窗口（顶部导航改造壳）：52px 顶部导航 + 按应用壳当前页渲染对应 Feature 视图
+/// + 状态栏 + toast 浮层（视觉基准 docs/DSH-Desktop-UI-Prototype.html；页标题条已移除）。
 /// </summary>
 public sealed partial class MainWindow : Window
 {

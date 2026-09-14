@@ -15,15 +15,17 @@
     <!--
       应用壳（顶部导航改造 v2）：**导航条占据 Windows 标题栏本身**——客户区扩展到装饰区
       （ExtendClientAreaToDecorationsHint），系统的最小化/最大化/关闭按钮仍由 Windows 绘制在右上角，
-      因此右侧需留出 caption 按钮区宽度。下方依次为 30px 页标题条 + 内容区 + 28px 分段式状态栏
+      因此右侧需留出 caption 按钮区宽度。下方依次为内容区 + 28px 分段式状态栏
       + toast 浮层 + 二次确认弹层（壳负责渲染，ConfirmDialog 注册 RequestConfirmAsync）。
+      原 30px 页标题条（Border.pagebar）已移除：顶栏之下直接是内容区——工作台页即铺满的
+      NativeWebView，不再隔着一行非 harness 区域。
       侧栏与折叠状态机已整块移除；拓扑约束见 tests/DshDesktop.Tests/ShellTopNavTests.cs。
       ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 三处一致。
       ⚠️ Avalonia 12 已移除 ExtendClientAreaChromeHints：保留系统按钮靠 WindowDecorations="Full"
       （None / BorderOnly 会转入「应用自绘装饰」，需自行提供 WindowDrawnDecorations 模板）。
     -->
     <Grid>
-        <Grid x:Name="ShellGrid" RowDefinitions="52,30,*,28">
+        <Grid x:Name="ShellGrid" RowDefinitions="52,*,28">
             <!-- ===== 顶部导航 ===== -->
             <Border Classes="topnav" Grid.Row="0">
                 <Grid ColumnDefinitions="Auto,*,Auto">
@@ -135,22 +137,12 @@
                 </Grid>
             </Border>
 
-            <!-- ===== 页标题条 ===== -->
-            <Border Classes="pagebar" Grid.Row="1">
-                <StackPanel
-                    Orientation="Horizontal"
-                    VerticalAlignment="Center">
-                    <TextBlock Classes="page-title" Text="{Binding PageTitle}" />
-                    <TextBlock Classes="page-desc" Text="{Binding PageSubtitle}" />
-                </StackPanel>
-            </Border>
-
             <ContentControl
                 x:Name="RootContent"
-                Grid.Row="2" />
+                Grid.Row="1" />
 
             <!-- 状态栏：分段式，段间 1px 竖发丝线；数值用等宽字体。 -->
-            <Border Classes="statusbar" Grid.Row="3">
+            <Border Classes="statusbar" Grid.Row="2">
                 <DockPanel VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                         <TextBlock Classes="statusbar-text" Text="DSH" />

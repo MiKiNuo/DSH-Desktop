@@ -42,15 +42,10 @@ public sealed partial class AppShellViewModel
         ApplyRuntimeState(runtimeStore.CurrentState);
         ApplyUpdatesState(updatesStore.CurrentState);
 
-        // 派生投影（页标题 / 状态文本）跟随状态投影属性联动刷新。
+        // 派生投影（状态文本）跟随状态投影属性联动刷新。
         PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(CurrentPage))
-            {
-                OnPropertyChanged(nameof(PageTitle));
-                OnPropertyChanged(nameof(PageSubtitle));
-            }
-            else if (args.PropertyName == nameof(RuntimeIndicator))
+            if (args.PropertyName == nameof(RuntimeIndicator))
             {
                 OnPropertyChanged(nameof(RuntimeLifecycleText));
             }
@@ -92,16 +87,6 @@ public sealed partial class AppShellViewModel
     /// </summary>
     [MviBind(nameof(AppShellState.DshVersion), BindingMode = MviBindingMode.OneWay)]
     public partial string? DshVersion { get; private set; }
-
-    /// <summary>
-    /// 获取当前页标题（顶栏主文案；映射见 <see cref="ShellPageText"/>，Phase 8 Issue 02）。
-    /// </summary>
-    public string PageTitle => ShellPageText.Title(CurrentPage);
-
-    /// <summary>
-    /// 获取当前页副标题（顶栏辅助文案；映射见 <see cref="ShellPageText"/>，Phase 8 Issue 02）。
-    /// </summary>
-    public string PageSubtitle => ShellPageText.Subtitle(CurrentPage);
 
     /// <summary>
     /// 获取 Runtime 生命周期中文状态词（状态栏状态点文案）。

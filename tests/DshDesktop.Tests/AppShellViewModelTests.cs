@@ -19,23 +19,20 @@ namespace DshDesktop.Tests;
 public sealed class AppShellViewModelTests
 {
     [Test]
-    public async Task PageTitleAndSubtitle_TrackCurrentPage()
+    public async Task CurrentPage_ProjectsFromStore()
     {
-        // Phase 8 Issue 02：顶栏标题/副标题由 ViewModel 投影（映射见 ShellPageText），不硬编码在 View。
+        // 初始页 = 工作台（AppShellState.Initial，顶部导航改造后的默认页）。
+        // 页标题/副标题投影已随页标题条一并移除，此处只守页面投影本身。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
         using var shellStore = CreateShellStore();
         var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
-        // 初始页 = 工作台（AppShellState.Initial，顶部导航改造后的默认页）。
         await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Workbench);
-        await Assert.That(viewModel.PageTitle).IsEqualTo("DSH 工作台");
-        await Assert.That(viewModel.PageSubtitle).IsEqualTo("官方 Web UI · NativeWebView");
 
         await shellStore.DispatchAsync(new AppShellIntent.ShowSettings());
 
-        await Assert.That(viewModel.PageTitle).IsEqualTo("设置");
-        await Assert.That(viewModel.PageSubtitle).IsEqualTo("数据目录、桌面行为与更新策略");
+        await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Settings);
     }
 
     [Test]

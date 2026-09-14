@@ -182,26 +182,6 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
-    <!-- 页标题条（顶部导航下方独立一行） -->
-    <Style Selector="Border.pagebar">
-        <Setter Property="Height" Value="30" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
-        <Setter Property="BorderThickness" Value="0,0,0,1" />
-        <Setter Property="Background" Value="{DynamicResource DshSurface1Brush}" />
-        <Setter Property="Padding" Value="16,0" />
-    </Style>
-    <Style Selector="TextBlock.page-title">
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeTitle}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-    <Style Selector="TextBlock.page-desc">
-        <Setter Property="Foreground" Value="{DynamicResource DshText3Brush}" />
-        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
-        <Setter Property="Margin" Value="10,0,0,0" />
-        <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
     <!-- 状态栏 -->
     <Style Selector="Border.statusbar">
         <Setter Property="Height" Value="28" />

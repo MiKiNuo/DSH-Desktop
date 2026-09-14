@@ -127,7 +127,6 @@ public sealed partial class ThemeResourceTests
         var layoutOnly = new HashSet<string>(StringComparer.Ordinal)
         {
             "nav-btn", "nav-badge", "statusbar",
-            "page-title", "page-desc",
         };
 
         var root = XamlScan.FindRepositoryRoot();
