@@ -165,11 +165,12 @@ public static class ProfileSeeder
         // DSH resolveBundleDir 抛 cannot resolve profile bundle → Runtime ExitCode=1。
         // 为规避「跨盘后 pnpm 操作报 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE」而排除它是本末倒置：
         // 该报错只影响后续 pnpm 操作，启动可用性由 Node 解析 node_modules/<bundle> 决定，
-        // 根本不读 virtualStoreDir；且 NodeJsToolRunner 已内建该错误的自动重试。
-        // ponytail: 因此不重写 .modules.yaml / .pnpm-workspace-state-v1.json 里的 virtualStoreDir
-        // （那需要解析 YAML 改绝对路径）。该元数据只被 pnpm 读取，跨盘后的首次 pnpm 操作由
-        // NodeJsToolRunner 的 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 重试路径重置虚拟存储即可覆盖；
-        // 若日后出现该重试覆盖不到的场景（如需复用 pnpm store），再改为复制后重写。
+        // 根本不读 virtualStoreDir；旧方案依赖 NodeJsToolRunner 的自动重试去重置虚拟存储，
+        // 但实机证明该重试本身因缺少 --force / --no-frozen-lockfile 而失败（2026-09 现场），
+        // 且即便成功也会 purge 再重建、风险高。现改为：复制后直接把 .modules.yaml 的 virtualStoreDir
+        // 重写为本 profile 的绝对路径（CopyProfileAsync 内调用 RewriteVirtualStoreDir），从源头消除
+        // 跨盘错位，使复制出的 profile 立刻可离线、无破坏地执行 pnpm 操作。只改 virtualStoreDir；
+        // storeDir 由 .npmrc 决定、跨盘仍匹配，不处理 .pnpm-workspace-state-v1.json（无证据有害）。
         ProcessStartInfo psi = new()
         {
             FileName = "robocopy",
@@ -201,6 +202,51 @@ public static class ProfileSeeder
             throw new InvalidOperationException(
                 $"Profile 种子复制失败（robocopy 退出码 {process.ExitCode}）：{sourceProfile} → {targetProfile}");
         }
+
+        // 跨盘后把虚拟存储指向重写为本 profile，从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 根因。
+        RewriteVirtualStoreDir(targetProfile);
+    }
+
+    /// <summary>
+    /// 复制后重写 node_modules/.modules.yaml 的 virtualStoreDir 为当前 profile 的绝对路径，
+    /// 从源头消除跨盘后的 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE（实机根因）。只改 virtualStoreDir，
+    /// 不改 storeDir（由 .npmrc 决定、跨盘仍匹配）；文件/字段缺失则静默跳过；值已一致则不动（幂等）。
+    ///
+    /// ⚠️ 该文件**文件名是 yaml、内容是 pnpm 写出的 JSON**，故按 JSON 字符串值做外科式替换
+    /// （早期按 YAML 标量 `virtualStoreDir: &lt;path&gt;` 匹配的写法在本仓实机上完全空转）。
+    /// </summary>
+    internal static void RewriteVirtualStoreDir(string profileDir)
+    {
+        string modulesManifest = Path.Combine(profileDir, "node_modules", ".modules.yaml");
+        if (!File.Exists(modulesManifest))
+        {
+            return;
+        }
+
+        string json = File.ReadAllText(modulesManifest);
+        int keyAt = json.IndexOf("\"virtualStoreDir\"", StringComparison.Ordinal);
+        if (keyAt < 0)
+        {
+            return;
+        }
+
+        int valueStart = json.IndexOf('"', json.IndexOf(':', keyAt) + 1);
+        int valueEnd = valueStart < 0 ? -1 : json.IndexOf('"', valueStart + 1);
+        if (valueStart < 0 || valueEnd < 0)
+        {
+            return;
+        }
+
+        // Windows 绝对路径在 JSON 里只有反斜杠需转义（pnpm 自身也是这么写的）。
+        string target = Path.Combine(profileDir, "node_modules", ".pnpm").Replace("\\", "\\\\", StringComparison.Ordinal);
+        if (json.AsSpan(valueStart + 1, valueEnd - valueStart - 1).SequenceEqual(target))
+        {
+            return; // 已一致，幂等，无需写入。
+        }
+
+        File.WriteAllText(
+            modulesManifest,
+            string.Concat(json.AsSpan(0, valueStart + 1), target, json.AsSpan(valueEnd)));
     }
 
     /// <summary>

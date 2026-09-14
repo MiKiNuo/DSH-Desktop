@@ -11,7 +11,12 @@ internal static class NodeJsToolRunner
     /// <summary>
     /// 在指定工作目录执行工具。
     /// 若报 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE（种子/复制 profile 的虚拟存储指向旧位置），
-    /// 先以 `pnpm install --offline` 重置虚拟存储再重试一次。
+    /// 以 `pnpm install --force --no-frozen-lockfile` 真正重置虚拟存储：--force 才能绕过
+    /// checkCompatibility 的 virtualStoreDir 校验、purge 后重建；--no-frozen-lockfile 规避
+    /// CI=true 默认的冻结安装撞上 lockfile 漂移。先 --offline 后联网最多两步修复，再重试原命令。
+    /// 修复步骤的结果不再被丢弃：最终重试仍失败时，其退出码与输出尾部附加进返回的 outputTail，
+    /// 让上层能判断是修复环节本身坏了。runOnce 可注入以便测试，缺省走真实 RunOnceAsync。
+    /// 保留 CI=true（免 TTY purge 确认所必需）。
     /// </summary>
     /// <returns>退出码与输出尾部。</returns>
     public static async Task<(int ExitCode, string OutputTail)> RunAsync(
@@ -19,18 +24,37 @@ internal static class NodeJsToolRunner
         string toolCjsPath,
         string workingDirectory,
         string[] arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runOnce = null)
     {
-        (int exitCode, string outputTail) = await RunOnceAsync(
+        Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>> exec =
+            runOnce ?? RunOnceAsync;
+
+        (int exitCode, string outputTail) = await exec(
             nodePath, toolCjsPath, workingDirectory, arguments, cancellationToken).ConfigureAwait(false);
 
         if (exitCode != 0 && outputTail.Contains("ERR_PNPM_UNEXPECTED_VIRTUAL_STORE", StringComparison.Ordinal))
         {
-            _ = await RunOnceAsync(
+            // 修复步骤：--force 绕过 virtualStoreDir 校验并 purge 重建；--no-frozen-lockfile 规避
+            // CI=true 默认的冻结安装撞 lockfile 漂移。先 --offline（离线优先），失败再去掉 --offline 联网重试。
+            (int repairExit, string repairTail) = await exec(
                 nodePath, toolCjsPath, workingDirectory,
-                ["install", "--offline"], cancellationToken).ConfigureAwait(false);
-            (exitCode, outputTail) = await RunOnceAsync(
+                ["install", "--force", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
+            if (repairExit != 0)
+            {
+                (repairExit, repairTail) = await exec(
+                    nodePath, toolCjsPath, workingDirectory,
+                    ["install", "--force", "--no-frozen-lockfile"], cancellationToken).ConfigureAwait(false);
+            }
+
+            (exitCode, outputTail) = await exec(
                 nodePath, toolCjsPath, workingDirectory, arguments, cancellationToken).ConfigureAwait(false);
+
+            // 修复失败且最终重试仍失败：把修复环节的退出码与输出附加进去，避免「吞掉退出码」。
+            if (repairExit != 0 && exitCode != 0)
+            {
+                outputTail = $"{outputTail}\n[修复步骤失败（退出码 {repairExit}）] {repairTail}";
+            }
         }
 
         return (exitCode, outputTail);

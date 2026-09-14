@@ -167,6 +167,16 @@ public sealed partial class MainWindow : Window
     /// <param name="text">提示文本。</param>
     public void ShowToast(string text)
     {
+        // MainWindow 直接订阅 store.States（Plugins / Runtime），而 MviStore.DispatchAsync 在**派发线程**
+        // 上同步发布 State；组合根又是在后台线程派发 intent 的（插件编排 OperationChanged、Runtime 快照），
+        // 故这些订阅回调运行在线程池线程上。三个 toast 场景（插件终态 / 更新徽标 / Runtime 恢复）都在
+        // 此处收口，故在此编组：已在 UI 线程同步执行，否则投递后返回（2026-09-14 实机崩溃回归）。
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => ShowToast(text));
+            return;
+        }
+
         _toastText.Text = text;
         _toastBox.IsVisible = true;
         _toastTimer.Stop();

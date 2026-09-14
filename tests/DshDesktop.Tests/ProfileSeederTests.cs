@@ -304,4 +304,110 @@ public sealed class ProfileSeederTests : IDisposable
 
         await Assert.That(installCalls).IsEqualTo(0);
     }
+
+    /// <summary>
+    /// 跨盘种子复制后，目标 .modules.yaml 的 virtualStoreDir 必须被重写为本 profile 的绝对路径，
+    /// 从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE（实机根因）。用 internal installer 重载避免真跑 pnpm。
+    /// 夹具必须用 **pnpm 实际写出的 JSON 形态**（文件名是 yaml、内容是 JSON）——用 YAML 标量形态
+    /// 会让实现与测试一起自证一个不存在的格式。
+    /// </summary>
+    [Test]
+    public async Task SeedIfNeededAsync_CopyRewritesVirtualStoreDirToTarget()
+    {
+        Directory.CreateDirectory(Path.Combine(SourceProfile, "node_modules"));
+        File.WriteAllText(
+            Path.Combine(SourceProfile, "node_modules", ".modules.yaml"),
+            SeedModulesManifest);
+        File.WriteAllText(Path.Combine(SourceProfile, "package.json"), "{ \"name\": \"seed\" }");
+
+        // 不声明 bundles → 不会触发安装；只验证复制后的虚拟存储指向重写。
+        await ProfileSeeder.SeedIfNeededAsync(
+            TargetHome, SourceHome, (_, _) => Task.FromResult((0, string.Empty)), CancellationToken.None);
+
+        string targetManifest = Path.Combine(TargetProfile, "node_modules", ".modules.yaml");
+        await Assert.That(File.Exists(targetManifest)).IsTrue();
+        string content = await File.ReadAllTextAsync(targetManifest);
+
+        await Assert.That(content).Contains(VirtualStoreDirEntry(TargetProfile));
+        await Assert.That(content).Contains(StoreDirEntry); // 其余键原样保留
+    }
+
+    /// <summary>
+    /// 已一致时不改写（幂等）：值已为正确路径时文件内容逐字不变。
+    /// </summary>
+    [Test]
+    public async Task RewriteVirtualStoreDir_AlreadyCorrect_NoChange()
+    {
+        string profile = Path.Combine(_root, "idem");
+        string manifest = Path.Combine(profile, "node_modules", ".modules.yaml");
+        Directory.CreateDirectory(Path.Combine(profile, "node_modules"));
+        string original = $$"""
+            {
+              "layoutVersion": 5,
+              "storeDir": "C:\\store\\v10",
+              "virtualStoreDir": "{{JsonEscape(Path.Combine(profile, "node_modules", ".pnpm"))}}"
+            }
+            """;
+        File.WriteAllText(manifest, original);
+
+        ProfileSeeder.RewriteVirtualStoreDir(profile);
+
+        await Assert.That(await File.ReadAllTextAsync(manifest)).IsEqualTo(original);
+    }
+
+    /// <summary>
+    /// 指向旧位置时改写为本 profile 路径（与已一致分支对照），且不动其它键。
+    /// </summary>
+    [Test]
+    public async Task RewriteVirtualStoreDir_WrongValue_Rewritten()
+    {
+        string profile = Path.Combine(_root, "wrong");
+        string manifest = Path.Combine(profile, "node_modules", ".modules.yaml");
+        Directory.CreateDirectory(Path.Combine(profile, "node_modules"));
+        File.WriteAllText(manifest, SeedModulesManifest);
+
+        ProfileSeeder.RewriteVirtualStoreDir(profile);
+
+        string content = await File.ReadAllTextAsync(manifest);
+        await Assert.That(content).Contains(VirtualStoreDirEntry(profile));
+        await Assert.That(content).Contains(StoreDirEntry);
+        await Assert.That(content).Contains("\"layoutVersion\": 5");
+    }
+
+    /// <summary>
+    /// 文件不存在时静默跳过（不抛）。
+    /// </summary>
+    [Test]
+    public async Task RewriteVirtualStoreDir_MissingFile_SkipsSilently()
+    {
+        string profile = Path.Combine(_root, "noyaml");
+        Directory.CreateDirectory(profile);
+
+        ProfileSeeder.RewriteVirtualStoreDir(profile);
+
+        await Assert.That(Directory.Exists(profile)).IsTrue();
+    }
+
+    /// <summary>
+    /// 种子 profile 的 <c>node_modules/.modules.yaml</c>：pnpm 写出的是 <b>JSON</b>（文件名是 yaml），
+    /// virtualStoreDir 指向**种子源盘**——跨盘复制后 pnpm 的 checkCompatibility 即因此抛
+    /// ERR_PNPM_UNEXPECTED_VIRTUAL_STORE。
+    /// </summary>
+    private const string SeedModulesManifest = """
+        {
+          "layoutVersion": 5,
+          "storeDir": "C:\\store\\v10",
+          "virtualStoreDir": "C:\\WRONG\\old\\profiles\\web\\node_modules\\.pnpm"
+        }
+        """;
+
+    /// <summary>storeDir 条目（应原样保留，用于断言外科式改写）。</summary>
+    private const string StoreDirEntry = "\"storeDir\": \"C:\\\\store\\\\v10\"";
+
+    /// <summary>期望的 virtualStoreDir 条目（JSON 转义后的目标 profile 绝对路径）。</summary>
+    private static string VirtualStoreDirEntry(string profileDir) =>
+        $"\"virtualStoreDir\": \"{JsonEscape(Path.Combine(profileDir, "node_modules", ".pnpm"))}\"";
+
+    /// <summary>JSON 字符串值里的反斜杠需转义（pnpm 自身也这么写）。</summary>
+    private static string JsonEscape(string path) => path.Replace("\\", "\\\\", StringComparison.Ordinal);
 }

@@ -69,4 +69,33 @@ public sealed class ProfileSnapshotterTests : IDisposable
         await Assert.That(async () => await snapshotter.RestoreAsync("20990101-000000", CancellationToken.None))
             .Throws<InvalidOperationException>();
     }
+
+    /// <summary>
+    /// 恢复重建不得含 --frozen-lockfile：回滚恰是 lockfile 与配置已漂移的场景，冻结安装必失败且会
+    /// purge 改坏环境（2026-09 实机现场）。注入 runner 捕获参数，避免真实 pnpm。
+    /// 断言精确到独立参数 --frozen-lockfile（--no-frozen-lockfile 含子串 frozen-lockfile 但不含 --frozen-lockfile）。
+    /// </summary>
+    [Test]
+    public async Task RestoreAsync_RebuildUsesNoFrozenLockfile()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        Directory.CreateDirectory(BackupsDir);
+        string snapshotId = "20990101-000000";
+        Directory.CreateDirectory(Path.Combine(BackupsDir, snapshotId));
+        File.WriteAllText(Path.Combine(BackupsDir, snapshotId, "package.json"), "{}");
+        File.WriteAllText(Path.Combine(BackupsDir, snapshotId, "pnpm-lock.yaml"), "lockfileVersion: 1");
+
+        List<string[]> calls = [];
+        var runner = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            calls.Add(args);
+            return Task.FromResult((0, string.Empty));
+        };
+        var snapshotter = new ProfileSnapshotter(ProfileDir, BackupsDir, "node", "pnpm.cjs", runner);
+
+        await snapshotter.RestoreAsync(snapshotId, CancellationToken.None);
+
+        await Assert.That(calls.Count).IsGreaterThan(0);
+        await Assert.That(calls.All(a => !a.Contains("--frozen-lockfile"))).IsTrue();
+    }
 }

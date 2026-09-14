@@ -3,16 +3,23 @@ using DshDesktop.Application.Plugins;
 namespace DshDesktop.Infrastructure.Plugins;
 
 /// <summary>
-/// 表示 Profile 清单快照器（Q3-B / Q5 决策：清单四件套 + frozen-lockfile 重建，
-/// 保留最近 5 份；不快照 node_modules——pnpm-lock.yaml 本来就是可重建的完整快照）。
+/// 表示 Profile 清单快照器（Q3-B / Q5 决策：清单四件套快照，保留最近 5 份；
+/// 不快照 node_modules——pnpm-lock.yaml 本来就是可重建的完整快照）。
+/// 恢复重建用 --no-frozen-lockfile：回滚场景 lockfile 与配置已漂移，冻结安装必失败且会 purge 改坏环境。
 /// </summary>
 public sealed class ProfileSnapshotter(
     string profileDir,
     string backupsDir,
     string nodePath,
-    string pnpmCjsPath) : IProfileSnapshotter
+    string pnpmCjsPath,
+    Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runner = null)
+    : IProfileSnapshotter
 {
     private const int MaxSnapshots = 5;
+
+    // runner 可注入以便测试；缺省走真实 NodeJsToolRunner.RunAsync。
+    private readonly Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>
+        _runner = runner ?? ((np, tc, wd, args, ct) => NodeJsToolRunner.RunAsync(np, tc, wd, args, ct));
 
     private static readonly string[] ManifestFiles =
     [
@@ -60,14 +67,14 @@ public sealed class ProfileSnapshotter(
             }
         }
 
-        (int exitCode, string outputTail) = await NodeJsToolRunner.RunAsync(
+        (int exitCode, string outputTail) = await _runner(
             nodePath, pnpmCjsPath, profileDir,
-            ["install", "--frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
+            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
         if (exitCode != 0)
         {
-            (exitCode, outputTail) = await NodeJsToolRunner.RunAsync(
+            (exitCode, outputTail) = await _runner(
                 nodePath, pnpmCjsPath, profileDir,
-                ["install", "--frozen-lockfile"], cancellationToken).ConfigureAwait(false);
+                ["install", "--no-frozen-lockfile"], cancellationToken).ConfigureAwait(false);
         }
 
         if (exitCode != 0)

@@ -17,6 +17,9 @@ public sealed partial class ShellTopNavTests
     /// <summary>顶栏单行需容纳：品牌 + 7 项导航 + 右侧动作，约 980px。</summary>
     private const int MinimumFittingWidth = 1100;
 
+    /// <summary>导航行高度，同时作为扩展标题栏的高度提示。</summary>
+    private const int TopNavHeight = 52;
+
     private static readonly string[] NavButtonNames =
     [
         "NavDashboard",
@@ -75,6 +78,31 @@ public sealed partial class ShellTopNavTests
 
         await Assert.That(int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture))
             .IsGreaterThanOrEqualTo(MinimumFittingWidth);
+    }
+
+    /// <summary>
+    /// 导航必须**并入 Windows 标题栏**（窗口最顶部那一行），而不是在系统标题栏下方另起一行。
+    ///
+    /// Avalonia 需要客户区扩展到装饰区才会发生这件事；缺了这两个属性，导航会退回到标题栏
+    /// 下方成为独立一行，且窗口出现两个品牌名（系统标题栏 + 导航条各一个）。
+    /// </summary>
+    [Test]
+    public async Task Shell_ExtendsClientAreaIntoTitleBar()
+    {
+        var text = XamlScan.StripComments(await MainWindowXamlAsync());
+
+        await Assert.That(
+            text.Contains("ExtendClientAreaToDecorationsHint=\"True\"", StringComparison.Ordinal)).IsTrue();
+
+        await Assert.That(
+            text.Contains(
+                $"ExtendClientAreaTitleBarHeightHint=\"{TopNavHeight}\"",
+                StringComparison.Ordinal)).IsTrue();
+
+        // 保留系统 caption 按钮（用户选定方案）：Avalonia 12 用 WindowDecorations 取代了已移除的
+        // ExtendClientAreaChromeHints，Full = 由系统绘制装饰。改成 None / BorderOnly 会转入「应用自绘
+        // 装饰」，而本窗口并未提供 WindowDrawnDecorations 模板 → 最小化/最大化/关闭按钮会全部消失。
+        await Assert.That(text.Contains("WindowDecorations=\"Full\"", StringComparison.Ordinal)).IsTrue();
     }
 
     private static async Task<string> MainWindowXamlAsync()
