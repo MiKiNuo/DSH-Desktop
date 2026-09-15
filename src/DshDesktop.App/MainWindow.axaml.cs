@@ -43,6 +43,16 @@ public sealed partial class MainWindow : Window
     private readonly Func<bool>? _minimizeToTrayOnClose;
     private bool _exitRequested;
     private readonly ContentControl _rootContent;
+
+    // 内容区宿主：常驻 Panel，切页只切子元素的 IsVisible（原因见 RenderCurrentPage 注释）。
+    private readonly Panel _pageHost = new();
+
+    // 工作台视图常驻引用。它承载 NativeWebView（Win32 原生子窗口），一旦脱离视觉树就会被
+    // NativeControlHost 销毁，切回即重新导航/重新加载，故创建后不再移除。
+    private WorkbenchView? _workbenchView;
+
+    // 当前页视图（可能是 _workbenchView 本身）。
+    private Control? _currentPageView;
     private readonly Border _topNav;
     private readonly Ellipse _statusBarDot;
     private readonly Border _updatesBadgeBox;
@@ -95,6 +105,7 @@ public sealed partial class MainWindow : Window
         _confirmOk = FindRequiredControl<Button>("ConfirmOk");
         _confirmCancel = FindRequiredControl<Button>("ConfirmCancel");
         _rootContent = FindRequiredControl<ContentControl>("RootContent");
+        _rootContent.Content = _pageHost;
         _topNav = FindRequiredControl<Border>("TopNav");
         _statusBarDot = FindRequiredControl<Ellipse>("StatusBarDot");
         _updatesBadgeBox = FindRequiredControl<Border>("UpdatesBadgeBox");
@@ -477,20 +488,70 @@ public sealed partial class MainWindow : Window
         _updateScrimText.Text = state.PendingOperation ?? DefaultUpdateScrimText;
     }
 
+    /// <summary>
+    /// 渲染当前页。
+    /// </summary>
+    /// <remarks>
+    /// 内容区不整体替换 <c>Content</c>，而是在常驻 <see cref="_pageHost"/> 上只切 <c>IsVisible</c>。
+    /// 原因：工作台的 <c>NativeWebView</c> 是 Win32 原生子窗口，<c>NativeControlHost</c>
+    /// 只在 <c>OnDetachedFromVisualTree</c> 之后的 <c>CheckDestruction</c> 里销毁原生控件，
+    /// 而 <c>IsVisible=false</c> 只走 <c>HideWithSize</c>、不销毁 —— 把工作台移出视觉树就等于
+    /// 销毁整个 WebView2 实例，切回来必须重新导航 = 又一次加载，DSH 页内状态也全丢
+    /// （2026-09-15 实机投诉「每次点顶部按钮都要重新加载一次」）。
+    /// 工作台因此创建一次后常驻；隐藏时原生窗口不再盖住其它页（原生窗口永远渲染在
+    /// Avalonia 内容之上，所以「只切可见性」是必须的，不能靠 z 序遮挡）。
+    /// 其余 6 页保持每次重建：纯 Avalonia 视图重建廉价，也不需要保留页内状态。
+    /// </remarks>
     private void RenderCurrentPage()
     {
-        Control view = _shellViewModel.CurrentPage switch
+        if (_shellViewModel.CurrentPage is ShellPage.Workbench)
+        {
+            if (_workbenchView is null)
+            {
+                _workbenchView = CreateView<WorkbenchView, WorkbenchViewModel>();
+                _pageHost.Children.Add(_workbenchView);
+            }
+
+            ShowPage(_workbenchView);
+            return;
+        }
+
+        ShowPage(_shellViewModel.CurrentPage switch
         {
             ShellPage.Dashboard => CreateView<DashboardView, DashboardViewModel>(),
-            ShellPage.Workbench => CreateView<WorkbenchView, WorkbenchViewModel>(),
             ShellPage.Diagnostics => CreateView<DiagnosticsView, DiagnosticsViewModel>(),
             ShellPage.Plugins => CreateView<PluginsView, PluginsViewModel>(),
             ShellPage.Updates => CreateView<UpdatesView, UpdatesViewModel>(),
             ShellPage.Settings => CreateView<SettingsView, SettingsViewModel>(),
             _ => CreateView<RuntimeView, RuntimeViewModel>(),
-        };
+        });
+    }
 
-        _rootContent.Content = view;
+    /// <summary>
+    /// 切换当前页：换掉上一页（工作台除外，它常驻视觉树），并只让目标页可见。
+    /// </summary>
+    /// <param name="view">目标页视图。</param>
+    private void ShowPage(Control view)
+    {
+        if (!ReferenceEquals(_currentPageView, view))
+        {
+            if (_currentPageView is not null && !ReferenceEquals(_currentPageView, _workbenchView))
+            {
+                _pageHost.Children.Remove(_currentPageView);
+            }
+
+            if (!ReferenceEquals(view, _workbenchView))
+            {
+                _pageHost.Children.Add(view);
+            }
+
+            _currentPageView = view;
+        }
+
+        foreach (Control child in _pageHost.Children)
+        {
+            child.IsVisible = ReferenceEquals(child, view);
+        }
     }
 
     private TControl FindRequiredControl<TControl>(string name)
