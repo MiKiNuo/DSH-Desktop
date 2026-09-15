@@ -9,7 +9,6 @@
     Height="800"
     MinWidth="1100"
     MinHeight="600"
-    CanMaximize="False"
     WindowDecorations="Full"
     ExtendClientAreaToDecorationsHint="True"
     ExtendClientAreaTitleBarHeightHint="52">
@@ -29,16 +28,16 @@
       以避开该文字区，该值为估计值，需实机微调。
 
       ⚠️ 标题栏高度 52 必须与 RowDefinitions 首行、ExtendClientAreaTitleBarHeightHint 两处一致。
-      ⚠️ 右侧避让 caption 区 = 运行时实测：右上角按钮组由 Fluent 主题自绘（原为全屏/最小化/最大化/关闭，
-      各 45 DIP + 间距 2），现已在 App.axaml 隐藏全屏与最大化两个按钮（用户决策），只剩最小化/关闭。
-      「全屏」按钮正是 2026-09-14 两次「右侧动作被遮挡」的真凶（隐藏前组宽 186 DIP，超出按三按钮的估算），
-      当时误判为最大化按钮。避让仍由 code-behind 用 Win32 GetSystemMetricsForDpi 实测两按钮总宽动态设置
+      ⚠️ 右侧避让 caption 区 = 运行时实测：右上角按钮组由 Fluent 主题自绘（全屏/最小化/最大化/关闭，
+      各 45 DIP + 间距 2），现已在 App.axaml 隐藏「全屏」一个按钮（用户决策），保留最小化 / 最大化 / 关闭
+      （标准窗口功能，用户明确要求不要动）。「全屏」按钮正是 2026-09-14 两次「右侧动作被遮挡」的真凶
+      （组宽 186 DIP，比按三按钮估算的避让量多出 40 DIP，多出的部分正落在最左那个按钮上），
+      当时误判为最大化按钮。故由 code-behind 用 Win32 GetSystemMetricsForDpi 实测三按钮总宽动态设置
       TopNav.Padding（见 WindowCaptionButtons.cs），XAML 不带 Padding。
-      ⚠️ 最大化按钮与功能**一并删除**（同日用户决策：「不是禁用，是去掉删除掉这个功能」）：
-      窗口声明 CanMaximize="False"（Avalonia 原生开关 → 不设 WS_MAXIMIZEBOX，双击顶栏也不会最大化；
-      边框拉伸由 CanResize 单独控制，不受影响），按钮由 App.axaml 隐藏。
-      旧方案（P/Invoke 移除 WS_MAXIMIZEBOX）已删除——它对自绘按钮无效（启用态取 Window.CanMaximize）。
-      全屏退出死代码（托盘项/Esc/ExitFullScreen）已随同一决策删除。
+      ⚠️ 最大化**保持可用**（同日用户澄清：「最小、最大、关闭是（几乎）所有桌面软件都有的功能」）：
+      不得声明 CanMaximize="False"，也不得复活 2026-09-14 那套移除 WS_MAXIMIZEBOX 的 P/Invoke——
+      它既隐藏/置灰不了自绘按钮（启用态取 Window.CanMaximize），还会连带让「双击顶栏最大化」失效。
+      守卫 Shell_MinMaxCloseStayAvailable。全屏退出死代码（托盘项/Esc/ExitFullScreen）随全屏决策已删除。
       （品牌 StackPanel 的 Margin 仍是「不写死像素」的故意例外：框架只暴露标题栏交互元素的度量，
       不暴露标题文字宽度的度量，故 logo 偏移只能是估计值。）
       下方依次为内容区 + 28px 分段式状态栏 + toast 浮层 + 二次确认弹层
@@ -154,9 +153,9 @@
                     </StackPanel>
 
                     <!-- 顶栏右内边距避让 caption 按钮区：由 code-behind（MainWindow.ApplyCaptionAvoidance）用
-                         Win32 GetSystemMetricsForDpi 实测两按钮（min/close）总宽动态设置 TopNav.Padding。
-                         全屏与最大化按钮已于 2026-09-15 在 App.axaml 隐藏（用户决策）；右侧「打开工作台」
-                         按钮同日移除（与导航「DSH 工作台」重复）。Padding 仍保留，防窄窗口时导航末项撞按钮。
+                         Win32 GetSystemMetricsForDpi 实测三按钮（min/max/close）总宽动态设置 TopNav.Padding。
+                         「全屏」按钮已于 2026-09-15 在 App.axaml 隐藏（用户决策）；右侧「打开工作台」按钮同日
+                         移除（与导航「DSH 工作台」重复）。Padding 仍保留，防窄窗口时导航末项撞按钮。
                          XAML 不写死像素：避让宽度依赖主题的按钮实现，且 WindowDecorationMargin binding
                          在 Full + Windows 下取值不可靠（均为 2026-09-14 实机回归）。
                          窗口拖动由标题栏条带承担（Avalonia 对扩展装饰区的 TitleBar 角色走 HTCAPTION 路径，

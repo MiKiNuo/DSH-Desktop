@@ -25,9 +25,6 @@ public sealed partial class NoticeLayoutTests
     [GeneratedRegex("<Border\\b[^>]*Classes=\"[^\"]*\\bnotice\\b[^\"]*\"[^>]*>")]
     private static partial Regex NoticeBorder();
 
-    [GeneratedRegex("<Style\\s+Selector=\"([^\"]+)\"\\s*>")]
-    private static partial Regex StyleHeader();
-
     /// <summary>
     /// 主题契约：notice 内所有 TextBlock 默认换行。
     /// 样式只能设属性、无法注入子元素，布局结构由调用点测试（见下）固化。
@@ -42,7 +39,7 @@ public sealed partial class NoticeLayoutTests
             root!, "src", "DshDesktop.Presentation.Avalonia", "Themes", "DshTheme.axaml");
         await Assert.That(File.Exists(themePath)).IsTrue();
 
-        var style = ExtractStyleBlock(
+        var style = XamlScan.ExtractStyleBlock(
             await File.ReadAllTextAsync(themePath),
             "Border.notice TextBlock");
 
@@ -140,6 +137,60 @@ public sealed partial class NoticeLayoutTests
         }
     }
 
+    /// <summary>
+    /// 状态机 stepper 尾部的说明文字（"Recovering 完成后回到 Starting"）不得挂
+    /// <c>fsm-label</c> —— 该类带 <c>Width=64</c>（为两个 4 字标签对齐），长文案会被硬裁切成
+    /// "Recovering 完"。长提示改挂无固定宽度的 <c>fsm-hint</c>，外观仍与标签一致。
+    /// </summary>
+    [Test]
+    public async Task FsmStepperHint_IsNotWidthCapped()
+    {
+        const string hint = "Recovering 完成后回到 Starting";
+
+        var root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var viewPath = Path.Combine(
+            root!, "src", "DshDesktop.Presentation.Avalonia", "Features", "Runtime", "RuntimeView.axaml");
+        await Assert.That(File.Exists(viewPath)).IsTrue();
+
+        var text = XamlScan.StripComments(await File.ReadAllTextAsync(viewPath));
+        var index = text.IndexOf(hint, StringComparison.Ordinal);
+        await Assert.That(index).IsGreaterThan(-1);
+
+        // 提示所在 TextBlock 的开标签：取文案之前最近的一个 <TextBlock。
+        var tagStart = text.LastIndexOf("<TextBlock", index, StringComparison.Ordinal);
+        var tagEnd = text.IndexOf(">", tagStart, StringComparison.Ordinal);
+        var tag = text[tagStart..(tagEnd + 1)];
+
+        await Assert.That(tag.Contains("fsm-label", StringComparison.Ordinal)).IsFalse();
+        await Assert.That(tag.Contains("fsm-hint", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>
+    /// <c>fsm-hint</c> 必须存在且与 <c>fsm-label</c> 同观感（同样的前景色 / 字号 / 垂直居中），
+    /// 但**不带** <c>Width</c>：固定宽度正是裁切根因，改回去等于回归。
+    /// </summary>
+    [Test]
+    public async Task FsmHintStyle_HasNoFixedWidth()
+    {
+        var root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var themePath = Path.Combine(
+            root!, "src", "DshDesktop.Presentation.Avalonia", "Themes", "DshTheme.axaml");
+        await Assert.That(File.Exists(themePath)).IsTrue();
+
+        var style = XamlScan.ExtractStyleBlock(
+            await File.ReadAllTextAsync(themePath),
+            "TextBlock.fsm-hint");
+
+        await Assert.That(style).IsNotEmpty();
+        await Assert.That(style.Contains("Property=\"Foreground\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(style.Contains("Property=\"FontSize\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(style.Contains("Property=\"Width\"", StringComparison.Ordinal)).IsFalse();
+    }
+
     /// <summary>取 notice Border 自身闭合范围内的内容（防止越界匹配到后续元素）。</summary>
     private static string NoticeContent(string text, Match border)
     {
@@ -155,19 +206,5 @@ public sealed partial class NoticeLayoutTests
         }
 
         return text[border.Index..Math.Min(text.Length, end)];
-    }
-
-    private static string ExtractStyleBlock(string text, string selector)
-    {
-        var match = StyleHeader().Matches(text)
-            .FirstOrDefault(m => m.Groups[1].Value == selector);
-
-        if (match is null)
-        {
-            return string.Empty;
-        }
-
-        var end = text.IndexOf("</Style>", match.Index, StringComparison.Ordinal);
-        return end < 0 ? string.Empty : text[match.Index..end];
     }
 }

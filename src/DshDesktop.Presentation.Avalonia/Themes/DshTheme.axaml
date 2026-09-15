@@ -791,6 +791,9 @@
         <Setter Property="Foreground" Value="{DynamicResource DshText3Brush}" />
         <Setter Property="FontFamily" Value="Geist Mono, Cascadia Code, Consolas" />
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
+        <!-- pill 是固定高度 + 上下零 Padding 的 Border：不显式居中时 TextBlock 被拉伸到内容区全高，
+             而文字画在自身顶部 ⇒ 字形整体上浮。 -->
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Border.state.current">
         <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />
@@ -817,6 +820,12 @@
     </Style>
     <Style Selector="TextBlock.fsm-label">
         <Setter Property="Width" Value="64" />
+        <Setter Property="Foreground" Value="{DynamicResource DshText4Brush}" />
+        <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <!-- 长说明文字：与 fsm-label 同观感，但**不能**继承它的 Width=64（固定宽度会把文案裁断）。 -->
+    <Style Selector="TextBlock.fsm-hint">
         <Setter Property="Foreground" Value="{DynamicResource DshText4Brush}" />
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeCaption}" />
         <Setter Property="VerticalAlignment" Value="Center" />

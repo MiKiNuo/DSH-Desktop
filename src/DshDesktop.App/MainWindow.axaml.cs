@@ -189,8 +189,8 @@ public sealed partial class MainWindow : Window
             "Desktop.Window.Visible ElapsedMs={ElapsedMs}",
             (long)StartupTimer.SinceProcessStart.ElapsedMilliseconds);
 
-        // caption 区避让（实测宽度，打开时 + DPI 变化时）。最大化已改由 XAML 的 CanMaximize="False"
-        // 关闭（见 MainWindow.axaml 注释），不再需要 Win32 样式操作。
+        // caption 区避让（实测宽度，打开时 + DPI 变化时）。本类不再做窗口样式手术：最大化保持可用，
+        // 见 MainWindow.axaml 注释与 WindowCaptionButtons 类注释。
         ApplyCaptionAvoidance();
         ScalingChanged += (_, _) => ApplyCaptionAvoidance();
     }

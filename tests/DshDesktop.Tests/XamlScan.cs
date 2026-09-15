@@ -12,8 +12,26 @@ internal static partial class XamlScan
     [GeneratedRegex("<!--.*?-->", RegexOptions.Singleline)]
     private static partial Regex XmlComment();
 
+    [GeneratedRegex("<Style\\s+Selector=\"([^\"]+)\"\\s*>")]
+    private static partial Regex StyleHeader();
+
     /// <summary>剥离 XAML 注释，防止注释里的示例文本被误判为控件引用。</summary>
     public static string StripComments(string text) => XmlComment().Replace(text, string.Empty);
+
+    /// <summary>取出某个 <c>&lt;Style Selector="..."&gt;</c> 块的正文（不含结束标签）；未找到返回空串。</summary>
+    public static string ExtractStyleBlock(string text, string selector)
+    {
+        var match = StyleHeader().Matches(text)
+            .FirstOrDefault(m => m.Groups[1].Value == selector);
+
+        if (match is null)
+        {
+            return string.Empty;
+        }
+
+        var end = text.IndexOf("</Style>", match.Index, StringComparison.Ordinal);
+        return end < 0 ? string.Empty : text[match.Index..end];
+    }
 
     /// <summary>枚举 src 下全部视图（排除 bin/obj 编译产物）。</summary>
     public static IEnumerable<string> EnumerateViews(string root)
