@@ -102,7 +102,7 @@
                                     <TextBlock Text="Recovering" />
                                 </Border>
                                 <TextBlock
-                                    Classes="fsm-label"
+                                    Classes="fsm-hint"
                                     Text="Recovering 完成后回到 Starting" />
                             </StackPanel>
                         </StackPanel>
