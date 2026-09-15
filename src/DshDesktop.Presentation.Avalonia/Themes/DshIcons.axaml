@@ -5,7 +5,8 @@
   几何数据取自 Lucide 官方（lucide-static v0.456.0 的 SVG 源），
   将 <path>/<line>/<polyline>/<polygon>/<rect>/<circle> 统一转换为路径迷你语言，
   描边色由消费端 Path.Stroke 提供（StreamGeometry 仅描述轮廓）。
-  注：契约 §6 正文列出的键名为 29 个，此处全部实现。
+  注：契约 §6 正文列出的键名为 29 个，此处全部实现；另有 IconWhale 为本文件新增的
+  工作台启动加载框专用键，不在该契约范围内。
 -->
 <Styles xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
@@ -64,5 +65,9 @@
         <StreamGeometry x:Key="IconClock">M12 2 a10 10 0 1 0 0 20 a10 10 0 1 0 0 -20 Z M12 6 L12 12 L16 14</StreamGeometry>
         <StreamGeometry x:Key="IconDrive">M22 12 L2 12 M5.45 5.11 L2 12 v6 a2 2 0 0 0 2 2 h16 a2 2 0 0 0 2 -2 v-6 l-3.45 -6.89 A2 2 0 0 0 16.76 4 H7.24 A2 2 0 0 0 5.45 5.11 Z M6 16 L6.01 16 M10 16 L10.01 16</StreamGeometry>
         <StreamGeometry x:Key="IconPower">M12 2 L12 10 M18.4 6.6 a9 9 0 1 1 -12.77 .04</StreamGeometry>
+
+        <!-- 工作台启动加载框 / 小鲸鱼（Lucide 无 whale，按同一 24×24 描边语言手写：
+             圆背 + 左尾鳍 + 腹鳍 + 眼 + 喷气） -->
+        <StreamGeometry x:Key="IconWhale">M2.6 15 C2.6 9.6 7 6 12.6 6 C18.2 6 22.6 9.6 22.6 15 Z M3.8 12.4 L1.6 9.4 L2 15.2 Z M12.2 15 C13.2 16.8 15.2 17.4 16.6 16.6 M18.2 11.4 h.01 M12.8 6 L12.8 3.4 C12.8 2.6 12 2.2 11.6 2.8 M12.8 3.4 C13.6 3.4 14.2 2.8 14 2.2</StreamGeometry>
     </Styles.Resources>
 </Styles>

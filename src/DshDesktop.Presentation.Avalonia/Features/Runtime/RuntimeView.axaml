@@ -62,14 +62,24 @@
                             </StackPanel>
                         </StackPanel>
 
-                        <!-- 状态机 stepper：正常流转 Stopped→Starting→Running→Stopping -->
-                        <StackPanel Spacing="10">
+                        <!-- 状态机 stepper：正常流转 Stopped→Starting→Running→Stopping；异常流转 Failed→Recovering。
+                             两行并入同一 Grid，共享列轴（第 0 列标签 / 第 1 列流转），整组居中，
+                             即便两行行宽不等也不再错位。 -->
+                        <Grid
+                            ColumnDefinitions="Auto,Auto"
+                            RowDefinitions="Auto,Auto"
+                            ColumnSpacing="6"
+                            RowSpacing="10"
+                            HorizontalAlignment="Center">
+                            <TextBlock
+                                Classes="fsm-label"
+                                Grid.Column="0"
+                                Text="正常流转" />
                             <StackPanel
-                                HorizontalAlignment="Center"
+                                Grid.Column="1"
                                 Orientation="Horizontal"
                                 Spacing="6"
                                 VerticalAlignment="Center">
-                                <TextBlock Classes="fsm-label" Text="正常流转" />
                                 <Border x:Name="PillStopped" Classes="state off">
                                     <TextBlock Text="Stopped" />
                                 </Border>
@@ -87,13 +97,17 @@
                                 </Border>
                             </StackPanel>
 
-                            <!-- 异常流转 Failed→Recovering -->
+                            <TextBlock
+                                Classes="fsm-label"
+                                Grid.Column="0"
+                                Grid.Row="1"
+                                Text="异常流转" />
                             <StackPanel
-                                HorizontalAlignment="Center"
+                                Grid.Column="1"
+                                Grid.Row="1"
                                 Orientation="Horizontal"
                                 Spacing="6"
                                 VerticalAlignment="Center">
-                                <TextBlock Classes="fsm-label" Text="异常流转" />
                                 <Border x:Name="PillFailed" Classes="state off">
                                     <TextBlock Text="Failed" />
                                 </Border>
@@ -105,7 +119,7 @@
                                     Classes="fsm-hint"
                                     Text="Recovering 完成后回到 Starting" />
                             </StackPanel>
-                        </StackPanel>
+                        </Grid>
 
                         <!-- ADR-0004：Failed 恢复面板（并入状态机卡），仅 Failed 可见。 -->
                         <Border x:Name="RecoverPanel" Classes="notice err" IsVisible="False">

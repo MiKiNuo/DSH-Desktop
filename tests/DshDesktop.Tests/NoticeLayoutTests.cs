@@ -15,7 +15,7 @@ namespace DshDesktop.Tests;
 /// ① 主题为 notice 内 TextBlock 全局开启 TextWrapping=Wrap（根因：不换行才撑爆）；
 /// ② info 型提示条（图标 + 正文 [+ 尾部操作]）统一用 Grid 三列 Auto,*,Auto；
 /// ③ notice 内禁用 HorizontalAlignment=Right（Grid 三列下尾部操作自成 Auto 列）；
-/// ④ 状态机 stepper 两行整体水平居中。
+/// ④ 状态机 stepper 两行共享同一 Grid 列轴（标签列 / 流转列）且整组居中。
 /// 视觉效果仍需实机确认（沙箱无法截图 Avalonia 窗口）。
 /// </summary>
 public sealed partial class NoticeLayoutTests
@@ -108,11 +108,14 @@ public sealed partial class NoticeLayoutTests
     }
 
     /// <summary>
-    /// 状态机 stepper 的两行流转（正常 / 异常）必须整体居中：
-    /// 标签所在行容器声明 HorizontalAlignment=Center。
+    /// 状态机 stepper 的两行流转（正常 / 异常）必须共享同一对齐轴：
+    /// 两行并入同一个 Grid（ColumnDefinitions 两列 = 标签列 / 流转列），标签各占第 0 列、
+    /// 行内容各占第 1 列，且该 Grid 整体 HorizontalAlignment=Center。
+    /// 两行标签与其行容器是同一 Grid 的兄弟节点，行容器在标签之后。
+    /// 背景（2026-09-15 实机投诉）：两行各自 Center 时因行宽不等而左边界错位。
     /// </summary>
     [Test]
-    public async Task FsmStepperRows_AreCentered()
+    public async Task FsmStepperRows_ShareAlignAxis()
     {
         var root = XamlScan.FindRepositoryRoot();
         await Assert.That(root).IsNotNull();
@@ -121,19 +124,45 @@ public sealed partial class NoticeLayoutTests
             root!, "src", "DshDesktop.Presentation.Avalonia", "Features", "Runtime", "RuntimeView.axaml");
         await Assert.That(File.Exists(viewPath)).IsTrue();
 
-        // 注释里也写了"正常流转"字样，先剥注释再定位真实标签。
+        // 注释里也写了"正常流转""异常流转"字样，先剥注释再定位真实标签。
         var text = XamlScan.StripComments(await File.ReadAllTextAsync(viewPath));
-        foreach (var label in new[] { "正常流转", "异常流转" })
-        {
-            var index = text.IndexOf(label, StringComparison.Ordinal);
-            await Assert.That(index).IsGreaterThan(-1);
 
-            // 标签所在行容器（最近的 StackPanel 开标签）必须整体居中。
-            var panelStart = text.LastIndexOf("<StackPanel", index, StringComparison.Ordinal);
-            var panelTagEnd = text.IndexOf(">", panelStart, StringComparison.Ordinal);
-            var panelTag = text[panelStart..(panelTagEnd + 1)];
-            await Assert.That(panelTag.Contains("HorizontalAlignment=\"Center\"", StringComparison.Ordinal))
-                .IsTrue();
+        // ① 承载两行的是同一个 Grid：两列（标签列 / 流转列）+ 整组居中，
+        //    行宽不等（正常行 4 pill+3 箭头 / 异常行 2 pill+1 箭头+提示）不再导致左边界错位。
+        var firstLabel = text.IndexOf("正常流转", StringComparison.Ordinal);
+        await Assert.That(firstLabel).IsGreaterThan(-1);
+
+        var gridStart = text.LastIndexOf("<Grid", firstLabel, StringComparison.Ordinal);
+        await Assert.That(gridStart).IsGreaterThan(-1);
+
+        var gridTag = text[gridStart..(text.IndexOf(">", gridStart, StringComparison.Ordinal) + 1)];
+        await Assert.That(gridTag.Contains("ColumnDefinitions=\"Auto,Auto\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(gridTag.Contains("HorizontalAlignment=\"Center\"", StringComparison.Ordinal)).IsTrue();
+
+        // ② 两行都必须显式落在同一对列上（标签第 0 列 / 流转容器第 1 列），且分属不同 Grid 行
+        //    ——若两行被放回同一行会重叠，仅查列会漏掉该回归，故这里同时钉住行归属；
+        //    另断言该行首枚 pill 确实位于它的流转容器之后（防「Grid.Column 挂在无关面板上」的假绿）。
+        //    行容器是标签的兄弟节点（在标签之后），故这里向后查找 <StackPanel。
+        foreach (var (label, firstPill, row) in new[] { ("正常流转", "PillStopped", "0"), ("异常流转", "PillFailed", "1") })
+        {
+            var labelIndex = text.IndexOf(label, StringComparison.Ordinal);
+            await Assert.That(labelIndex).IsGreaterThan(-1);
+
+            var labelTag = NearestOpenTag(text, "<TextBlock", labelIndex);
+            await Assert.That(labelTag.Contains("Grid.Column=\"0\"", StringComparison.Ordinal)).IsTrue();
+
+            var rowPanelStart = text.IndexOf("<StackPanel", labelIndex, StringComparison.Ordinal);
+            await Assert.That(rowPanelStart).IsGreaterThan(labelIndex);
+
+            var rowTag = text[rowPanelStart..(text.IndexOf(">", rowPanelStart, StringComparison.Ordinal) + 1)];
+            await Assert.That(rowTag.Contains("Grid.Column=\"1\"", StringComparison.Ordinal)).IsTrue();
+
+            // 行归属：第 0 行省略 Grid.Row（默认 0），第 1 行必须显式 Grid.Row="1"。
+            await Assert.That(rowTag.Contains($"Grid.Row=\"{row}\"", StringComparison.Ordinal))
+                .IsEqualTo(row == "1");
+
+            var pillIndex = text.IndexOf($"x:Name=\"{firstPill}\"", StringComparison.Ordinal);
+            await Assert.That(pillIndex).IsGreaterThan(rowPanelStart);
         }
     }
 
@@ -189,6 +218,14 @@ public sealed partial class NoticeLayoutTests
         await Assert.That(style.Contains("Property=\"Foreground\"", StringComparison.Ordinal)).IsTrue();
         await Assert.That(style.Contains("Property=\"FontSize\"", StringComparison.Ordinal)).IsTrue();
         await Assert.That(style.Contains("Property=\"Width\"", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>取 index 之前最近的某个开标签（如 "&lt;StackPanel"）的完整开标签文本（含 "&gt;"）。</summary>
+    private static string NearestOpenTag(string text, string openTagStart, int index)
+    {
+        var tagStart = text.LastIndexOf(openTagStart, index, StringComparison.Ordinal);
+        var tagEnd = text.IndexOf(">", tagStart, StringComparison.Ordinal);
+        return text[tagStart..(tagEnd + 1)];
     }
 
     /// <summary>取 notice Border 自身闭合范围内的内容（防止越界匹配到后续元素）。</summary>

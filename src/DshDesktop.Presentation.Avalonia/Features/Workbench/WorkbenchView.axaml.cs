@@ -21,7 +21,9 @@ namespace DshDesktop.Presentation.Avalonia.Features.Workbench;
 public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 {
     private readonly NativeWebView _webViewHost;
-    private readonly Border _placeholderOverlay;
+    private readonly Border _loadingOverlay;
+    private readonly TextBlock _loadingTitle;
+    private readonly TextBlock _loadingHint;
     private readonly DesktopBridgeProtocol _bridge = new();
     private string? _navigatedUrl;
 
@@ -33,8 +35,12 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         AvaloniaXamlLoader.Load(this);
         _webViewHost = this.FindControl<NativeWebView>("WebViewHost")
             ?? throw new InvalidOperationException("无法找到 WebViewHost 控件。");
-        _placeholderOverlay = this.FindControl<Border>("PlaceholderOverlay")
-            ?? throw new InvalidOperationException("无法找到 PlaceholderOverlay 控件。");
+        _loadingOverlay = this.FindControl<Border>("LoadingOverlay")
+            ?? throw new InvalidOperationException("无法找到 LoadingOverlay 控件。");
+        _loadingTitle = this.FindControl<TextBlock>("LoadingTitle")
+            ?? throw new InvalidOperationException("无法找到 LoadingTitle 控件。");
+        _loadingHint = this.FindControl<TextBlock>("LoadingHint")
+            ?? throw new InvalidOperationException("无法找到 LoadingHint 控件。");
 
         _webViewHost.NavigationStarted += (_, args) => OnNavigationStarted(args);
         _webViewHost.NavigationCompleted += (_, args) => OnNavigationCompleted(args);
@@ -53,14 +59,26 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         string url = args.Request?.ToString() ?? _navigatedUrl ?? string.Empty;
         if (args.IsSuccess)
         {
+            // 只有业务地址在途时的成功导航才撤遮罩。_navigatedUrl 为 null 表示这次完成的是
+            // 内部导航——Runtime 停回时那条 about:blank 复位，或 WebView 创建时的初始空白页，
+            // 它们同样报成功；若一并撤遮罩，用户会在已隐藏 WebView 的内容区看到一片空白。
+            if (_navigatedUrl is not null)
+            {
+                _loadingOverlay.IsVisible = false;
+            }
+
             ViewModel.NotifyNavigationCompleted(url);
             _ = InstallBridgeAsync();
         }
         else
         {
-            // 页内错误条已移除：失败只记日志（诊断中心可见），但仍要结束 Loading，
-            // 否则加载条会永久悬停。错误详情留在 Serilog 里。
+            // 导航失败：撤下原生 WebView、遮罩保留并换成失败文案。
+            // 页内错误条已移除（§21 Phase 6 修订注），但也不能直接撤掉遮罩——原生 WebView
+            // 会盖住任何 Avalonia 文案，撤掉只会露出它未渲染的黑底（airspace 约束）。
+            // 仍要结束 Loading，否则状态机会停在加载中；错误详情留在 Serilog / 诊断中心。
             Serilog.Log.Warning("Workbench.Navigation.Failed Url={Url}", url);
+            _webViewHost.IsVisible = false;
+            ShowLoadingOverlay("界面加载失败", "详情见诊断中心");
             ViewModel.NotifyNavigationCompleted(url);
         }
 
@@ -165,21 +183,36 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
     {
         if (dshUrl is not null && !string.Equals(dshUrl, _navigatedUrl, StringComparison.Ordinal))
         {
+            // 先露出原生 WebView 再导航：适配器是挂树后异步创建的，隐藏状态下能否缓存
+            // Navigate 没有实机依据，故不赌——显隐顺序固定为「可见 → 导航」。
+            _webViewHost.IsVisible = true;
             NavigateTo(dshUrl);
         }
         else if (dshUrl is null && _navigatedUrl is not null)
         {
-            // 回到占位态后复位 _navigatedUrl：保持"null ⟺ 未导航业务地址"口径，空 URL 状态不重复导航。
+            // 回到未就绪态后复位 _navigatedUrl：保持"null ⟺ 未导航业务地址"口径，空 URL 状态不重复导航。
             _webViewHost.Navigate(new Uri("about:blank", UriKind.Absolute));
+            _webViewHost.IsVisible = false;
             _navigatedUrl = null;
         }
 
-        _placeholderOverlay.IsVisible = dshUrl is null;
+        ShowLoadingOverlay("正在启动 DSH 工作台…", "Runtime 就绪后自动载入界面");
     }
 
     private void NavigateTo(string url)
     {
         _webViewHost.Navigate(new Uri(url, UriKind.Absolute));
         _navigatedUrl = url;
+    }
+
+    /// <summary>
+    /// 显示加载遮罩并写入文案。原生 WebView 在场时遮罩会被它盖住（airspace 约束），
+    /// 故调用方必须保证此刻 WebView 不可见。
+    /// </summary>
+    private void ShowLoadingOverlay(string title, string hint)
+    {
+        _loadingTitle.Text = title;
+        _loadingHint.Text = hint;
+        _loadingOverlay.IsVisible = true;
     }
 }

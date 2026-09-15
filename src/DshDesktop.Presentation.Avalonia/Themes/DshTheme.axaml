@@ -901,6 +901,52 @@
         </Style.Animations>
     </Style>
 
+    <!-- 小鲸鱼（工作台启动加载框）：一次迭代 = 一次从左到右的横穿，两端 Opacity=0，
+         故循环回跳不可见，也不会出现"倒着游"；叠加一条异步长动画做上下浮沉。
+         🚨 关键帧只能打 transform 的**分量**：Property="RenderTransform" 未注册动画器，
+         样式在挂载阶段就解析失败，会把整个应用打死在启动之前（ThemeResourceTests 有守卫）。 -->
+    <Style Selector="Path.whale">
+        <Setter Property="Width" Value="44" />
+        <Setter Property="Height" Value="44" />
+        <Setter Property="Stroke" Value="{DynamicResource DshAccentBrush}" />
+        <Setter Property="StrokeThickness" Value="1.8" />
+        <Setter Property="StrokeLineCap" Value="Round" />
+        <Setter Property="Fill" Value="Transparent" />
+        <Setter Property="Stretch" Value="Uniform" />
+        <Setter Property="RenderTransform">
+            <TranslateTransform />
+        </Setter>
+        <Style.Animations>
+            <Animation Duration="0:0:2.4" IterationCount="Infinite">
+                <KeyFrame Cue="0%">
+                    <Setter Property="TranslateTransform.X" Value="-38" />
+                    <Setter Property="Opacity" Value="0" />
+                </KeyFrame>
+                <KeyFrame Cue="16%">
+                    <Setter Property="Opacity" Value="1" />
+                </KeyFrame>
+                <KeyFrame Cue="84%">
+                    <Setter Property="Opacity" Value="1" />
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="TranslateTransform.X" Value="38" />
+                    <Setter Property="Opacity" Value="0" />
+                </KeyFrame>
+            </Animation>
+            <Animation Duration="0:0:1.6" IterationCount="Infinite" Easing="SineEaseInOut">
+                <KeyFrame Cue="0%">
+                    <Setter Property="TranslateTransform.Y" Value="-3" />
+                </KeyFrame>
+                <KeyFrame Cue="50%">
+                    <Setter Property="TranslateTransform.Y" Value="3" />
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="TranslateTransform.Y" Value="-3" />
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+
     <!-- ============================================================
          提示条
          布局契约（由 NoticeLayoutTests 固化，XAML 编译器看不见）：

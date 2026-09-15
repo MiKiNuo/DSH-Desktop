@@ -7,37 +7,44 @@
     x:DataType="vm:WorkbenchViewModel">
     <!--
       Workbench 页（Phase 8 Issue 06，视觉基准 docs/DSH-Desktop-UI-Redesign.html #p-workbench）：
-      用户精简后本页只保留内容区——WebView 直接铺满，外加占位层与加载条。
+      用户精简后本页只保留内容区——WebView 铺满，外加启动加载框。
       工具条（后退/前进/刷新）、端口标记、页内错误条已移除，见 §21 Phase 6 修订注。
-      不再需要卡片外框：它原本是为了和上方工具条分隔，工具条没了外框只会多一圈边框。
+
+      🚨 NativeWebView 是 Win32 原生子窗口宿主。Avalonia 官方 native-interop 文档的 airspace
+      约束：原生视图永远渲染在 Avalonia 内容之上，任何 Avalonia 遮罩都盖不住它。
+      所以加载期必须让两者互斥——WebView 初始隐藏，遮罩独占内容区；
+      之后由 code-behind 按 DshUrl / 导航结果切换（守卫见 WorkbenchLoadingOverlayTests）。
     -->
     <Grid>
-        <web:NativeWebView x:Name="WebViewHost" />
-        <ProgressBar
-            Classes="bar"
-            IsIndeterminate="True"
-            IsVisible="{Binding Loading}"
-            VerticalAlignment="Top"
-            Margin="0" />
-        <Border x:Name="PlaceholderOverlay" Background="{DynamicResource DshSurface1Brush}">
-            <StackPanel
+        <web:NativeWebView x:Name="WebViewHost" IsVisible="False" />
+        <Border x:Name="LoadingOverlay" Background="{DynamicResource DshBgBrush}">
+            <Border
+                Classes="card"
+                Width="320"
                 HorizontalAlignment="Center"
-                VerticalAlignment="Center"
-                Spacing="10">
-                <Path
-                    Classes="icon icon-lg"
-                    Data="{DynamicResource IconTerminal}"
-                    HorizontalAlignment="Center" />
-                <TextBlock
-                    FontSize="18"
-                    FontWeight="SemiBold"
-                    Text="等待 Runtime 就绪…"
-                    HorizontalAlignment="Center" />
-                <TextBlock
-                    Foreground="{DynamicResource DshText3Brush}"
-                    Text="DSH Web UI 将在 Runtime 启动完成后装载"
-                    HorizontalAlignment="Center" />
-            </StackPanel>
+                VerticalAlignment="Center">
+                <StackPanel Margin="20,22">
+                    <Panel Height="60">
+                        <Path
+                            x:Name="LoadingWhale"
+                            Classes="whale"
+                            Data="{DynamicResource IconWhale}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
+                    </Panel>
+                    <TextBlock
+                        x:Name="LoadingTitle"
+                        Classes="modal-title"
+                        Margin="0,10,0,0"
+                        HorizontalAlignment="Center"
+                        Text="正在启动 DSH 工作台…" />
+                    <TextBlock
+                        x:Name="LoadingHint"
+                        Classes="modal-body"
+                        HorizontalAlignment="Center"
+                        Text="Runtime 就绪后自动载入界面" />
+                </StackPanel>
+            </Border>
         </Border>
     </Grid>
 </UserControl>

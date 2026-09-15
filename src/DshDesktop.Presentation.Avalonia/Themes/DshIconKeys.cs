@@ -48,4 +48,7 @@ public static class DshIconKeys
     public const string Clock = "IconClock";
     public const string Drive = "IconDrive";
     public const string Power = "IconPower";
+
+    /// <summary>工作台启动加载框里游动的小鲸鱼（不在 UI 图标契约的 29 键内）。</summary>
+    public const string Whale = "IconWhale";
 }
