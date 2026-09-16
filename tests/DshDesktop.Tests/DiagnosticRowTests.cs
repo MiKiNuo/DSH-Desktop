@@ -42,4 +42,22 @@ public sealed class DiagnosticRowTests
         await Assert.That(error.IsError).IsTrue();
         await Assert.That(error.IsWarning).IsFalse();
     }
+
+    /// <summary>
+    /// 级别短标签（原由视图层 <c>DiagnosticLevelConverter</c> 承担，2026-09-17 下沉到行投影）：
+    /// Debug 与 Info 同显 INFO，其余一一对应；剪贴板正文复用同一标签。
+    /// </summary>
+    [Test]
+    public async Task Row_LevelText_MapsEveryLevel()
+    {
+        await Assert.That(LevelTextOf(DiagnosticLevel.Success)).IsEqualTo("OK");
+        await Assert.That(LevelTextOf(DiagnosticLevel.Warning)).IsEqualTo("WARN");
+        await Assert.That(LevelTextOf(DiagnosticLevel.Error)).IsEqualTo("ERROR");
+        await Assert.That(LevelTextOf(DiagnosticLevel.Info)).IsEqualTo("INFO");
+        await Assert.That(LevelTextOf(DiagnosticLevel.Debug)).IsEqualTo("INFO");
+    }
+
+    private static string LevelTextOf(DiagnosticLevel level)
+        => new DiagnosticRow(new DiagnosticEvent(
+            DateTimeOffset.Now, DiagnosticSource.App, level, "m")).LevelText;
 }

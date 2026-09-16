@@ -15,6 +15,15 @@ public sealed record DiagnosticRow(DiagnosticEvent Event)
     /// <summary>获取消息文本。</summary>
     public string Message => Event.Message;
 
+    /// <summary>获取级别短标签（OK / INFO / WARN / ERROR），供控制台级别列与剪贴板正文复用。</summary>
+    public string LevelText => Event.Level switch
+    {
+        DiagnosticLevel.Success => "OK",
+        DiagnosticLevel.Warning => "WARN",
+        DiagnosticLevel.Error => "ERROR",
+        _ => "INFO",
+    };
+
     /// <summary>获取是否成功行（log-ok 绿；Phase 8 评审 F10：显式 Success 级别，不嗅探消息前缀）。</summary>
     public bool IsOk => Event.Level is DiagnosticLevel.Success;
 

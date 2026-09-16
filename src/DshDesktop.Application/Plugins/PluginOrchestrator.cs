@@ -140,6 +140,9 @@ public sealed class PluginOrchestrator(
     {
         Publish(PluginOperationStage.RollingBack, pluginName, null);
 
+        // 快照恢复失败也要继续「尽力重启 Runtime」——早退会让被事务杀掉的 Runtime 无人拉起。
+        // restoreFailure 保留真实原因，并入下方唯一的 Failed 发布（保证 Failed 只发一次）。
+        string? restoreFailure = null;
         if (snapshotId is not null)
         {
             try
@@ -151,9 +154,7 @@ public sealed class PluginOrchestrator(
                 _logger.Error(
                     DiagnosticEventNames.PluginRollbackPrefix + "RestoreFailed {Error}",
                     restoreException.Message);
-                Publish(PluginOperationStage.Failed, pluginName,
-                    $"{error}（回滚恢复也失败：{restoreException.Message}）");
-                return;
+                restoreFailure = $"{error}（回滚恢复也失败：{restoreException.Message}）";
             }
         }
 
@@ -169,7 +170,7 @@ public sealed class PluginOrchestrator(
                 restartException.Message);
         }
 
-        Publish(PluginOperationStage.Failed, pluginName, error);
+        Publish(PluginOperationStage.Failed, pluginName, restoreFailure ?? error);
     }
 
     private void Publish(PluginOperationStage stage, string? pluginName, string? error)

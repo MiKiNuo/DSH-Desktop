@@ -64,6 +64,47 @@ public sealed class RuntimeReducerTests
     }
 
     [Test]
+    public async Task RuntimeStopOrchestrated_WhileRunning_TransitionsToStoppingWithoutEffect()
+    {
+        var result = _reducer.Reduce(RunningState(), new RuntimeIntent.RuntimeStopOrchestrated());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Stopping);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeStopOrchestrated_WhileStopped_IsIgnored()
+    {
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.RuntimeStopOrchestrated());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Stopped);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeStopOrchestrated_WhileFailed_IsIgnored()
+    {
+        RuntimeState failed = RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Failed };
+
+        var result = _reducer.Reduce(failed, new RuntimeIntent.RuntimeStopOrchestrated());
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Failed);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task OrchestratedStop_ThenExited_DoesNotReportCrash()
+    {
+        // 用户症状回归：插件事务经编排停止 Runtime（回流 StopOrchestrated），
+        // 进程退出码 -1 不再被判为崩溃，应落到 Stopped 而非 Failed。
+        var stopping = _reducer.Reduce(RunningState(), new RuntimeIntent.RuntimeStopOrchestrated());
+        var result = _reducer.Reduce(stopping.State, new RuntimeIntent.RuntimeExited(-1));
+
+        await Assert.That(result.State.Lifecycle).IsEqualTo(RuntimeLifecycle.Stopped);
+        await Assert.That(result.State.LastError).IsNotEqualTo("Runtime 意外退出（退出码 -1）。");
+    }
+
+    [Test]
     public async Task RestartRuntime_FromRunning_TransitionsToStartingWithEffect()
     {
         var result = _reducer.Reduce(RunningState(), new RuntimeIntent.RestartRuntime());

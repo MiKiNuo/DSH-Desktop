@@ -1,11 +1,14 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Data.Converters;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.VisualTree;
 using DshDesktop.Domain.Diagnostics;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
@@ -13,7 +16,8 @@ using MiKiNuo.Mvi.Presentation.Disposables;
 namespace DshDesktop.Presentation.Avalonia.Features.Diagnostics;
 
 /// <summary>
-/// 表示 Diagnostics 视图：Live 控制台 + 搜索/级别过滤 + 空状态切换 + 新事件到达时自动滚到底部；
+/// 表示 Diagnostics 视图：Live 控制台 + 搜索/级别过滤 + 空状态切换 + 新事件到达时自动滚到底部 +
+/// 右键复制日志（单条 / 当前筛选全部）；
 /// 导出诊断包经 Avalonia StorageProvider 保存对话框取目标路径（对话框属 View 层职责）。
 /// </summary>
 public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewModel>
@@ -30,6 +34,7 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
     private readonly Button[] _filterButtons;
     private string _levelFilter = "all";
     private DiagnosticsViewModel? _viewModel;
+    private DiagnosticRow? _contextRow;
 
     /// <summary>
     /// 初始化 Diagnostics 视图。
@@ -40,6 +45,8 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
         _entriesList = this.FindControl<ListBox>("EntriesList")
             ?? throw new InvalidOperationException("无法找到 EntriesList 控件。");
         _entriesList.ItemsSource = _rows;
+        // 日志行不可选中，右键菜单是唯一拷贝通道：先登记目标行，再交给菜单项处理器。
+        _entriesList.ContextRequested += OnContextRequested;
         _emptyBorder = this.FindControl<Border>("EmptyState")
             ?? throw new InvalidOperationException("无法找到 EmptyState 控件。");
         _searchBox = this.FindControl<TextBox>("SearchBox")
@@ -157,6 +164,53 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
     }
 
     /// <summary>
+    /// 右键请求：登记本次要拷贝的目标行。
+    /// 右键菜单挂在 ListBox 上，弹层不继承行 DataContext（Avalonia 12 的 Popup 只把菜单挂到逻辑父级），
+    /// 故从命中元素沿视觉树上溯 ListBoxItem 取行数据；列表空白区命中不到行时回落到当前选中行。
+    /// </summary>
+    private void OnContextRequested(object? sender, ContextRequestedEventArgs args)
+    {
+        ListBoxItem? item = (args.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
+        _contextRow = item?.DataContext as DiagnosticRow ?? _entriesList.SelectedItem as DiagnosticRow;
+    }
+
+    /// <summary>复制被右键的那条日志（时间戳 + 级别 + 正文，多行堆栈原样保留）。</summary>
+    private async void OnCopyRowClicked(object? sender, RoutedEventArgs args)
+    {
+        if (_contextRow is { } row)
+        {
+            await CopyToClipboardAsync(DiagnosticCopyText.ForRow(row));
+        }
+    }
+
+    /// <summary>复制当前筛选（级别分段 + 搜索词）命中的全部日志。</summary>
+    private async void OnCopyAllClicked(object? sender, RoutedEventArgs args)
+    {
+        if (_rows.Count > 0)
+        {
+            await CopyToClipboardAsync(DiagnosticCopyText.ForRows(_rows));
+        }
+    }
+
+    /// <summary>写系统剪贴板；写入失败非致命（async void 无人兜底，吞掉防崩进程）。</summary>
+    private async Task CopyToClipboardAsync(string text)
+    {
+        if (TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard)
+        {
+            return;
+        }
+
+        try
+        {
+            await clipboard.SetTextAsync(text);
+        }
+        catch (Exception)
+        {
+            return; // 剪贴板被占用等情况下静默放弃，不影响页面其余功能。
+        }
+    }
+
+    /// <summary>
     /// 导出诊断包：保存文件对话框取目标路径后经命令产生 Intent（View 只产生 Intent，§5 规则 1）。
     /// </summary>
     private async void OnExportClicked(object? sender, RoutedEventArgs args)
@@ -187,24 +241,4 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
             _viewModel.ExportDiagnosticsBundleCommand.Execute(file.Path.LocalPath);
         }
     }
-}
-
-/// <summary>
-/// 把 <see cref="DiagnosticRow"/> 映射为级别短标签（OK / INFO / WARN / ERROR），供 log-level 列展示。
-/// </summary>
-internal sealed class DiagnosticLevelConverter : IValueConverter
-{
-    /// <inheritdoc />
-    public object? Convert(object? value, Type? targetType, object? parameter, CultureInfo? culture)
-        => value switch
-        {
-            DiagnosticRow { IsOk: true } => "OK",
-            DiagnosticRow { IsWarning: true } => "WARN",
-            DiagnosticRow { IsError: true } => "ERROR",
-            _ => "INFO",
-        };
-
-    /// <inheritdoc />
-    public object? ConvertBack(object? value, Type? targetType, object? parameter, CultureInfo? culture)
-        => throw new NotSupportedException();
 }

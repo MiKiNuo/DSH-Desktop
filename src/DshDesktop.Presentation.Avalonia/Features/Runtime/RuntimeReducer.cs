@@ -56,6 +56,24 @@ public sealed partial class RuntimeReducer
     }
 
     /// <summary>
+    /// 处理编排停止回流意图：无副作用，仅把生命周期对齐到 Stopping，标明即将停止。
+    /// 与 HandleStopRuntime 不同——不声明 RuntimeEffect.StopRuntime，避免与插件事务等外部编排的
+    /// 真实停止发生并发双停。仅 Running / Starting 合法迁移，其余状态忽略。
+    /// </summary>
+    [MviReduce(typeof(RuntimeIntent.RuntimeStopOrchestrated))]
+    private MviReduceResult<RuntimeState, RuntimeEffect> HandleRuntimeStopOrchestrated(
+        RuntimeState state,
+        RuntimeIntent.RuntimeStopOrchestrated intent)
+    {
+        if (state.Lifecycle is not (RuntimeLifecycle.Running or RuntimeLifecycle.Starting))
+        {
+            return Unchanged(state);
+        }
+
+        return Unchanged(state with { Lifecycle = RuntimeLifecycle.Stopping });
+    }
+
+    /// <summary>
     /// 处理重启 Runtime 意图（ADR-0004）：仅 Running / Failed 可重启，其余状态忽略。
     /// </summary>
     [MviReduce(typeof(RuntimeIntent.RestartRuntime))]

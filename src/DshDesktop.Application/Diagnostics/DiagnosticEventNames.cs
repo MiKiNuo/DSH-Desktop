@@ -19,6 +19,12 @@ public static class DiagnosticEventNames
     /// <summary>连续启动失败自动进入安全模式事件名（ADR-0004 修订注，Phase 8 Issue 04，组合根发）。</summary>
     public const string RuntimeAutoSafeModeEntered = "Runtime.AutoSafeMode.Entered";
 
+    /// <summary>
+    /// Runtime Failed 后的有界自动恢复发起事件名（ADR-0007，组合根发，Message 附带尝试次数）。
+    /// 只在「新进入 Failed」这一沿触发且每次失败周期仅一次，不构成重启循环。
+    /// </summary>
+    public const string RuntimeAutoRecoveryAttempted = "Runtime.AutoRecovery.Attempted";
+
     /// <summary>运行诊断开始事件名（Phase 8 Issue 06，DiagnosisRunner 发）。</summary>
     public const string DiagnosisStarted = "Diagnosis.Started";
 
@@ -56,4 +62,11 @@ public static class DiagnosticEventNames
     /// （顶部常驻「安装插件前需要先配置 pnpm 环境」）。缺 resources\pnpm-runner.mjs 或数据根不可写时发。
     /// </summary>
     public const string ToolBinProvisionFailed = "Runtime.ToolBin.ProvisionFailed";
+
+    /// <summary>
+    /// pnpm 自举失败事件名（pnpm 不可用时用宿主 npm 安装到 &lt;dataRoot&gt;\tools\pnpm）。
+    /// 非致命：装不了插件 ≠ 应用起不来；自举失败只留日志，宿主插件页 / profile 回滚重建本运行不可用，
+    /// 但 Runtime 全链路照常初始化。
+    /// </summary>
+    public const string PnpmProvisionFailed = "Runtime.Pnpm.ProvisionFailed";
 }

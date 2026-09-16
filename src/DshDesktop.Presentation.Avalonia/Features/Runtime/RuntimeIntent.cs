@@ -19,6 +19,11 @@ public abstract partial record RuntimeIntent : IMviIntent
     public sealed partial record StopRuntime : RuntimeIntent;
 
     /// <summary>
+    /// 表示 Runtime 已被外部编排（插件事务等）请求停止的回流意图：无副作用，仅把生命周期对齐到 Stopping。
+    /// </summary>
+    public sealed partial record RuntimeStopOrchestrated : RuntimeIntent;
+
+    /// <summary>
     /// 表示重启 Runtime 意图（ADR-0004：Stop+Start 原子编排，仅 Running / Failed 合法）。
     /// </summary>
     public sealed partial record RestartRuntime : RuntimeIntent;

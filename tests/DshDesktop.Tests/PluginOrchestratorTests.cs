@@ -73,6 +73,37 @@ public sealed class PluginOrchestratorTests
     }
 
     [Test]
+    public async Task InstallAsync_WhenRollbackRestoreFails_StillRestartsRuntime()
+    {
+        // 回归：快照恢复也失败时，RollbackAsync 不能提前 return 跳过「尽力重启 Runtime」，
+        // 否则被事务杀掉的 Runtime 无人拉起（用户必须人工点「重试启动」）。
+        // §19：Restore 失败也必须重启原 Runtime，且 Failed 只发布一次，错误含真实原因。
+        var pluginManager = new FailingPluginManager();
+        var snapshotter = new FakeProfileSnapshotter { ThrowOnRestore = true };
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var operations = new List<PluginOperation>();
+        orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
+
+        await Assert.That(async () => await orchestrator.InstallAsync("bad-plugin", CancellationToken.None))
+            .Throws<InvalidOperationException>();
+
+        // Runtime 仍被尽力重启（修复前快照恢复失败会跳过此处）。
+        await Assert.That(supervisor.StartCount).IsEqualTo(1);
+        // Failed 阶段只发布一次。
+        await Assert.That(operations.Count(o => o.Stage == PluginOperationStage.Failed)).IsEqualTo(1);
+        PluginOperation failed = operations.Single(o => o.Stage == PluginOperationStage.Failed);
+        // 错误文案同时包含原始安装错误与「回滚恢复也失败」的真实原因。
+        await Assert.That(failed.Error).Contains("npm 安装失败（Fake）");
+        await Assert.That(failed.Error).Contains("回滚恢复也失败");
+    }
+
+    [Test]
     public async Task InstallAsync_Success_CompletesFullStageSequence()
     {
         var pluginManager = new SucceedingPluginManager();
@@ -230,6 +261,8 @@ public sealed class PluginOrchestratorTests
 
         public int CreateCount { get; private set; }
 
+        public bool ThrowOnRestore { get; set; }
+
         public Task<string> CreateSnapshotAsync(CancellationToken cancellationToken)
         {
             CreateCount++;
@@ -238,6 +271,11 @@ public sealed class PluginOrchestratorTests
 
         public Task RestoreAsync(string snapshotId, CancellationToken cancellationToken)
         {
+            if (ThrowOnRestore)
+            {
+                throw new InvalidOperationException("快照恢复失败（Fake）");
+            }
+
             RestoredSnapshotId = snapshotId;
             return Task.CompletedTask;
         }

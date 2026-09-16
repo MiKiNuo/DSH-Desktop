@@ -47,12 +47,38 @@ public sealed class PageLoadTriggerTests
         await Assert.That(body.Contains("LoadSettingsCommand.Execute", StringComparison.Ordinal)).IsTrue();
     }
 
+    [Test]
+    public async Task OnBindBodyAsync_HandlesCrLfNewlines()
+    {
+        // 回归：CI 的 Windows runner 用 core.autocrlf=true 把源文件检出为 CRLF。
+        // 此时方法收尾只有 "\r\n    }\r\n"，原锚点 "\n    }\n" 匹配不到（end == -1）。
+        // 本方法必须能在 CRLF 换行下切出 OnBind 方法体。
+        var source = string.Join("\r\n", new[]
+        {
+            "namespace X;",
+            "public class V",
+            "{",
+            "    protected override void OnBind()",
+            "    {",
+            "        __CR_LF_MARKER__LoadPluginsCommand.Execute(null);",
+            "    }",
+            "}",
+        });
+
+        var body = await OnBindBodyAsync(source);
+        await Assert.That(body.Contains("__CR_LF_MARKER__LoadPluginsCommand.Execute", StringComparison.Ordinal)).IsTrue();
+    }
+
     /// <summary>
     /// 切出 <c>OnBind</c> 方法体（从声明到 4 空格缩进的方法收尾大括号；方法内的 lambda
     /// 缩进更深，不会误切）。
     /// </summary>
     private static async Task<string> OnBindBodyAsync(string source)
     {
+        // CI 的 Windows runner 用 core.autocrlf=true 把源文件检出为 CRLF，
+        // 方法收尾是 "\r\n    }\r\n" 而非 "\n    }\n"，归一化后锚点才能匹配。
+        source = source.Replace("\r\n", "\n");
+
         const string marker = "protected override void OnBind";
         var start = source.IndexOf(marker, StringComparison.Ordinal);
         await Assert.That(start >= 0).IsTrue();

@@ -270,6 +270,54 @@ public static class DshDesktopConfigStore
     }
 
     /// <summary>
+    /// 迁移补全配置中的工具路径（PnpmCjsPath / NpmCjsPath）：字段为空，或字段指向的文件已不存在时
+    /// 重推导；重推导失败（且仅当非空失效）则清除该陈旧值（置 null），避免保留已知失效的绝对路径
+    /// （本任务缺陷：陈旧非空路径永不修正，致插件安装 / 回滚重建失败）。
+    /// 仅原地修改 loaded，返回是否发生变更。internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="loaded">已加载的配置实例（原地修改）。</param>
+    /// <returns>是否发生了修改。</returns>
+    internal static bool HealToolPaths(DshDesktopConfig loaded)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        bool dirty = false;
+
+        // pnpm.cjs：为空或指向文件已失效时重推导；非空失效且推导失败则清除陈旧值。
+        bool pnpmStale = !string.IsNullOrEmpty(loaded.PnpmCjsPath) && !File.Exists(loaded.PnpmCjsPath);
+        if (string.IsNullOrEmpty(loaded.PnpmCjsPath) || pnpmStale)
+        {
+            if (DerivePnpmCjsPath(loaded.DshEntryPath) is { } derivedPnpm)
+            {
+                loaded.PnpmCjsPath = derivedPnpm;
+                dirty = true;
+            }
+            else if (pnpmStale)
+            {
+                loaded.PnpmCjsPath = null;
+                dirty = true;
+            }
+        }
+
+        // npm-cli.js：同 pnpm 规则（不校验 NodePath 本身，遵循 Detect / DesktopBinProvisioner 约定）。
+        bool npmStale = !string.IsNullOrEmpty(loaded.NpmCjsPath) && !File.Exists(loaded.NpmCjsPath);
+        if (string.IsNullOrEmpty(loaded.NpmCjsPath) || npmStale)
+        {
+            if (DeriveNpmCjsPath(loaded.NodePath) is { } derivedNpm)
+            {
+                loaded.NpmCjsPath = derivedNpm;
+                dirty = true;
+            }
+            else if (npmStale)
+            {
+                loaded.NpmCjsPath = null;
+                dirty = true;
+            }
+        }
+
+        return dirty;
+    }
+
+    /// <summary>
     /// 加载配置；文件不存在时自动探测并回写。
     /// </summary>
     /// <param name="cancellationToken">取消标记。</param>
@@ -283,19 +331,10 @@ public static class DshDesktopConfigStore
             DshDesktopConfig? loaded = await LoadFromPathAsync(ConfigPath, cancellationToken).ConfigureAwait(false);
             if (loaded is not null)
             {
-                // 配置迁移：老配置缺少工具路径时推导补全并回写。
+                // 配置迁移：老配置缺少 / 失效工具路径时推导补全（见 HealToolPaths）。
                 bool dirty = false;
-                if (string.IsNullOrEmpty(loaded.PnpmCjsPath)
-                    && DerivePnpmCjsPath(loaded.DshEntryPath) is { } derivedPnpm)
+                if (HealToolPaths(loaded))
                 {
-                    loaded.PnpmCjsPath = derivedPnpm;
-                    dirty = true;
-                }
-
-                if (string.IsNullOrEmpty(loaded.NpmCjsPath)
-                    && DeriveNpmCjsPath(loaded.NodePath) is { } derivedNpm)
-                {
-                    loaded.NpmCjsPath = derivedNpm;
                     dirty = true;
                 }
 

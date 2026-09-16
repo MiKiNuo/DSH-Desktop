@@ -80,6 +80,16 @@ public sealed partial class DshCompositionRoot
     // 并发 File.Create（无共享）会丢写。
     private readonly SemaphoreSlim _configSaveLock = new(1, 1);
 
+    // ADR-0007：Runtime 进入 Failed 后的有界自动恢复（每个失败周期最多 1 次自动重试）。
+    private static readonly TimeSpan RecoveryRetryDelay = TimeSpan.FromSeconds(3);
+    private readonly BoundedRecoveryPlanner _recoveryPlanner = new();
+
+    // Runtime 状态订阅与生命周期取消源：随 Shutdown 取消/释放，
+    // 避免应用退出后仍有排队中的恢复意图被派发。
+    private readonly CancellationTokenSource _lifetimeSource = new();
+    private IDisposable? _runtimeLifecycleSubscription;
+    private RuntimeLifecycle _lastLifecycle = RuntimeLifecycle.Stopped;
+
     /// <summary>
     /// 获取是否处于安全模式（抑制自动启动）。
     /// </summary>
@@ -223,6 +233,35 @@ public sealed partial class DshCompositionRoot
 
         _config = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
         ApplyTheme(_config.Theme);
+
+        // pnpm 不可用时用宿主 npm 自举到 <dataRoot>\tools\pnpm，并回写 config。
+        // 必须早于 ProfileSeeder（其 EnsureDependenciesAsync 会直用 pnpm，路径无效即抛 → 整个
+        // InitializeRuntimeAsync 抛 → 被 App.axaml.cs 吞成 Desktop.Bootstrap.Failed → 窗口能开但
+        // Runtime 全链路不初始化）；也早于 PluginProfileRepository / ProfileSnapshotter 构造时固化路径。
+        string? provisionedPnpm = await PnpmProvisioner
+            .EnsureAvailableAsync(
+                DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (provisionedPnpm is not null
+            && !string.Equals(provisionedPnpm, _config.PnpmCjsPath, StringComparison.Ordinal))
+        {
+            _config.PnpmCjsPath = provisionedPnpm;
+            try
+            {
+                // 持久化失败不得中断启动：内存里的 _config.PnpmCjsPath 已更新、本运行已生效；
+                // 落盘只为下次。SaveConfigAsync 用不可重入 SemaphoreSlim，此处不在持锁区间，安全。
+                await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                Log.Logger.Warning(
+                    exception,
+                    "pnpm 自举路径已生效于本次运行，但配置落盘失败（下次启动将重新自举）：{Error}",
+                    exception.Message);
+            }
+        }
+
         await ProfileSeeder
             .SeedIfNeededAsync(
                 _config.DshHome,
@@ -280,6 +319,10 @@ public sealed partial class DshCompositionRoot
         // 安全模式状态回流（跨重启恢复，§15.1 SafeMode）。
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         _ = store.DispatchAsync(new RuntimeIntent.SafeModeChanged(_config.SafeMode));
+
+        // ADR-0007：Failed 后的有界自动恢复。只在「新进入 Failed」这一沿触发一次自动重试，
+        // 成功后重置——不构成崩溃重启循环（ADR-0004 的禁令不变，本项是其最小放宽）。
+        _runtimeLifecycleSubscription = store.States.Subscribe(OnRuntimeStateChanged);
 
         // Phase 8 Issue 04：三策略开关与运行环境信息回流（config 为权威源，覆盖 State.Initial 默认值）。
         _ = store.DispatchAsync(new RuntimeIntent.PoliciesLoaded(
@@ -369,6 +412,12 @@ public sealed partial class DshCompositionRoot
     /// </summary>
     public void Shutdown()
     {
+        // ADR-0007：先停掉自动恢复——退出流程自身会触发 Runtime 退出事件（MVI 侧可能落 Failed），
+        // 若此时仍允许恢复，会在退出过程中重新拉起 Runtime。
+        // 只取消不释放：排队中的恢复任务仍持有该令牌，释放后访问其 Token 会抛 ObjectDisposedException。
+        _runtimeLifecycleSubscription?.Dispose();
+        _lifetimeSource.Cancel();
+
         _notificationSubscriber?.Dispose();
         _notificationService?.Dispose();
         _metricsMonitor?.Dispose();
@@ -867,6 +916,14 @@ public sealed partial class DshCompositionRoot
         IMviStore<PluginsState, PluginsIntent, PluginsEffect> store =
             _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
         _ = store.DispatchAsync(new PluginsIntent.PluginOperationChanged(operation));
+
+        // 编排停止回流：插件事务在真正 StopAsync 之前就发布 StoppingRuntime（见 PluginOrchestrator），
+        // 此处把 MVI 生命周期提前对齐 Stopping，使随后的进程退出（-1）被判定为用户请求的停止而非崩溃。
+        if (operation.Stage is PluginOperationStage.StoppingRuntime)
+        {
+            IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore = ResolveRuntimeStore();
+            _ = runtimeStore.DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated());
+        }
     }
 
     private async ValueTask<IReadOnlyList<PluginInfo>> HandleGetPluginListAsync(
@@ -1094,6 +1151,15 @@ public sealed partial class DshCompositionRoot
         // Phase 8 Issue 04（ADR-0005）：Running 快照的 PID/端口写入 config，作下次启动重接管探测依据
         // （PID/端口非 Session 数据，允许落盘；Session URL 仍禁止落盘）。
         PersistReattachTarget(snapshot);
+
+        // 事实对账：supervisor 是真实状态源。插件链路与切换 Runtime 版本链路都直连 supervisor 启动且从不回流，
+        // 导致进程已 Running 但 MVI 仍停在 Stopped/Failed 等。此处把状态与事实对齐，补发 RuntimeStarted。
+        if (snapshot.Lifecycle is RuntimeLifecycle.Running
+            && store.CurrentState.Lifecycle is not RuntimeLifecycle.Running)
+        {
+            _ = store.DispatchAsync(new RuntimeIntent.RuntimeStarted(
+                snapshot.ProcessId, snapshot.Port, snapshot.Url ?? string.Empty));
+        }
     }
 
     private void PersistReattachTarget(RuntimeSnapshot snapshot)
@@ -1209,6 +1275,64 @@ public sealed partial class DshCompositionRoot
     {
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         _ = store.DispatchAsync(new RuntimeIntent.RuntimeExited(args.ExitCode));
+    }
+
+    /// <summary>
+    /// Runtime 生命周期变化回调（ADR-0007）：Running 时重置恢复计数；「新进入 Failed」这一沿
+    /// 放行一次有界自动重试。只在沿上触发，避免同一 Failed 的重复通知反复计数。
+    /// </summary>
+    private void OnRuntimeStateChanged(RuntimeState state)
+    {
+        RuntimeLifecycle previous = _lastLifecycle;
+        _lastLifecycle = state.Lifecycle;
+
+        if (state.Lifecycle is RuntimeLifecycle.Running)
+        {
+            _recoveryPlanner.Reset();
+            return;
+        }
+
+        if (state.Lifecycle is not RuntimeLifecycle.Failed || previous is RuntimeLifecycle.Failed)
+        {
+            return;
+        }
+
+        if (!_recoveryPlanner.TryBeginAttempt())
+        {
+            return;
+        }
+
+        Log.Logger.Warning(
+            DiagnosticEventNames.RuntimeAutoRecoveryAttempted + " Attempt={Attempt}",
+            BoundedRecoveryPlanner.MaxAttemptsPerFailure);
+
+        _ = RetryStartAfterDelayAsync(_lifetimeSource.Token);
+    }
+
+    /// <summary>
+    /// 延迟后派发一次启动意图（ADR-0007）。短暂延迟避开「刚失败即重试」的紧密循环，
+    /// 也留给用户界面把 Failed 渲染出来。取消（应用退出）时静默放弃。
+    /// </summary>
+    private async Task RetryStartAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(RecoveryRetryDelay, cancellationToken).ConfigureAwait(false);
+            await ResolveRuntimeStore()
+                .DispatchAsync(new RuntimeIntent.StartRuntime(), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // 应用退出：放弃本次自动恢复（用户可见的 Failed 面板仍在，可手动重试）。
+        }
+        catch (Exception exception)
+        {
+            // fire-and-forget：任何意外都必须自己吞掉，绝不让恢复逻辑拖垮宿主。
+            Log.Logger.Warning(
+                DiagnosticEventNames.RuntimeAutoRecoveryAttempted + " DispatchFailed {Error}",
+                exception.Message);
+        }
     }
 
     private void OnProcessOutputReceived(object? sender, ProcessOutputLineEventArgs args)
