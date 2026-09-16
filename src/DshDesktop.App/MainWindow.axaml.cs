@@ -16,9 +16,7 @@ using DshDesktop.Presentation.Avalonia.Features.Settings;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using DshDesktop.Presentation.Avalonia.Features.Workbench;
 using MiKiNuo.Mvi.Application.DI;
-using MiKiNuo.Mvi.Application.MVI.Store;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
-using R3;
 
 namespace DshDesktop.App;
 
@@ -159,6 +157,16 @@ public sealed partial class MainWindow : Window
             {
                 ApplyUpdateScrim();
             }
+            else if (args.PropertyName == nameof(AppShellViewModel.PluginOperation))
+            {
+                ApplyPluginOperationToastOnUiThread();
+            }
+            else if (args.PropertyName
+                is nameof(AppShellViewModel.UpdateDownloadPercent)
+                or nameof(AppShellViewModel.UpdateOperationText))
+            {
+                ApplyUpdateScrimContentOnUiThread();
+            }
         };
 
         // 二次确认弹层：取消 / 确认两个按钮收口到同一 TaskCompletionSource。
@@ -221,10 +229,10 @@ public sealed partial class MainWindow : Window
     /// <param name="text">提示文本。</param>
     public void ShowToast(string text)
     {
-        // MainWindow 直接订阅 store.States（Plugins / Runtime），而 MviStore.DispatchAsync 在**派发线程**
-        // 上同步发布 State；组合根又是在后台线程派发 intent 的（插件编排 OperationChanged、Runtime 快照），
-        // 故这些订阅回调运行在线程池线程上。三个 toast 场景（插件终态 / 更新徽标 / Runtime 恢复）都在
-        // 此处收口，故在此编组：已在 UI 线程同步执行，否则投递后返回（2026-09-14 实机崩溃回归）。
+        // 三个 toast 场景（插件终态 / 更新徽标 / Runtime 恢复）都在此处收口编组：已在 UI 线程同步执行，
+        // 否则投递后返回（2026-09-14 实机崩溃回归；当时为壳直订 Store 回调跑在派发线程。
+        // 2026-09-15 C3 起直订已下沉 AppShellViewModel，VM 通知经 IMviUiDispatcher 编组——
+        // 本防御性编组仍保留，与各处 OnUiThread 收口方式一致）。
         if (!Dispatcher.UIThread.CheckAccess())
         {
             Dispatcher.UIThread.Post(() => ShowToast(text));
@@ -269,35 +277,39 @@ public sealed partial class MainWindow : Window
         tcs?.TrySetResult(result);
     }
 
-    // ===== Phase 8 评审 F7：toast 接线（只订阅现有 Store 投影 / 壳投影，不新造事件源） =====
+    // ===== Phase 8 评审 F7：toast 接线（只订阅壳 VM 投影，不新造事件源） =====
+    // 2026-09-15 架构审查 C3：MainWindow 直订 Plugins/Runtime/Updates 三 Store 的投影已整体下沉
+    // AppShellViewModel（BindSiblingState → Intent 回流，IMviUiDispatcher 单点编组），
+    // 壳只订阅 _shellViewModel.PropertyChanged——与全部 Feature 视图同一机制。
 
     private int _lastUpdateBadge;
     private RuntimeLifecycle _lastLifecycle;
     private PluginOperation? _notifiedPluginOperation;
 
     /// <summary>
-    /// 接线 toast 场景：插件安装事务完成/失败（PluginsStore.Operation 投影）、
+    /// 接线 toast 场景：插件安装事务完成/失败（壳 PluginOperation 投影）、
     /// 发现可用更新（壳 UpdateBadge 上升沿，见 ApplyIndicators 调用点）、
-    /// Runtime 恢复完成（RuntimeStore Recovering→Running 迁移）。
+    /// Runtime 恢复完成（壳 RuntimeIndicator Recovering→Running 迁移）。
     /// </summary>
     private void WireToastScenarios()
     {
         _lastUpdateBadge = _shellViewModel.UpdateBadge;
-
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore =
-            _resolver.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
-        pluginsStore.States.Subscribe(OnPluginsStateForToast);
-
-        IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore =
-            _resolver.Resolve<IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect>>();
-        _lastLifecycle = runtimeStore.CurrentState.Lifecycle;
-        runtimeStore.States.Subscribe(OnRuntimeStateForToast);
+        _lastLifecycle = _shellViewModel.RuntimeIndicator;
     }
 
-    private void OnPluginsStateForToast(PluginsState state)
+    /// <summary>
+    /// 插件事务终态 toast：壳 PluginOperation 投影变化时按引用去重后弹出。
+    /// </summary>
+    private void ApplyPluginOperationToastOnUiThread()
     {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(ApplyPluginOperationToastOnUiThread);
+            return;
+        }
+
         // Operation 引用在阶段推进时整体替换；以引用去重，避免同一终态重复弹。
-        if (state.Operation is not { } operation || ReferenceEquals(operation, _notifiedPluginOperation))
+        if (_shellViewModel.PluginOperation is not { } operation || ReferenceEquals(operation, _notifiedPluginOperation))
         {
             return;
         }
@@ -312,16 +324,6 @@ public sealed partial class MainWindow : Window
             _notifiedPluginOperation = operation;
             ShowToast($"插件 {operation.PluginName} 安装失败：{operation.Error}");
         }
-    }
-
-    private void OnRuntimeStateForToast(RuntimeState state)
-    {
-        if (_lastLifecycle is RuntimeLifecycle.Recovering && state.Lifecycle is RuntimeLifecycle.Running)
-        {
-            ShowToast("Runtime 已恢复运行");
-        }
-
-        _lastLifecycle = state.Lifecycle;
     }
 
     /// <summary>
@@ -451,29 +453,40 @@ public sealed partial class MainWindow : Window
 
             _lastUpdateBadge = badge;
         }
+        else if (propertyName == nameof(AppShellViewModel.RuntimeIndicator))
+        {
+            // Runtime 恢复完成：Recovering→Running 迁移弹一条 toast。
+            RuntimeLifecycle lifecycle = _shellViewModel.RuntimeIndicator;
+            if (_lastLifecycle is RuntimeLifecycle.Recovering && lifecycle is RuntimeLifecycle.Running)
+            {
+                ShowToast("Runtime 已恢复运行");
+            }
+
+            _lastLifecycle = lifecycle;
+        }
     }
 
     /// <summary>
-    /// 接线遮罩内容：订阅 Updates Store，按「是否存在真实下载百分比」在**旋转图标（等待中）**与
+    /// 接线遮罩内容：按壳 VM 投影「是否存在真实下载百分比」在**旋转图标（等待中）**与
     /// **确定进度条（真实进度）**之间互斥切换，并同步副标题为具体操作描述（§22）。
     /// 不再使用不确定态进度条：中段来回扫的滑块与「进度在推进」不可区分（2026-09-15 实机投诉）。
+    /// 数据源 = 壳 VM 的 UpdateDownloadPercent / UpdateOperationText（PropertyChanged 驱动，
+    /// 2026-09-15 审查 C3：Updates Store 直订已下沉 AppShellViewModel）；此处只同步初始态。
     /// </summary>
     private void WireUpdateScrimProgress()
     {
-        IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore =
-            _resolver.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
-        updatesStore.States.Subscribe(OnUpdatesStateForScrim);
+        ApplyUpdateScrimContentOnUiThread();
     }
 
-    private void OnUpdatesStateForScrim(UpdatesState state)
+    private void ApplyUpdateScrimContentOnUiThread()
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => OnUpdatesStateForScrim(state));
+            Dispatcher.UIThread.Post(ApplyUpdateScrimContentOnUiThread);
             return;
         }
 
-        if (state.DesktopDownloadProgress is { } percent)
+        if (_shellViewModel.UpdateDownloadPercent is { } percent)
         {
             _updateSpinner.IsVisible = false;
             _updateProgressBar.IsVisible = true;
@@ -485,7 +498,7 @@ public sealed partial class MainWindow : Window
             _updateProgressBar.IsVisible = false;
         }
 
-        _updateScrimText.Text = state.PendingOperation ?? DefaultUpdateScrimText;
+        _updateScrimText.Text = _shellViewModel.UpdateOperationText ?? DefaultUpdateScrimText;
     }
 
     /// <summary>

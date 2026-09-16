@@ -47,7 +47,7 @@
       （Avalonia 12 已移除 ExtendClientAreaChromeHints / TitleBar / CaptionButtons / ChromeOverlayLayer。）
     -->
     <Grid>
-        <Grid x:Name="ShellGrid" RowDefinitions="52,*,28">
+        <Grid RowDefinitions="52,*,28">
             <!-- ===== 顶部导航 ===== -->
             <Border
                 x:Name="TopNav"
@@ -62,7 +62,7 @@
                         Spacing="10"
                         Margin="110,0,0,0"
                         VerticalAlignment="Center">
-                        <Border x:Name="BrandMark" Classes="brand-mark">
+                        <Border Classes="brand-mark">
                             <TextBlock Classes="brand-mark-text" Text="D" />
                         </Border>
                     </StackPanel>
@@ -158,8 +158,13 @@
                          移除（与导航「DSH 工作台」重复）。Padding 仍保留，防窄窗口时导航末项撞按钮。
                          XAML 不写死像素：避让宽度依赖主题的按钮实现，且 WindowDecorationMargin binding
                          在 Full + Windows 下取值不可靠（均为 2026-09-14 实机回归）。
-                         窗口拖动由标题栏条带承担（Avalonia 对扩展装饰区的 TitleBar 角色走 HTCAPTION 路径，
-                         topnav 不再自报拖拽区）。 -->
+                         窗口拖动：**顶栏必须自报拖拽区**——Avalonia 12 的拖拽区是「带
+                         WindowDecorationProperties.ElementRole 的装饰元素」，Fluent 模板里唯一带
+                         TitleBar 角色的 Panel#PART_TitleBar 在 **Underlay 层（客户区内容之下）**，
+                         会被本层不透明的 Border.topnav 完整盖住 ⇒ 必须由顶栏自己声明角色。
+                         故在 DshTheme.axaml 给 Border.topnav 设 TitleBar（导航按钮配 User 防吞点击）。
+                         （此前记「框架会替扩展装饰区走 HTCAPTION，topnav 不必自报」是**误判**，
+                         2026-09-15 实机投诉「左键按住顶栏不能移动窗口」修正。） -->
                 </Grid>
             </Border>
 
@@ -271,11 +276,11 @@
 
         <!-- ===== 二次确认弹层（壳渲染；ConfirmDialog.Register 接线 RequestConfirmAsync） ===== -->
         <Border x:Name="ConfirmScrim" Classes="scrim" IsVisible="False">
-            <Border x:Name="ConfirmModal" Classes="modal" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border Classes="modal" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid RowDefinitions="Auto,Auto,Auto,Auto">
                     <TextBlock x:Name="ConfirmTitle" Classes="modal-title" Grid.Row="0" Margin="20,18,20,0" />
                     <TextBlock x:Name="ConfirmBody" Classes="modal-body" Grid.Row="1" Margin="20,0,20,0" />
-                    <Border x:Name="ConfirmCode" Classes="modal-code" Grid.Row="2">
+                    <Border Classes="modal-code" Grid.Row="2">
                         <TextBlock x:Name="ConfirmSubject" />
                     </Border>
                     <Border Classes="modal-foot" Grid.Row="3" Margin="0,16,0,0">

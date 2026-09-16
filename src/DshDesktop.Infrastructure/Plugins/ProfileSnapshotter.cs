@@ -73,15 +73,9 @@ public sealed class ProfileSnapshotter(
         // cannot resolve profile bundle → ExitCode=1）。
         ProfileManifestFixups.StripDanglingOverrides(profileDir);
 
-        (int exitCode, string outputTail) = await _runner(
-            nodePath, pnpmCjsPath, profileDir,
-            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
-        if (exitCode != 0)
-        {
-            (exitCode, outputTail) = await _runner(
-                nodePath, pnpmCjsPath, profileDir,
-                ["install", "--no-frozen-lockfile"], cancellationToken).ConfigureAwait(false);
-        }
+        // 离线优先策略收敛在 NodeJsToolRunner.InstallWithOfflineFallbackAsync（_runner 注入缝保留）。
+        (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            nodePath, pnpmCjsPath, profileDir, cancellationToken, _runner).ConfigureAwait(false);
 
         if (exitCode != 0)
         {

@@ -9,8 +9,8 @@
     <ScrollViewer>
         <StackPanel Margin="24" Spacing="16">
 
-            <!-- 顶部工具条 -->
-            <DockPanel Classes="bar" LastChildFill="False">
+            <!-- 顶部工具条（间距由根 StackPanel Spacing=16 承担；原 Classes="bar" 命不中任何选择器，已清） -->
+            <DockPanel LastChildFill="False">
                 <TextBlock
                     DockPanel.Dock="Left"
                     VerticalAlignment="Center"

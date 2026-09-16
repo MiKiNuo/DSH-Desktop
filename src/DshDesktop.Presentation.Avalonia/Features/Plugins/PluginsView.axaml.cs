@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
@@ -67,20 +68,33 @@ public sealed partial class PluginsView : MviAvaloniaView<PluginsViewModel>
 
         ApplyFilter(viewModel.Plugins);
 
-        PropertyChangedEventHandler handler = (_, args) =>
-        {
-            if (args.PropertyName is nameof(PluginsViewModel.Plugins) or nameof(PluginsViewModel.UpdatablePlugins))
-            {
-                ApplyFilter(viewModel.Plugins);
-            }
-        };
-
-        viewModel.PropertyChanged += handler;
-        bindings.Add(() => viewModel.PropertyChanged -= handler);
+        // Plugins / UpdatablePlugins（后者由兄弟 Store 回流驱动）投影变化，其 PropertyChanged 可能在
+        // 派发线程上直接触发（不经 Post）；回调里读 _searchInput.Text 并改行/计数/空态，必须自行编组。
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        bindings.Add(() => viewModel.PropertyChanged -= OnViewModelPropertyChanged);
 
         // 页面级加载：每次导航新建本 View，OnBind 每次执行 → 每次进页刷新清单。
         // 触发权属本 Feature（§5 规则 1/6）；此前由 MainWindow 壳越权 Dispatch（候选 03）。
         viewModel.LoadPluginsCommand.Execute(null);
+    }
+
+    /// <summary>
+    /// ViewModel 投影变化处理：兄弟 Store 回流可能在后台派发线程触发，触及控件前必须编组到 UI 线程
+    /// （与 MainWindow 的 OnUiThread 收口方式一致）。编组后在 UI 线程重读 Plugins；ApplyFilter 内部
+    /// 仍读 _viewModel?.UpdatablePlugins 与 _searchInput.Text。
+    /// </summary>
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnViewModelPropertyChanged(sender, args));
+            return;
+        }
+
+        if (args.PropertyName is nameof(PluginsViewModel.Plugins) or nameof(PluginsViewModel.UpdatablePlugins))
+        {
+            ApplyFilter(ViewModel.Plugins);
+        }
     }
 
     private void OnSearchTextChanged(object? sender, TextChangedEventArgs args)

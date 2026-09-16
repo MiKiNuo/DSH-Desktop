@@ -13,8 +13,8 @@
     <ScrollViewer>
         <StackPanel Margin="24" Spacing="14">
 
-            <!-- 工具条 -->
-            <DockPanel Classes="bar" LastChildFill="False">
+            <!-- 工具条（间距由根 StackPanel Spacing=14 承担；原 Classes="bar" 命不中任何选择器，已清） -->
+            <DockPanel LastChildFill="False">
                 <TextBox
                     x:Name="SearchInput"
                     Classes="field"
@@ -68,7 +68,10 @@
                 x:Name="InstallPanel"
                 Classes="panel"
                 IsVisible="False">
-                <StackPanel Classes="panel-body" Spacing="10">
+                <!-- panel-body 样式只认 Border（typed selector 否则 AVLN2200）：
+                     原 StackPanel 直挂命不中、拿不到 Padding=16（2026-09-15 架构审查），改为 Border 包裹。 -->
+                <Border Classes="panel-body">
+                <StackPanel Spacing="10">
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <TextBox
                             x:Name="InstallSourceInput"
@@ -97,6 +100,7 @@
                         </Grid>
                     </Border>
                 </StackPanel>
+                </Border>
             </Border>
 
             <!-- 插件表格卡片 -->

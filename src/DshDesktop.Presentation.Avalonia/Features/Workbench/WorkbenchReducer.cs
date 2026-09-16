@@ -39,4 +39,15 @@ public sealed partial class WorkbenchReducer
     {
         return Unchanged(state with { CurrentUrl = intent.Url, Loading = false });
     }
+
+    /// <summary>
+    /// 处理 Runtime URL 投影回流：唯一写入 <c>DshUrl</c> 的入口（Store 即唯一真源）。
+    /// </summary>
+    [MviReduce(typeof(WorkbenchIntent.RuntimeUrlChanged))]
+    private MviReduceResult<WorkbenchState, UnitEffect> HandleRuntimeUrlChanged(
+        WorkbenchState state,
+        WorkbenchIntent.RuntimeUrlChanged intent)
+    {
+        return Unchanged(state with { DshUrl = intent.Url });
+    }
 }

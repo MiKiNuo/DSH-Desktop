@@ -15,7 +15,6 @@
     </UserControl.Resources>
     <DockPanel Margin="24">
         <Grid
-            Classes="toolbar"
             DockPanel.Dock="Top"
             ColumnDefinitions="Auto,*,Auto"
             Margin="0">

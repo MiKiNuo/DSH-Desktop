@@ -143,4 +143,31 @@ public sealed partial class AppShellReducer
     {
         return Unchanged(state with { UpdateInProgress = intent.InProgress });
     }
+
+    /// <summary>
+    /// 处理插件安装事务投影变化回流意图（§14：仅投影字段，壳 toast 的数据源）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.PluginOperationChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandlePluginOperationChanged(
+        AppShellState state,
+        AppShellIntent.PluginOperationChanged intent)
+    {
+        return Unchanged(state with { PluginOperation = intent.Operation });
+    }
+
+    /// <summary>
+    /// 处理更新下载进度与操作描述投影变化回流意图（§14：仅投影字段，
+    /// 更新遮罩「旋转图标 ↔ 确定进度条」互斥与副标题的数据源）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.UpdateDownloadChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandleUpdateDownloadChanged(
+        AppShellState state,
+        AppShellIntent.UpdateDownloadChanged intent)
+    {
+        return Unchanged(state with
+        {
+            UpdateDownloadPercent = intent.Percent,
+            UpdateOperationText = intent.OperationText,
+        });
+    }
 }

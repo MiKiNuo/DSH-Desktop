@@ -1,4 +1,6 @@
+using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
+using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Command;
@@ -26,21 +28,26 @@ public sealed partial class AppShellViewModel
     /// <param name="store">应用壳状态存储。</param>
     /// <param name="runtimeStore">Runtime 状态存储（兄弟 Store，只读订阅）。</param>
     /// <param name="updatesStore">Updates 状态存储（兄弟 Store，只读订阅）。</param>
+    /// <param name="pluginsStore">Plugins 状态存储（兄弟 Store，只读订阅；2026-09-15 审查 C3：壳 toast 投影自 MainWindow 直订下沉）。</param>
     /// <param name="uiDispatcher">UI 调度器。</param>
     public AppShellViewModel(
         IMviStore<AppShellState, AppShellIntent, UnitEffect> store,
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore,
         IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore,
+        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore,
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
         ArgumentNullException.ThrowIfNull(runtimeStore);
         ArgumentNullException.ThrowIfNull(updatesStore);
+        ArgumentNullException.ThrowIfNull(pluginsStore);
 
         _ = BindSiblingState(runtimeStore, ApplyRuntimeState);
         _ = BindSiblingState(updatesStore, ApplyUpdatesState);
+        _ = BindSiblingState(pluginsStore, ApplyPluginsState);
         ApplyRuntimeState(runtimeStore.CurrentState);
         ApplyUpdatesState(updatesStore.CurrentState);
+        ApplyPluginsState(pluginsStore.CurrentState);
 
         // 派生投影（状态文本）跟随状态投影属性联动刷新。
         PropertyChanged += (_, args) =>
@@ -93,6 +100,24 @@ public sealed partial class AppShellViewModel
     /// </summary>
     [MviBind(nameof(AppShellState.UpdateInProgress), BindingMode = MviBindingMode.OneWay)]
     public partial bool UpdateInProgress { get; private set; }
+
+    /// <summary>
+    /// 获取插件安装事务投影（壳 toast 数据源；无事务为 null）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.PluginOperation), BindingMode = MviBindingMode.OneWay)]
+    public partial PluginOperation? PluginOperation { get; private set; }
+
+    /// <summary>
+    /// 获取 Desktop 更新下载进度投影（更新遮罩「旋转图标 ↔ 确定进度条」互斥依据；无真实进度为 null）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.UpdateDownloadPercent), BindingMode = MviBindingMode.OneWay)]
+    public partial int? UpdateDownloadPercent { get; private set; }
+
+    /// <summary>
+    /// 获取进行中更新操作描述投影（更新遮罩副标题；空闲为 null）。
+    /// </summary>
+    [MviBind(nameof(AppShellState.UpdateOperationText), BindingMode = MviBindingMode.OneWay)]
+    public partial string? UpdateOperationText { get; private set; }
 
     /// <summary>
     /// 获取 Runtime 生命周期中文状态词（状态栏状态点文案）。
@@ -186,6 +211,23 @@ public sealed partial class AppShellViewModel
         if (inProgress != Store.CurrentState.UpdateInProgress)
         {
             _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
+        }
+
+        if (updatesState.DesktopDownloadProgress != Store.CurrentState.UpdateDownloadPercent
+            || updatesState.PendingOperation != Store.CurrentState.UpdateOperationText)
+        {
+            _ = DispatchAsync(new AppShellIntent.UpdateDownloadChanged(
+                updatesState.DesktopDownloadProgress,
+                updatesState.PendingOperation));
+        }
+    }
+
+    private void ApplyPluginsState(PluginsState pluginsState)
+    {
+        // Operation 引用在阶段推进时整体替换，以引用判等（MainWindow 据此做终态 toast 去重）。
+        if (!ReferenceEquals(pluginsState.Operation, Store.CurrentState.PluginOperation))
+        {
+            _ = DispatchAsync(new AppShellIntent.PluginOperationChanged(pluginsState.Operation));
         }
     }
 }

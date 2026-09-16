@@ -78,7 +78,15 @@
          壳层：侧栏 / 顶栏 / 状态栏 / 导航
          ============================================================ -->
     <!-- 顶部导航条：品牌 + 三组导航 + 右侧动作，底部一条发丝线 -->
+    <!-- 顶栏即窗口拖拽区（2026-09-15 修复「按住顶栏拖不动窗口」）。
+         Avalonia 12 的拖拽区不是扩展客户区的隐式条带，而是「带 ElementRole 的装饰元素」：Fluent 模板里
+         唯一带 TitleBar 角色的 Panel#PART_TitleBar 位于 **Underlay 层 = 客户区内容之下**，被本仓这层
+         不透明的 Border.topnav 完整盖住 ⇒ 平台命中到的元素角色为 None，按普通客户区处理（HTCLIENT），
+         窗口不再移动。设成 TitleBar 即回到原生 HTCAPTION 路径：保留贴边吸附与「双击顶栏最大化」。
+         ⚠️ 必须与下方 Button.nav-btn 的 User 角色配套，否则顶栏成为拖拽区后导航点击会被 chrome 拦下。
+         守卫 ShellTopNavTests.Shell_TopNavDeclaresDragRegionRoles。 -->
     <Style Selector="Border.topnav">
+        <Setter Property="(WindowDecorationProperties.ElementRole)" Value="TitleBar" />
         <Setter Property="Background" Value="{DynamicResource DshSurface1Brush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshLineSoftBrush}" />
         <Setter Property="BorderThickness" Value="0,0,0,1" />
@@ -109,7 +117,10 @@
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
+    <!-- 导航按钮：显式声明 User 角色，作为上方 Border.topnav(TitleBar 拖拽区) 的必要配套 ——
+         它们与拖拽区重叠，只有 User（「与 chrome 区重叠也收输入」）才能继续收到点击，否则整排导航失灵。 -->
     <Style Selector="Button.nav-btn">
+        <Setter Property="(WindowDecorationProperties.ElementRole)" Value="User" />
         <Setter Property="Height" Value="34" />
         <Setter Property="Padding" Value="10,0" />
         <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
@@ -130,12 +141,6 @@
         <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource DshAccentLineBrush}" />
         <Setter Property="Foreground" Value="{DynamicResource DshAccentHiBrush}" />
-    </Style>
-    <Style Selector="TextBlock.nav-icon">
-        <Setter Property="Width" Value="20" />
-        <Setter Property="TextAlignment" Value="Center" />
-        <Setter Property="FontSize" Value="16" />
-        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style Selector="Border.nav-badge">
         <Setter Property="MinWidth" Value="18" />
@@ -266,10 +271,6 @@
         <Setter Property="CornerRadius" Value="0,8,8,0" />
         <Setter Property="Margin" Value="-1,0,0,0" />
     </Style>
-    <Style Selector="Button.btn.seg-first.seg-last">
-        <Setter Property="CornerRadius" Value="{DynamicResource DshRadiusSmall}" />
-        <Setter Property="Margin" Value="0" />
-    </Style>
 
     <!-- ============================================================
          面板（契约 §5：panel 系列；card 系列为兼容别名，
@@ -368,14 +369,6 @@
     </Style>
     <Style Selector="Border.tag.mono TextBlock">
         <Setter Property="FontFamily" Value="Geist Mono, Cascadia Code, Consolas" />
-    </Style>
-    <!-- 兼容别名：旧视图用 Classes="tag info"（info = 蓝/强调） -->
-    <Style Selector="Border.tag.info">
-        <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />
-        <Setter Property="BorderBrush" Value="{DynamicResource DshAccentLineBrush}" />
-    </Style>
-    <Style Selector="Border.tag.info TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource DshAccentHiBrush}" />
     </Style>
 
     <!-- ============================================================
@@ -481,15 +474,6 @@
                 </KeyFrame>
             </Animation>
         </Style.Animations>
-    </Style>
-    <Style Selector="Ellipse.dot.warn">
-        <Setter Property="Fill" Value="{DynamicResource DshWarnBrush}" />
-    </Style>
-    <Style Selector="Ellipse.dot.err">
-        <Setter Property="Fill" Value="{DynamicResource DshErrBrush}" />
-    </Style>
-    <Style Selector="Ellipse.dot.idle">
-        <Setter Property="Fill" Value="{DynamicResource DshText4Brush}" />
     </Style>
 
     <!-- ============================================================
@@ -681,9 +665,6 @@
         <Setter Property="Foreground" Value="{DynamicResource DshText4Brush}" />
         <Setter Property="Margin" Value="7,7,0,0" />
     </Style>
-    <Style Selector="TextBlock.stat-foot.warn">
-        <Setter Property="Foreground" Value="{DynamicResource DshWarnBrush}" />
-    </Style>
 
     <!-- ============================================================
          Dashboard 专用
@@ -743,9 +724,6 @@
         <Setter Property="Background" Value="{DynamicResource DshAccentBrush}" />
         <Setter Property="HorizontalAlignment" Value="Left" />
     </Style>
-    <Style Selector="Border.wf-fill.muted">
-        <Setter Property="Background" Value="{DynamicResource DshText4Brush}" />
-    </Style>
 
     <Style Selector="Grid.stream-item">
         <Setter Property="Margin" Value="0,10" />
@@ -758,10 +736,6 @@
         <Setter Property="StrokeThickness" Value="1" />
         <Setter Property="VerticalAlignment" Value="Top" />
         <Setter Property="Margin" Value="0,1,0,0" />
-    </Style>
-    <Style Selector="Ellipse.stream-dot.ok">
-        <Setter Property="Fill" Value="{DynamicResource DshOkSoftBrush}" />
-        <Setter Property="Stroke" Value="{DynamicResource DshOkLineBrush}" />
     </Style>
     <Style Selector="TextBlock.stream-title">
         <Setter Property="FontFamily" Value="Geist Mono, Cascadia Code, Consolas" />
@@ -976,6 +950,15 @@
     <Style Selector="Border.notice.info TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource DshAccentHiBrush}" />
     </Style>
+    <!-- err 修饰：契约 §提示条族成员（warn/err/info），此前只有 Runtime RecoverPanel
+         一个消费方而样式从未落地（2026-09-15 架构审查补齐）。 -->
+    <Style Selector="Border.notice.err">
+        <Setter Property="Background" Value="{DynamicResource DshErrSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DshErrLineBrush}" />
+    </Style>
+    <Style Selector="Border.notice.err TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource DshErrBrush}" />
+    </Style>
     <Style Selector="TextBlock.notice-title">
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Margin" Value="0,0,0,2" />
@@ -1041,15 +1024,8 @@
         <Setter Property="FontSize" Value="{DynamicResource DshFontSizeBodySmall}" />
     </Style>
 
-    <Style Selector="StackPanel.bar">
-        <Setter Property="Spacing" Value="10" />
-        <Setter Property="Margin" Value="0,0,0,14" />
-    </Style>
-    <!-- 兼容别名：旧视图用 Classes="toolbar" -->
-    <Style Selector="StackPanel.toolbar">
-        <Setter Property="Spacing" Value="8" />
-        <Setter Property="Margin" Value="0,0,0,12" />
-    </Style>
+    <!-- StackPanel.bar / StackPanel.toolbar 已删（2026-09-15 架构审查）：工具条实为 DockPanel/Grid、
+         间距由根容器 Spacing 覆盖，ProgressBar 走自己的 ProgressBar.bar 选择器，两条选择器无消费方。 -->
 
     <!-- ============================================================
          历史遗留类名

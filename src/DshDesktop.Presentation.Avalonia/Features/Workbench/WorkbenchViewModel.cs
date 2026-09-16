@@ -20,9 +20,6 @@ namespace DshDesktop.Presentation.Avalonia.Features.Workbench;
 public sealed partial class WorkbenchViewModel
     : MviViewModelBase<WorkbenchState, WorkbenchIntent, UnitEffect>
 {
-    private readonly IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> _runtimeStore;
-    private string? _dshUrl;
-
     /// <summary>
     /// 初始化 Workbench ViewModel。
     /// </summary>
@@ -36,7 +33,6 @@ public sealed partial class WorkbenchViewModel
         : base(store, uiDispatcher)
     {
         ArgumentNullException.ThrowIfNull(runtimeStore);
-        _runtimeStore = runtimeStore;
         _ = BindSiblingState(runtimeStore, ApplyRuntimeState);
         ApplyRuntimeState(runtimeStore.CurrentState);
     }
@@ -45,11 +41,8 @@ public sealed partial class WorkbenchViewModel
     /// 获取 DSH Web UI 完整地址（含 token；Runtime 非 Running 时为 null）。
     /// 这是本页唯一的对外投影：非 null 即导航，为 null 即退回占位层。
     /// </summary>
-    public string? DshUrl
-    {
-        get => _dshUrl;
-        private set => SetProperty(ref _dshUrl, value);
-    }
+    [MviBind(nameof(WorkbenchState.DshUrl), BindingMode = MviBindingMode.OneWay)]
+    public partial string? DshUrl { get; private set; }
 
     /// <summary>
     /// 获取当前导航地址。
@@ -82,8 +75,17 @@ public sealed partial class WorkbenchViewModel
         _ = DispatchAsync(new WorkbenchIntent.NavigationCompleted(url));
     }
 
+    /// <summary>
+    /// 兄弟 Runtime Store 投影：不直接写字段，而是换算成 <c>RuntimeUrlChanged</c> Intent
+    /// 回流自身 Store（与 AppShell / Runtime / Plugins / Dashboard 四先例同构）——
+    /// 状态只能经 Intent 进入 Store，写入自动获得 Store 锁的线程语义。
+    /// </summary>
     private void ApplyRuntimeState(RuntimeState runtimeState)
     {
-        DshUrl = runtimeState.Lifecycle is RuntimeLifecycle.Running ? runtimeState.Url : null;
+        string? url = runtimeState.Lifecycle is RuntimeLifecycle.Running ? runtimeState.Url : null;
+        if (url != Store.CurrentState.DshUrl)
+        {
+            _ = DispatchAsync(new WorkbenchIntent.RuntimeUrlChanged(url));
+        }
     }
 }

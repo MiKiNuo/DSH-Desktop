@@ -1,3 +1,4 @@
+using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using MiKiNuo.Mvi.Domain.MVI.State;
 
@@ -13,6 +14,9 @@ namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 /// <param name="RuntimePort">实际监听端口投影（状态栏 Port；未运行为 null，Phase 8 Issue 02）。</param>
 /// <param name="DshVersion">当前 DSH 版本投影（状态栏 DSH 版本段；自 UpdatesStore.CurrentDshVersion，未知为 null）。</param>
 /// <param name="UpdateInProgress">是否有更新操作进行中投影（BindSiblingState 自 UpdatesStore.PendingOperation，§11.2；true 时壳显示全屏遮罩并锁定导航）。</param>
+/// <param name="PluginOperation">插件安装事务投影（BindSiblingState 自 PluginsStore.Operation；壳 toast 数据源，2026-09-15 审查 C3：自 MainWindow 直订下沉）。</param>
+/// <param name="UpdateDownloadPercent">Desktop 更新下载进度投影（自 UpdatesStore.DesktopDownloadProgress；遮罩「旋转图标 ↔ 确定进度条」互斥依据）。</param>
+/// <param name="UpdateOperationText">进行中更新操作描述投影（自 UpdatesStore.PendingOperation；遮罩副标题）。</param>
 public sealed record AppShellState(
     ShellPage CurrentPage,
     RuntimeLifecycle RuntimeIndicator,
@@ -20,11 +24,14 @@ public sealed record AppShellState(
     int? RuntimeProcessId,
     int? RuntimePort,
     string? DshVersion,
-    bool UpdateInProgress) : IMviState
+    bool UpdateInProgress,
+    PluginOperation? PluginOperation,
+    int? UpdateDownloadPercent,
+    string? UpdateOperationText) : IMviState
 {
     /// <summary>
     /// 获取初始状态（顶部导航改造：默认页 = 工作台，即 DSH 官方 Web UI）。
     /// </summary>
     public static AppShellState Initial { get; } = new(
-        ShellPage.Workbench, RuntimeLifecycle.Stopped, 0, null, null, null, false);
+        ShellPage.Workbench, RuntimeLifecycle.Stopped, 0, null, null, null, false, null, null, null);
 }

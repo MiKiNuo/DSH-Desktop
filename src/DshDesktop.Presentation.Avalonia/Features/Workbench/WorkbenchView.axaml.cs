@@ -2,8 +2,10 @@ using System.ComponentModel;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using DshDesktop.Application.Diagnostics;
 using DshDesktop.Domain.Common;
+using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Workbench.Bridge;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
@@ -76,7 +78,9 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             // 页内错误条已移除（§21 Phase 6 修订注），但也不能直接撤掉遮罩——原生 WebView
             // 会盖住任何 Avalonia 文案，撤掉只会露出它未渲染的黑底（airspace 约束）。
             // 仍要结束 Loading，否则状态机会停在加载中；错误详情留在 Serilog / 诊断中心。
-            Serilog.Log.Warning("Workbench.Navigation.Failed Url={Url}", url);
+            // 打码再走日志（CONTEXT.md Session URL：日志中 token 强制打码）——url 可能是含一次性
+            // token 的 Session URL，明文落 data/logs 即泄漏；规则与进程输出日志同一来源。
+            Serilog.Log.Warning("Workbench.Navigation.Failed Url={Url}", SessionUrlRedactor.Redact(url));
             _webViewHost.IsVisible = false;
             ShowLoadingOverlay("界面加载失败", "详情见诊断中心");
             ViewModel.NotifyNavigationCompleted(url);
@@ -165,18 +169,30 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
     {
         base.OnBind(viewModel, bindings);
 
-        PropertyChangedEventHandler handler = (_, args) =>
-        {
-            if (args.PropertyName is nameof(WorkbenchViewModel.DshUrl))
-            {
-                ApplyDshUrl(viewModel.DshUrl);
-            }
-        };
-
-        viewModel.PropertyChanged += handler;
-        bindings.Add(() => viewModel.PropertyChanged -= handler);
+        // DshUrl 由兄弟 Store 回流驱动，其 PropertyChanged 可能在派发线程上直接触发（不经 Post）；
+        // 回调里直接对 NativeWebView 做 Navigate / IsVisible，必须自行编组（详见 OnViewModelPropertyChanged）。
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        bindings.Add(() => viewModel.PropertyChanged -= OnViewModelPropertyChanged);
 
         ApplyDshUrl(viewModel.DshUrl);
+    }
+
+    /// <summary>
+    /// ViewModel 投影变化处理：兄弟 Store 回流可能在后台派发线程触发，触及 NativeWebView 控件前必须
+    /// 编组到 UI 线程（与 MainWindow 的 OnUiThread 收口方式一致）。编组后在 UI 线程重读 DshUrl。
+    /// </summary>
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnViewModelPropertyChanged(sender, args));
+            return;
+        }
+
+        if (args.PropertyName is nameof(WorkbenchViewModel.DshUrl))
+        {
+            ApplyDshUrl(ViewModel.DshUrl);
+        }
     }
 
     private void ApplyDshUrl(string? dshUrl)

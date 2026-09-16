@@ -276,6 +276,52 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
+    /// 顶栏必须自报为窗口拖拽区（2026-09-15 实机投诉「左键按住顶栏不能移动窗口」的修复）。
+    ///
+    /// Avalonia 12 的拖拽区不再是扩展客户区的隐式条带，而是「带 <c>ElementRole</c> 的装饰元素」：
+    /// Fluent 模板里唯一带 <c>ElementRole="TitleBar"</c> 的是 <c>Panel#PART_TitleBar</c>，位于
+    /// **Underlay 层 = 客户区内容之下**（Overlay 层只有标题文字与右侧 caption 按钮）。本仓
+    /// <c>Border#TopNav</c> 是不透明客户区 Border，正好完整覆盖那 52 DIP 且未声明任何角色
+    /// ⇒ 平台命中到它时角色为 None，按普通客户区处理（HTCLIENT），窗口不再移动。
+    /// 原生桌面程序看不出这个问题：它们的标题栏属于**非客户区**，DefWindowProc 直接给 HTCAPTION。
+    ///
+    /// 故：① <c>Border.topnav</c> 声明 <c>ElementRole="TitleBar"</c> —— 走 HTCAPTION 原生路径，
+    /// 保留贴边吸附与「双击顶栏最大化」（用户 2026-09-15 明确要求保留的语义）；
+    /// ② <c>Button.nav-btn</c> 声明 <c>ElementRole="User"</c> —— 否则顶栏成为拖拽区后，
+    /// 导航点击会被 chrome 命中拦下（User = 与 chrome 区重叠仍收输入）。
+    /// 两者必须配套：只加 ① 会让导航整排失灵，而编译与其余测试都照过。
+    ///
+    /// ⚠️ 本守卫只锚样式声明；「拖动真的生效」「导航仍可点击」只有实机能确认（沙箱无法截图 Avalonia 窗口）。
+    /// </summary>
+    [Test]
+    public async Task Shell_TopNavDeclaresDragRegionRoles()
+    {
+        var theme = XamlScan.StripComments(await ThemeSourceAsync());
+
+        var topNav = XamlScan.ExtractStyleBlock(theme, "Border.topnav");
+        await Assert.That(topNav).IsNotEmpty();
+        await Assert.That(topNav.Contains("(WindowDecorationProperties.ElementRole)", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(topNav.Contains("Value=\"TitleBar\"", StringComparison.Ordinal)).IsTrue();
+
+        var navButton = XamlScan.ExtractStyleBlock(theme, "Button.nav-btn");
+        await Assert.That(navButton).IsNotEmpty();
+        await Assert.That(navButton.Contains("(WindowDecorationProperties.ElementRole)", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(navButton.Contains("Value=\"User\"", StringComparison.Ordinal)).IsTrue();
+    }
+
+    /// <summary>读取共享主题字典（顶栏与导航样式所在处）。</summary>
+    private static async Task<string> ThemeSourceAsync()
+    {
+        var root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        var path = Path.Combine(
+            root!, "src", "DshDesktop.Presentation.Avalonia", "Themes", "DshTheme.axaml");
+        await Assert.That(File.Exists(path)).IsTrue();
+        return await File.ReadAllTextAsync(path);
+    }
+
+    /// <summary>
     /// 取元素开标签里声明的 <c>Grid.Row</c>（元素缺失或未声明行号时返回空串，断言即以实际值报错）。
     /// </summary>
     private static string RowIndex(string text, string elementPattern)

@@ -161,7 +161,7 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         if (string.IsNullOrWhiteSpace(options.NodePath) || string.IsNullOrWhiteSpace(options.EntryPath))
         {
             throw new InvalidOperationException(
-                "Runtime 路径未配置（NodePath / EntryPath 为空）。请检查 exe 旁 dsh-desktop.config.json。");
+                "Runtime 路径未配置（NodePath / EntryPath 为空）。请检查 <数据根>\\config\\dsh-desktop.config.json。");
         }
 
         if (!File.Exists(options.EntryPath))

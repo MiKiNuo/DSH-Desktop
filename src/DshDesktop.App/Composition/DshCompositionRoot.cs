@@ -1213,14 +1213,11 @@ public sealed partial class DshCompositionRoot
 
     private void OnProcessOutputReceived(object? sender, ProcessOutputLineEventArgs args)
     {
-        // Session token 禁止落盘（CONTEXT.md: Session URL）：日志中打码。
-        string line = TokenRedactRegex().Replace(args.Line, "$1***");
+        // Session token 禁止落盘（CONTEXT.md: Session URL）：日志中打码，规则全仓单源（Domain）。
+        string line = SessionUrlRedactor.Redact(args.Line)!;
         Serilog.ILogger logger = args.IsError ? _dshStderrLogger : _dshStdoutLogger;
         logger.Write(args.IsError ? LogEventLevel.Warning : LogEventLevel.Information, "{Line}", line);
     }
-
-    [System.Text.RegularExpressions.GeneratedRegex(@"(?i)(token=)[^\s&]+")]
-    private static partial System.Text.RegularExpressions.Regex TokenRedactRegex();
 
     private void OnDiagnosticEvent(DiagnosticEvent diagnosticEvent)
     {

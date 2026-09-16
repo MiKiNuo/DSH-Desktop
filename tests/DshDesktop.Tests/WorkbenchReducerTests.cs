@@ -58,4 +58,30 @@ public sealed class WorkbenchReducerTests
         await Assert.That(result.State.Loading).IsFalse();
         await Assert.That(result.State.CurrentUrl).IsEqualTo("http://127.0.0.1:4/");
     }
+
+    /// <summary>
+    /// Runtime 的 URL 投影必须回流自身 Store（2026-09-15 架构审查：此前落在 ViewModel
+    /// 私有字段形成第二真源，与 AppShell / Runtime / Plugins / Dashboard 四个
+    /// BindSiblingState → Intent 回流先例不一致）。
+    /// </summary>
+    [Test]
+    public async Task RuntimeUrlChanged_SetsDshUrl()
+    {
+        var result = _reducer.Reduce(
+            WorkbenchState.Initial,
+            new WorkbenchIntent.RuntimeUrlChanged("http://127.0.0.1:5000/?token=a"));
+
+        await Assert.That(result.State.DshUrl).IsEqualTo("http://127.0.0.1:5000/?token=a");
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task RuntimeUrlChanged_Null_ClearsDshUrl()
+    {
+        WorkbenchState ready = WorkbenchState.Initial with { DshUrl = "http://127.0.0.1:5000/?token=a" };
+
+        var result = _reducer.Reduce(ready, new WorkbenchIntent.RuntimeUrlChanged(null));
+
+        await Assert.That(result.State.DshUrl).IsNull();
+    }
 }

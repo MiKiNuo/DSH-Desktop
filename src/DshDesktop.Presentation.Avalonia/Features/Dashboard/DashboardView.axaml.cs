@@ -4,6 +4,7 @@ using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
+using Avalonia.Threading;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
@@ -61,23 +62,35 @@ public sealed partial class DashboardView : MviAvaloniaView<DashboardViewModel>
     {
         base.OnBind(viewModel, bindings);
 
-        PropertyChangedEventHandler handler = (_, args) =>
-        {
-            if (args.PropertyName is nameof(DashboardViewModel.Lifecycle))
-            {
-                ApplyLifecycleIndicator(viewModel.Lifecycle);
-            }
-            else if (args.PropertyName is nameof(DashboardViewModel.Health))
-            {
-                ApplyHealthIndicator(viewModel.Health);
-            }
-        };
-
-        viewModel.PropertyChanged += handler;
-        bindings.Add(() => viewModel.PropertyChanged -= handler);
+        // 兄弟 Runtime Store 回流驱动 Lifecycle / Health 投影，其 PropertyChanged 可能在派发线程上
+        // 直接触发（不经 IMviUiDispatcher.Post）；回调里直接改控件，故走命名方法自行编组。
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        bindings.Add(() => viewModel.PropertyChanged -= OnViewModelPropertyChanged);
 
         ApplyLifecycleIndicator(viewModel.Lifecycle);
         ApplyHealthIndicator(viewModel.Health);
+    }
+
+    /// <summary>
+    /// ViewModel 投影变化处理：兄弟 Store 回流可能在后台派发线程触发，触及控件前必须编组到 UI 线程
+    /// （与 MainWindow 的 OnUiThread 收口方式一致）。编组后在 UI 线程重读投影值。
+    /// </summary>
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => OnViewModelPropertyChanged(sender, args));
+            return;
+        }
+
+        if (args.PropertyName is nameof(DashboardViewModel.Lifecycle))
+        {
+            ApplyLifecycleIndicator(ViewModel.Lifecycle);
+        }
+        else if (args.PropertyName is nameof(DashboardViewModel.Health))
+        {
+            ApplyHealthIndicator(ViewModel.Health);
+        }
     }
 
     private void ApplyLifecycleIndicator(RuntimeLifecycle lifecycle)

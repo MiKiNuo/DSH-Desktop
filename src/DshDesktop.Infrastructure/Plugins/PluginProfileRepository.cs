@@ -407,16 +407,9 @@ public sealed class PluginProfileRepository(
                 "找不到 vendored pnpm（pnpmCjsPath），无法重建 lockfile。请检查 dsh-desktop.config.json。");
         }
 
-        // 优先 --offline（§34 Offline First）；失败后允许联网重试一次（变更路径不在启动主路径）。
-        (int exitCode, string outputTail) = await NodeJsToolRunner.RunAsync(
-            nodePath, pnpmCjsPath, profileDir,
-            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken, _runOnce).ConfigureAwait(false);
-        if (exitCode != 0)
-        {
-            (exitCode, outputTail) = await NodeJsToolRunner.RunAsync(
-                nodePath, pnpmCjsPath, profileDir,
-                ["install", "--no-frozen-lockfile"], cancellationToken, _runOnce).ConfigureAwait(false);
-        }
+        // 离线优先策略收敛在 NodeJsToolRunner.InstallWithOfflineFallbackAsync（变更路径不在启动主路径）。
+        (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            nodePath, pnpmCjsPath, profileDir, cancellationToken, _runOnce).ConfigureAwait(false);
 
         if (exitCode != 0)
         {

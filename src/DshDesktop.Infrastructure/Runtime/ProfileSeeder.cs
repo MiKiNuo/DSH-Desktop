@@ -228,8 +228,8 @@ public static class ProfileSeeder
     }
 
     /// <summary>
-    /// 用 vendored pnpm 重建 profile 依赖树。优先 --offline（§34 Offline First），
-    /// 失败后允许联网重试一次（同 PluginProfileRepository.RebuildLockfileAsync 策略）。
+    /// 用 vendored pnpm 重建 profile 依赖树（离线优先策略收敛在
+    /// <see cref="Plugins.NodeJsToolRunner.InstallWithOfflineFallbackAsync"/>）。
     /// </summary>
     private static async Task<(int ExitCode, string OutputTail)> InstallDependenciesAsync(
         string nodePath,
@@ -244,16 +244,7 @@ public static class ProfileSeeder
             return (1, $"找不到 vendored pnpm（{pnpmCjsPath}），无法重建 Profile 依赖树。请检查 dsh-desktop.config.json。");
         }
 
-        (int exitCode, string outputTail) = await Plugins.NodeJsToolRunner.RunAsync(
-            nodePath, pnpmCjsPath, profileDir,
-            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken).ConfigureAwait(false);
-        if (exitCode != 0)
-        {
-            (exitCode, outputTail) = await Plugins.NodeJsToolRunner.RunAsync(
-                nodePath, pnpmCjsPath, profileDir,
-                ["install", "--no-frozen-lockfile"], cancellationToken).ConfigureAwait(false);
-        }
-
-        return (exitCode, outputTail);
+        return await Plugins.NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            nodePath, pnpmCjsPath, profileDir, cancellationToken).ConfigureAwait(false);
     }
 }

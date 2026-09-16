@@ -61,6 +61,33 @@ internal static class NodeJsToolRunner
     }
 
     /// <summary>
+    /// 离线优先的 <c>pnpm install --no-frozen-lockfile</c> 重建（§34 Offline First）：
+    /// 先带 <c>--offline</c> 执行，失败则去掉 <c>--offline</c> 联网重试一次，返回最后一次结果。
+    /// 2026-09-15 架构审查收编：ProfileSeeder / PluginProfileRepository / ProfileSnapshotter
+    /// 三处同构实现曾各写一份，pnpm 参数纪律（--force / --no-frozen-lockfile）只能单点演化。
+    /// </summary>
+    /// <returns>最后一次执行的退出码与输出尾部。</returns>
+    public static async Task<(int ExitCode, string OutputTail)> InstallWithOfflineFallbackAsync(
+        string nodePath,
+        string toolCjsPath,
+        string workingDirectory,
+        CancellationToken cancellationToken,
+        Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runOnce = null)
+    {
+        (int exitCode, string outputTail) = await RunAsync(
+            nodePath, toolCjsPath, workingDirectory,
+            ["install", "--no-frozen-lockfile", "--offline"], cancellationToken, runOnce).ConfigureAwait(false);
+        if (exitCode != 0)
+        {
+            (exitCode, outputTail) = await RunAsync(
+                nodePath, toolCjsPath, workingDirectory,
+                ["install", "--no-frozen-lockfile"], cancellationToken, runOnce).ConfigureAwait(false);
+        }
+
+        return (exitCode, outputTail);
+    }
+
+    /// <summary>
     /// 在指定工作目录执行工具并捕获完整 stdout（供 npm view 等查询命令解析输出）。
     /// </summary>
     /// <returns>退出码与完整 stdout。</returns>

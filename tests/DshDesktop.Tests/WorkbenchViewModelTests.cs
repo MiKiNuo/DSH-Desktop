@@ -72,6 +72,29 @@ public sealed class WorkbenchViewModelTests
         await Assert.That(viewModel.DshUrl).IsNull();
     }
 
+    /// <summary>
+    /// 投影必须回流自身 Store（2026-09-15 架构审查）：DshUrl 的唯一真源是 WorkbenchState，
+    /// ViewModel 只是 [MviBind] 投影，不再私藏字段（与四个兄弟投影先例同构）。
+    /// </summary>
+    [Test]
+    public async Task DshUrlProjection_ReflowsIntoOwnStore()
+    {
+        var runtimeStore = new FakeRuntimeStore(RuntimeState.Initial);
+        using var workbenchStore = CreateWorkbenchStore();
+        var viewModel = new WorkbenchViewModel(workbenchStore, runtimeStore);
+
+        runtimeStore.Push(RuntimeState.Initial with
+        {
+            Lifecycle = RuntimeLifecycle.Running,
+            Url = "http://127.0.0.1:5000/?token=a",
+        });
+
+        await Assert.That(workbenchStore.CurrentState.DshUrl)
+            .IsEqualTo("http://127.0.0.1:5000/?token=a");
+        await Assert.That(viewModel.DshUrl)
+            .IsEqualTo("http://127.0.0.1:5000/?token=a");
+    }
+
     private static MviStore<WorkbenchState, WorkbenchIntent, UnitEffect> CreateWorkbenchStore()
     {
         return new MviStore<WorkbenchState, WorkbenchIntent, UnitEffect>(

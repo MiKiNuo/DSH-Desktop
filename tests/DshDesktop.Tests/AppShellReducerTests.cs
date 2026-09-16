@@ -1,3 +1,4 @@
+using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 
@@ -154,5 +155,39 @@ public sealed class AppShellReducerTests
             new AppShellIntent.UpdateInProgressChanged(false));
 
         await Assert.That(idle.State.UpdateInProgress).IsFalse();
+    }
+
+    // ===== 2026-09-15 架构审查 C3：壳直订 Plugins/Updates Store 的投影下沉进 AppShell =====
+
+    [Test]
+    public async Task PluginOperationChanged_ProjectsOperation()
+    {
+        // 壳 toast（插件安装事务终态）的数据源：自 PluginsStore.Operation 投影回流。
+        var operation = new PluginOperation(PluginOperationStage.Completed, "demo-plugin", null);
+
+        var result = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.PluginOperationChanged(operation));
+
+        await Assert.That(result.State.PluginOperation).IsSameReferenceAs(operation);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task UpdateDownloadChanged_ProjectsPercentAndText()
+    {
+        // 更新遮罩的「旋转图标 ↔ 确定进度条」互斥与副标题：自 UpdatesStore 投影回流。
+        var result = _reducer.Reduce(
+            AppShellState.Initial,
+            new AppShellIntent.UpdateDownloadChanged(42, "下载 Desktop 更新…"));
+
+        await Assert.That(result.State.UpdateDownloadPercent).IsEqualTo(42);
+        await Assert.That(result.State.UpdateOperationText).IsEqualTo("下载 Desktop 更新…");
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+
+        var idle = _reducer.Reduce(result.State, new AppShellIntent.UpdateDownloadChanged(null, null));
+
+        await Assert.That(idle.State.UpdateDownloadPercent).IsNull();
+        await Assert.That(idle.State.UpdateOperationText).IsNull();
     }
 }

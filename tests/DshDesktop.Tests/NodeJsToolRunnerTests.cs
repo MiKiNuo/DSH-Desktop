@@ -93,4 +93,66 @@ public sealed class NodeJsToolRunnerTests
         await Assert.That(calls.Count).IsEqualTo(1);
         await Assert.That(calls.Any(a => a.Contains("--force"))).IsFalse();
     }
+
+    // ===== InstallWithOfflineFallbackAsync（2026-09-15 架构审查：三处「离线优先、失败联网」
+    // 同构实现——ProfileSeeder / PluginProfileRepository / ProfileSnapshotter——收敛为单点） =====
+
+    /// <summary>
+    /// 离线成功即返回，不得发起联网重试（§34 Offline First）。
+    /// </summary>
+    [Test]
+    public async Task OfflineInstall_Succeeds_NoOnlineRetry()
+    {
+        List<string[]> calls = [];
+        var runner = Capture(_ => (0, "ok"), calls);
+
+        (int exitCode, _) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            "node", "pnpm.cjs", "wd", CancellationToken.None, runner);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(calls.Count).IsEqualTo(1);
+        await Assert.That(calls[0].Contains("--offline")).IsTrue();
+        await Assert.That(calls[0].Contains("--no-frozen-lockfile")).IsTrue();
+    }
+
+    /// <summary>
+    /// 离线失败后必须去掉 --offline 联网重试一次，并返回重试结果。
+    /// </summary>
+    [Test]
+    public async Task OfflineInstall_Fails_RetriesOnline()
+    {
+        List<string[]> calls = [];
+        int attempt = 0;
+        var runner = Capture(_ =>
+        {
+            attempt++;
+            return attempt == 1 ? (1, "offline miss") : (0, "online ok");
+        }, calls);
+
+        (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            "node", "pnpm.cjs", "wd", CancellationToken.None, runner);
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(outputTail).IsEqualTo("online ok");
+        await Assert.That(calls.Count).IsEqualTo(2);
+        await Assert.That(calls[0].Contains("--offline")).IsTrue();
+        await Assert.That(calls[1].Contains("--offline")).IsFalse();
+    }
+
+    /// <summary>
+    /// 两次都失败时返回最后一次的退出码与输出尾部（调用点据此抛错）。
+    /// </summary>
+    [Test]
+    public async Task OfflineInstall_BothFail_ReturnsFinalFailure()
+    {
+        List<string[]> calls = [];
+        var runner = Capture(_ => (1, "still broken"), calls);
+
+        (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
+            "node", "pnpm.cjs", "wd", CancellationToken.None, runner);
+
+        await Assert.That(exitCode).IsEqualTo(1);
+        await Assert.That(outputTail).IsEqualTo("still broken");
+        await Assert.That(calls.Count).IsEqualTo(2);
+    }
 }

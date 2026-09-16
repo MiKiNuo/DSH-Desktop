@@ -76,4 +76,19 @@ public abstract partial record AppShellIntent : IMviIntent
     /// </summary>
     /// <param name="InProgress">是否有更新操作进行中。</param>
     public sealed partial record UpdateInProgressChanged(bool InProgress) : AppShellIntent;
+
+    /// <summary>
+    /// 表示插件安装事务投影变化的回流意图（壳 toast 数据源；BindSiblingState 自
+    /// PluginsStore.Operation 投影，2026-09-15 审查 C3：自 MainWindow 直订下沉）。
+    /// </summary>
+    /// <param name="Operation">最新事务进度；无事务为 null。</param>
+    public sealed partial record PluginOperationChanged(DshDesktop.Domain.Plugins.PluginOperation? Operation) : AppShellIntent;
+
+    /// <summary>
+    /// 表示更新下载进度与操作描述投影变化的回流意图（更新遮罩的进度条互斥与副标题；
+    /// BindSiblingState 自 UpdatesStore 投影，2026-09-15 审查 C3：自 MainWindow 直订下沉）。
+    /// </summary>
+    /// <param name="Percent">下载进度（0-100）；非 Desktop 下载期间为 null。</param>
+    /// <param name="OperationText">进行中的操作描述；空闲为 null。</param>
+    public sealed partial record UpdateDownloadChanged(int? Percent, string? OperationText) : AppShellIntent;
 }

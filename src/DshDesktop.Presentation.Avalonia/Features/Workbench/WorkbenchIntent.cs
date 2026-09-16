@@ -24,4 +24,11 @@ public abstract partial record WorkbenchIntent : IMviIntent
     /// </summary>
     /// <param name="Url">完成地址。</param>
     public sealed partial record NavigationCompleted(string Url) : WorkbenchIntent;
+
+    /// <summary>
+    /// 表示 Runtime URL 投影回流意图（系统侧 Result Intent，非用户操作）：
+    /// ViewModel 从兄弟 Runtime Store 投影后回流自身 Store。
+    /// </summary>
+    /// <param name="Url">可导航地址；Runtime 非 Running 或无 URL 时为 null。</param>
+    public sealed partial record RuntimeUrlChanged(string? Url) : WorkbenchIntent;
 }
