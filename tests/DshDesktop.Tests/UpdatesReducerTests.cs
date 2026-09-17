@@ -318,6 +318,35 @@ public sealed class UpdatesReducerTests
         await Assert.That(result.State.DesktopDownloadProgress).IsNull();
     }
 
+    [Test]
+    public async Task PendingOperationSource_DistinguishesPluginUpdateFromRuntimeInstall()
+    {
+        // 此前靠 PendingOperation 文案前缀（"更新"）判断"本次待办是否插件更新引起"，文案一改即静默失灵；
+        // 改为 State 上的显式标记后，本用例锁定两种来源的区分。
+        UpdatesState pluginUpdate = _reducer.Reduce(
+            UpdatesState.Initial,
+            new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
+        UpdatesState runtimeInstall = _reducer.Reduce(
+            UpdatesState.Initial,
+            new UpdatesIntent.InstallDshRuntime("0.1.3")).State;
+
+        await Assert.That(pluginUpdate.IsPluginUpdatePending).IsTrue();
+        await Assert.That(runtimeInstall.IsPluginUpdatePending).IsFalse();
+    }
+
+    [Test]
+    public async Task PendingOperationSource_ResetsOnTerminalState()
+    {
+        UpdatesState busy = _reducer.Reduce(
+            UpdatesState.Initial,
+            new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
+        IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
+
+        var result = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes));
+
+        await Assert.That(result.State.IsPluginUpdatePending).IsFalse();
+    }
+
     private static UpdatesState CheckingState()
     {
         return UpdatesState.Initial with { Status = UpdateStatus.Checking };

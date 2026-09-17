@@ -24,27 +24,30 @@ public sealed class PluginOrchestrator(
     public event EventHandler<PluginOperation>? OperationChanged;
 
     /// <inheritdoc />
-    public async Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+    public async Task<string> InstallAsync(
+        string source,
+        PluginOperationKind kind,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
 
-        Publish(PluginOperationStage.Preparing, null, null);
+        Publish(PluginOperationStage.Preparing, null, null, kind);
         string? snapshotId = null;
         string? pluginName = null;
 
         try
         {
-            Publish(PluginOperationStage.CreatingSnapshot, null, null);
+            Publish(PluginOperationStage.CreatingSnapshot, null, null, kind);
             snapshotId = await snapshotter.CreateSnapshotAsync(cancellationToken).ConfigureAwait(false);
 
-            Publish(PluginOperationStage.StoppingRuntime, null, null);
+            Publish(PluginOperationStage.StoppingRuntime, null, null, kind);
             await supervisor.StopAsync(cancellationToken).ConfigureAwait(false);
 
-            Publish(PluginOperationStage.Installing, null, null);
+            Publish(PluginOperationStage.Installing, null, null, kind);
             pluginName = await pluginManager.InstallAsync(source, cancellationToken).ConfigureAwait(false);
             _logger.Information("Plugin.Install.Installed {PluginName}", pluginName);
 
-            Publish(PluginOperationStage.Validating, pluginName, null);
+            Publish(PluginOperationStage.Validating, pluginName, null, kind);
             // 文件级一致性校验（Q3-A）：列表解析必须能找到已安装、启用且磁盘可解析的插件。
             // 仅断言 manifest 的 Enabled 不够——声明-but-未物化（悬空 junction / 中断安装残留）的插件
             // 会让 DSH 启动期 resolveBundleDir 抛错（2026-09-14 实机），必须以磁盘可解析为准。
@@ -56,13 +59,13 @@ public sealed class PluginOrchestrator(
                     $"安装后校验失败：{pluginName} 未出现在启用且可解析的插件清单中。");
             }
 
-            Publish(PluginOperationStage.StartingRuntime, pluginName, null);
+            Publish(PluginOperationStage.StartingRuntime, pluginName, null, kind);
             await StartRuntimeWithTransientRetryAsync(cancellationToken).ConfigureAwait(false);
 
-            Publish(PluginOperationStage.HealthChecking, pluginName, null);
+            Publish(PluginOperationStage.HealthChecking, pluginName, null, kind);
             await ConfirmHealthyAsync(cancellationToken).ConfigureAwait(false);
 
-            Publish(PluginOperationStage.Completed, pluginName, null);
+            Publish(PluginOperationStage.Completed, pluginName, null, kind);
             _logger.Information("Plugin.Install.Success {PluginName}", pluginName);
             return pluginName;
         }
@@ -71,7 +74,7 @@ public sealed class PluginOrchestrator(
             _logger.Warning(
                 DiagnosticEventNames.PluginInstallRollback + " {PluginName} {Error}",
                 pluginName ?? source, exception.Message);
-            await RollbackAsync(snapshotId, pluginName ?? source, exception.Message, cancellationToken)
+            await RollbackAsync(snapshotId, pluginName ?? source, exception.Message, kind, cancellationToken)
                 .ConfigureAwait(false);
             throw;
         }
@@ -136,9 +139,10 @@ public sealed class PluginOrchestrator(
         string? snapshotId,
         string pluginName,
         string error,
+        PluginOperationKind kind,
         CancellationToken cancellationToken)
     {
-        Publish(PluginOperationStage.RollingBack, pluginName, null);
+        Publish(PluginOperationStage.RollingBack, pluginName, null, kind);
 
         // 快照恢复失败也要继续「尽力重启 Runtime」——早退会让被事务杀掉的 Runtime 无人拉起。
         // restoreFailure 保留真实原因，并入下方唯一的 Failed 发布（保证 Failed 只发一次）。
@@ -170,11 +174,15 @@ public sealed class PluginOrchestrator(
                 restartException.Message);
         }
 
-        Publish(PluginOperationStage.Failed, pluginName, restoreFailure ?? error);
+        Publish(PluginOperationStage.Failed, pluginName, restoreFailure ?? error, kind);
     }
 
-    private void Publish(PluginOperationStage stage, string? pluginName, string? error)
+    private void Publish(
+        PluginOperationStage stage,
+        string? pluginName,
+        string? error,
+        PluginOperationKind kind)
     {
-        OperationChanged?.Invoke(this, new PluginOperation(stage, pluginName, error));
+        OperationChanged?.Invoke(this, new PluginOperation(stage, pluginName, error, kind));
     }
 }

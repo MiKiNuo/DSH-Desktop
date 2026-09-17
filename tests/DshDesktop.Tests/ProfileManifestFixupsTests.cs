@@ -129,6 +129,112 @@ public sealed class ProfileManifestFixupsTests : IDisposable
         await Assert.That(Directory.Exists(ProfileDir)).IsTrue();
     }
 
+    /// <summary>
+    /// 代际投影残留剥离：dsh.desktop.generationProjection 是旧 Electron harness 的代际模型元数据，
+    /// 复制到我们环境后 .generations 必缺席；残留会让 pnpm-runner 在市场操作时把投影插件隔离出
+    /// dependencies 视图，市场遂走代际路径删除实目录（2026-09-17 实机：更新后 5 插件「未安装」）。
+    /// 剥离后 dsh.profile（bundles 等）必须原样保留。
+    /// </summary>
+    [Test]
+    public async Task StripGenerationProjection_RemovesProjection_KeepsProfile()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"), ProfileWithProjection());
+
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+
+        JsonNode? node = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(ProfileDir, "package.json")));
+        await Assert.That(node["dsh"]?["desktop"]).IsNull(); // desktop 仅剩 generationProjection → 整层移除
+        await Assert.That(node["dsh"]?["profile"]?["bundles"]).IsNotNull(); // dsh.profile 保留
+        await Assert.That(node["dependencies"]?["dshmarket"]?.GetValue<string>()).IsEqualTo("1.45.1");
+    }
+
+    /// <summary>dsh.desktop 除 generationProjection 外还有其它键：仅移除 projection，desktop 保留。</summary>
+    [Test]
+    public async Task StripGenerationProjection_DesktopWithOtherKeys_KeepsDesktop()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        const string pkg = """
+            {
+              "name": "web",
+              "dsh": {
+                "profile": { "bundles": ["dshmarket"] },
+                "desktop": { "generationProjection": { "version": 1 }, "futureKey": true }
+              }
+            }
+            """;
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"), pkg);
+
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+
+        JsonNode? node = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(ProfileDir, "package.json")));
+        await Assert.That(node["dsh"]?["desktop"]?["generationProjection"]).IsNull();
+        await Assert.That(node["dsh"]?["desktop"]?["futureKey"]?.GetValue<bool>()).IsTrue();
+    }
+
+    /// <summary>无 dsh.desktop 字段：不动文件（不无谓改写时间戳，逐字节语义不变）。</summary>
+    [Test]
+    public async Task StripGenerationProjection_NoDesktopField_LeavesFileUntouched()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        const string pkg = """
+            {
+              "name": "web",
+              "private": true,
+              "dsh": { "profile": { "bundles": ["dshmarket"] } }
+            }
+            """;
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"), pkg);
+
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+
+        await Assert.That(await File.ReadAllTextAsync(Path.Combine(ProfileDir, "package.json"))).IsEqualTo(pkg);
+    }
+
+    /// <summary>幂等：重复调用无副作用。</summary>
+    [Test]
+    public async Task StripGenerationProjection_Idempotent()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"), ProfileWithProjection());
+
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+        string first = await File.ReadAllTextAsync(Path.Combine(ProfileDir, "package.json"));
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+        string second = await File.ReadAllTextAsync(Path.Combine(ProfileDir, "package.json"));
+
+        await Assert.That(second).IsEqualTo(first);
+        await Assert.That(JsonNode.Parse(second)["dsh"]?["desktop"]).IsNull();
+    }
+
+    /// <summary>profile 目录存在但无 package.json：静默返回（幂等，不抛）。</summary>
+    [Test]
+    public async Task StripGenerationProjection_MissingFile_SilentlyReturns()
+    {
+        Directory.CreateDirectory(ProfileDir);
+
+        ProfileManifestFixups.StripGenerationProjection(ProfileDir);
+
+        await Assert.That(Directory.Exists(ProfileDir)).IsTrue();
+    }
+
+    private static string ProfileWithProjection() => """
+        {
+          "name": "web",
+          "private": true,
+          "dependencies": { "dshmarket": "1.45.1" },
+          "dsh": {
+            "profile": { "bundles": ["dshmarket"] },
+            "desktop": {
+              "generationProjection": {
+                "version": 1,
+                "plugins": { "dshmarket": { "generationId": "dshmarket+1.45.1+24ae4d06b2b5" } }
+              }
+            }
+          }
+        }
+        """;
+
     private static string ProfileWithOverrides() => """
         {
           "name": "web",

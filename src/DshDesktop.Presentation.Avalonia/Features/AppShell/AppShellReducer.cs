@@ -134,14 +134,35 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
-    /// 处理更新操作进行中投影变化回流意图（§14：仅投影字段，壳全屏遮罩 + 导航锁定的数据源）。
+    /// 处理更新操作进行中投影变化回流意图（§14：仅投影字段，壳全屏遮罩 + 导航锁定的数据源；
+    /// 与插件事务分量取或——二者任一未完成即拉遮罩）。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.UpdateInProgressChanged))]
     private MviReduceResult<AppShellState, UnitEffect> HandleUpdateInProgressChanged(
         AppShellState state,
         AppShellIntent.UpdateInProgressChanged intent)
     {
-        return Unchanged(state with { UpdateInProgress = intent.InProgress });
+        return Unchanged(state with
+        {
+            UpdatesInProgress = intent.InProgress,
+            UpdateInProgress = intent.InProgress || state.PluginOperationInProgress,
+        });
+    }
+
+    /// <summary>
+    /// 处理插件事务进行中投影变化回流意图（§14：仅投影字段；插件页入口只写 PluginsStore，
+    /// 缺此分量时该入口的更新全程没有遮罩反馈，2026-09-17 定位）。
+    /// </summary>
+    [MviReduce(typeof(AppShellIntent.PluginOperationInProgressChanged))]
+    private MviReduceResult<AppShellState, UnitEffect> HandlePluginOperationInProgressChanged(
+        AppShellState state,
+        AppShellIntent.PluginOperationInProgressChanged intent)
+    {
+        return Unchanged(state with
+        {
+            PluginOperationInProgress = intent.InProgress,
+            UpdateInProgress = state.UpdatesInProgress || intent.InProgress,
+        });
     }
 
     /// <summary>

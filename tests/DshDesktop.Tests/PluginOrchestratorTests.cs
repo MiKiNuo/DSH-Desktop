@@ -34,7 +34,7 @@ public sealed class PluginOrchestratorTests
         var stages = new List<PluginOperationStage>();
         orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
 
-        await Assert.That(async () => await orchestrator.InstallAsync("bad-plugin", CancellationToken.None))
+        await Assert.That(async () => await orchestrator.InstallAsync("bad-plugin", PluginOperationKind.Install, CancellationToken.None))
             .Throws<InvalidOperationException>();
 
         await Assert.That(snapshotter.RestoredSnapshotId).IsEqualTo("snap-1");
@@ -90,7 +90,7 @@ public sealed class PluginOrchestratorTests
         var operations = new List<PluginOperation>();
         orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
 
-        await Assert.That(async () => await orchestrator.InstallAsync("bad-plugin", CancellationToken.None))
+        await Assert.That(async () => await orchestrator.InstallAsync("bad-plugin", PluginOperationKind.Install, CancellationToken.None))
             .Throws<InvalidOperationException>();
 
         // Runtime 仍被尽力重启（修复前快照恢复失败会跳过此处）。
@@ -118,7 +118,7 @@ public sealed class PluginOrchestratorTests
         var stages = new List<PluginOperationStage>();
         orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
 
-        string installed = await orchestrator.InstallAsync("dsh-foo", CancellationToken.None);
+        string installed = await orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Install, CancellationToken.None);
 
         await Assert.That(installed).IsEqualTo("dsh-foo");
         await Assert.That(snapshotter.RestoredSnapshotId).IsNull(); // 成功不回滚
@@ -131,6 +131,26 @@ public sealed class PluginOrchestratorTests
         await Assert.That(stages[5]).IsEqualTo(PluginOperationStage.StartingRuntime);
         await Assert.That(stages[6]).IsEqualTo(PluginOperationStage.HealthChecking);
         await Assert.That(stages[7]).IsEqualTo(PluginOperationStage.Completed);
+    }
+
+    [Test]
+    public async Task InstallAsync_CarriesRequestedKind()
+    {
+        // 壳 toast 反馈要区分"安装完成"与"更新完成"：事务每个阶段都必须携带调用方声明的种类。
+        var pluginManager = new SucceedingPluginManager();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            new FakeProfileSnapshotter(),
+            new FakeRuntimeSupervisor(),
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var kinds = new List<PluginOperationKind>();
+        orchestrator.OperationChanged += (_, operation) => kinds.Add(operation.Kind);
+
+        _ = await orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Update, CancellationToken.None);
+
+        await Assert.That(kinds.Count).IsEqualTo(8);
+        await Assert.That(kinds.All(kind => kind == PluginOperationKind.Update)).IsTrue();
     }
 
     [Test]
@@ -149,7 +169,7 @@ public sealed class PluginOrchestratorTests
             OptionsFactory,
             Serilog.Core.Logger.None);
 
-        await Assert.That(async () => await orchestrator.InstallAsync("dsh-foo", CancellationToken.None))
+        await Assert.That(async () => await orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Install, CancellationToken.None))
             .Throws<InvalidOperationException>();
 
         await Assert.That(snapshotter.RestoredSnapshotId).IsEqualTo("snap-1"); // 校验失败也回滚

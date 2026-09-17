@@ -1,4 +1,3 @@
-using System;
 using DshDesktop.Domain.Updates;
 using MiKiNuo.Mvi.Application.MVI.Reducer;
 using MiKiNuo.Mvi.Domain.DI;
@@ -24,12 +23,9 @@ public sealed partial class UpdatesReducer
         // 仅当"当前进行中操作即本次检查自身"时才清空 PendingOperation：空闲检查本就为空；
         // 插件更新成功经此处终态回流（§23）需清空其自身标记。后台静默检查
         // （App.axaml.cs 启动路径 BackgroundCheckUpdatesAsync，绕过按钮）可能在 Desktop 下载 / Runtime 安装 /
-        // 激活进行中抵达，若无条件清空会释放遮罩与导航锁（§22）。插件标记前缀须与 HandleUpdatePlugin 的
-        // PendingOperation 文案保持一致。
-        const string PluginPendingPrefix = "更新";
-        bool canClearPending = state.PendingOperation is null
-            || state.PendingOperation.StartsWith(PluginPendingPrefix, StringComparison.Ordinal);
-        if (!canClearPending)
+        // 激活进行中抵达，若无条件清空会释放遮罩与导航锁（§22）。
+        // 来源判定读 state.IsPluginUpdatePending（显式标记），不再依赖 PendingOperation 文案前缀。
+        if (state.PendingOperation is not null && !state.IsPluginUpdatePending)
         {
             return WithEffect(
                 state with { Status = UpdateStatus.Checking, LastError = null },
@@ -37,7 +33,13 @@ public sealed partial class UpdatesReducer
         }
 
         return WithEffect(
-            state with { Status = UpdateStatus.Checking, LastError = null, PendingOperation = null },
+            state with
+            {
+                Status = UpdateStatus.Checking,
+                LastError = null,
+                PendingOperation = null,
+                IsPluginUpdatePending = false,
+            },
             new UpdatesEffect.CheckUpdates());
     }
 
@@ -64,6 +66,7 @@ public sealed partial class UpdatesReducer
             PluginUpdates = result.PluginUpdates,
             LatestDesktopVersion = result.LatestDesktopVersion,
             LastError = null,
+            IsPluginUpdatePending = false,
         });
     }
 
@@ -86,6 +89,7 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}…",
                 DesktopDownloadProgress = 0,
                 LastError = null,
+                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.DownloadAndApplyDesktopUpdate());
     }
@@ -110,6 +114,7 @@ public sealed partial class UpdatesReducer
         {
             DesktopDownloadProgress = intent.Percent,
             PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}（{intent.Percent}%）…",
+            IsPluginUpdatePending = false,
         });
     }
 
@@ -132,6 +137,7 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"安装 DSH Runtime {intent.Version}…",
                 DesktopDownloadProgress = null,
                 LastError = null,
+                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.InstallDshRuntime(intent.Version));
     }
@@ -151,6 +157,7 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"切换到 {label} 并重启 Runtime…",
                 DesktopDownloadProgress = null,
                 LastError = null,
+                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.ActivateDshRuntime(intent.Version));
     }
@@ -169,6 +176,7 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"更新 {intent.Name}…",
                 DesktopDownloadProgress = null,
                 LastError = null,
+                IsPluginUpdatePending = true,
             },
             new UpdatesEffect.UpdatePlugin(intent.Name));
     }
@@ -191,6 +199,7 @@ public sealed partial class UpdatesReducer
             Status = UpdateStatus.Idle,
             PendingOperation = null,
             DesktopDownloadProgress = null,
+            IsPluginUpdatePending = false,
         });
     }
 
@@ -208,6 +217,7 @@ public sealed partial class UpdatesReducer
             PendingOperation = null,
             DesktopDownloadProgress = null,
             LastError = intent.Error,
+            IsPluginUpdatePending = false,
         });
     }
 }

@@ -20,9 +20,10 @@ public interface IPluginOrchestrator
     /// 任何失败 → 回滚（恢复快照 + 重建）→ 尽力重启 Runtime → Failed。
     /// </summary>
     /// <param name="source">npm 包名（可带版本）或本地 .tgz 文件路径。</param>
+    /// <param name="kind">操作种类（安装 / 更新），供下游反馈文案区分。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>安装的插件包名。</returns>
-    Task<string> InstallAsync(string source, CancellationToken cancellationToken);
+    Task<string> InstallAsync(string source, PluginOperationKind kind, CancellationToken cancellationToken);
 
     /// <summary>
     /// 禁用全部第三方插件（Q6 恢复动作；调用方负责随后启动 Runtime）。

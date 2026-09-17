@@ -881,7 +881,8 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        _ = await _pluginOrchestrator!.InstallAsync($"{request.Name}@latest", cancellationToken)
+        _ = await _pluginOrchestrator!
+            .InstallAsync($"{request.Name}@latest", PluginOperationKind.Update, cancellationToken)
             .ConfigureAwait(false);
         return true;
     }
@@ -891,7 +892,9 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        _ = await _pluginOrchestrator!.InstallAsync(request.Source, cancellationToken).ConfigureAwait(false);
+        _ = await _pluginOrchestrator!
+            .InstallAsync(request.Source, PluginOperationKind.Install, cancellationToken)
+            .ConfigureAwait(false);
         return await _pluginRepository!.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -923,6 +926,19 @@ public sealed partial class DshCompositionRoot
         {
             IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore = ResolveRuntimeStore();
             _ = runtimeStore.DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated());
+        }
+
+        // 事务成功提交是两侧清单刷新的**唯一发起源**：更新中心入口与插件页入口都收口到这里，
+        // 避免"各入口只刷新本侧 Store"导致对面页面（插件版本号 / 可更新列表 / 顶栏徽标）停在旧值。
+        // 失败分支刻意不广播：Failed 时 PluginOperationFailed 已把真实原因写进页内 LastError，
+        // 自动 LoadPlugins/CheckUpdates 会把它清掉或覆盖；且回滚后可更新列表本就未变，无需刷新。
+        if (operation.Stage is PluginOperationStage.Completed)
+        {
+            _ = store.DispatchAsync(new PluginsIntent.LoadPlugins());
+
+            IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore =
+                _container.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
+            _ = updatesStore.DispatchAsync(new UpdatesIntent.CheckUpdates());
         }
     }
 

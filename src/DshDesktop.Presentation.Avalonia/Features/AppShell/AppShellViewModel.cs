@@ -229,5 +229,14 @@ public sealed partial class AppShellViewModel
         {
             _ = DispatchAsync(new AppShellIntent.PluginOperationChanged(pluginsState.Operation));
         }
+
+        // 插件页行内"更新"只写 PluginsStore，遮罩必须据此分量独立判定，
+        // 否则该入口的更新全程没有任何进度反馈（2026-09-17 定位）。
+        bool pluginInProgress = pluginsState.Operation
+            is { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed };
+        if (pluginInProgress != Store.CurrentState.PluginOperationInProgress)
+        {
+            _ = DispatchAsync(new AppShellIntent.PluginOperationInProgressChanged(pluginInProgress));
+        }
     }
 }

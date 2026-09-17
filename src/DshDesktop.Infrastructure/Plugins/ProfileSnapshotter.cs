@@ -67,11 +67,11 @@ public sealed class ProfileSnapshotter(
             }
         }
 
-        // 恢复出的 package.json 可能含事务前的悬空 pnpm overrides（link:../.generations/...
-        // 目标不随 profile 复制）：重建前剥离，否则 pnpm install 会把已 materialize 的真实依赖
-        // 重建为悬空 junction，把回滚改坏（2026-09-14 实机：回滚后 Runtime 抛
-        // cannot resolve profile bundle → ExitCode=1）。
-        ProfileManifestFixups.StripDanglingOverrides(profileDir);
+        // 恢复出的 package.json 可能含事务前的代际投影残留与悬空 pnpm overrides
+        // （link:../.generations/... 目标不随 profile 复制）：重建前归一化，否则 pnpm install
+        // 会把已 materialize 的真实依赖重建为悬空 junction，把回滚改坏（2026-09-14 实机：
+        // 回滚后 Runtime 抛 cannot resolve profile bundle → ExitCode=1）。
+        ProfileManifestFixups.NormalizeToFlatModel(profileDir);
 
         // 离线优先策略收敛在 NodeJsToolRunner.InstallWithOfflineFallbackAsync（_runner 注入缝保留）。
         (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(

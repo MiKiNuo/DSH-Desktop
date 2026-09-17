@@ -40,12 +40,27 @@ public enum PluginOperationStage
 }
 
 /// <summary>
+/// 表示插件操作的业务种类：同一套安装事务被"安装"与"更新"两个入口复用，
+/// 下游反馈文案（壳 toast）需要据此区分。
+/// </summary>
+public enum PluginOperationKind
+{
+    /// <summary>安装新插件。</summary>
+    Install,
+
+    /// <summary>把已安装插件升级到最新版。</summary>
+    Update,
+}
+
+/// <summary>
 /// 表示一次插件操作（§19 安装事务）的进度快照。
 /// </summary>
 /// <param name="Stage">当前阶段。</param>
 /// <param name="PluginName">目标插件名（安装前可能未知，为 null）。</param>
 /// <param name="Error">失败信息；未失败为 null。</param>
+/// <param name="Kind">操作种类。</param>
 public sealed record PluginOperation(
     PluginOperationStage Stage,
     string? PluginName,
-    string? Error);
+    string? Error,
+    PluginOperationKind Kind = PluginOperationKind.Install);

@@ -12,6 +12,18 @@ internal static class ProfileManifestFixups
     private static readonly System.Text.Json.JsonSerializerOptions Indented = new() { WriteIndented = true };
 
     /// <summary>
+    /// 把 profile 清单归一化到扁平 pnpm 模型：剥离代际投影残留与悬空 overrides。
+    /// 两者同源（旧 Electron harness 的代际模型在我们环境无 .generations 支撑），必须成对清理——
+    /// 所有会对 profile 执行 pnpm 操作或启动 Runtime 的入口都调用本方法，而非只调其中一半。
+    /// </summary>
+    /// <param name="profileDir">profile 目录（含 package.json）。</param>
+    internal static void NormalizeToFlatModel(string profileDir)
+    {
+        StripGenerationProjection(profileDir);
+        StripDanglingOverrides(profileDir);
+    }
+
+    /// <summary>
     /// 移除 profile 的 <c>package.json</c> 中 <c>pnpm.overrides</c>，避免任何 pnpm 操作把已
     /// materialize 的真实依赖目录重建为悬空 junction。
     ///
@@ -55,6 +67,51 @@ internal static class ProfileManifestFixups
         if (pnpm.Count == 0)
         {
             manifest.Remove("pnpm"); // pnpm 变空 → 整体移除，与健康 profile 形态一致。
+        }
+
+        File.WriteAllText(manifestPath, manifest.ToJsonString(Indented));
+    }
+
+    /// <summary>
+    /// 移除 profile 的 <c>package.json</c> 中 <c>dsh.desktop.generationProjection</c>（旧 Electron
+    /// harness 的代际投影模型元数据）；<c>dsh.desktop</c> 因此变空时整层移除，<c>dsh.profile</c>
+    /// （bundles 等）与其余字段不动。
+    ///
+    /// <b>根因</b>：projection 登记的插件被 .desktop-bin 的 pnpm-runner 在每次 pnpm 运行前从
+    /// dependencies/overrides 视图临时摘除，工作台市场遂无法经 pnpm 更新它们，转而走代际路径
+    /// 改写 node_modules——而我们环境永无 <c>.generations</c>（ProfileSeeder 复制时排除），
+    /// 结果是实目录被删、bundle 不可解析 → DSH 启动 cannot resolve profile bundle → ExitCode=1，
+    /// 连续失败触发自动安全模式全量禁用（2026-09-17 实机现场）。
+    ///
+    /// <b>删除安全</b>：DSH 运行时（0.1.5-rc.1）与本仓 .NET 侧均不读不写该字段；剥离后市场对
+    /// 这些插件退化为普通 pnpm 依赖，与已验证可用的健康 profile（无 pnpm/desktop 字段）同形态。
+    /// </summary>
+    /// <param name="profileDir">profile 目录（含 package.json）。</param>
+    internal static void StripGenerationProjection(string profileDir)
+    {
+        string manifestPath = Path.Combine(profileDir, "package.json");
+        if (!File.Exists(manifestPath))
+        {
+            return; // 幂等：文件缺失静默返回，不抛。
+        }
+
+        JsonNode? root = JsonNode.Parse(File.ReadAllText(manifestPath));
+        if (root is not JsonObject manifest)
+        {
+            return;
+        }
+
+        if (manifest["dsh"] is not JsonObject dsh
+            || dsh["desktop"] is not JsonObject desktop
+            || desktop["generationProjection"] is null)
+        {
+            return; // 无投影残留：不动文件（不无谓改写时间戳）。
+        }
+
+        desktop.Remove("generationProjection");
+        if (desktop.Count == 0)
+        {
+            dsh.Remove("desktop"); // desktop 变空 → 整层移除，与健康 profile 形态一致。
         }
 
         File.WriteAllText(manifestPath, manifest.ToJsonString(Indented));

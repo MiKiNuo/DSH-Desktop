@@ -67,6 +67,11 @@ public sealed partial class PluginsReducer
     /// <summary>
     /// 处理插件清单已刷新回流意图。
     /// </summary>
+    /// <remarks>
+    /// 刻意不清 <c>Operation</c>：它是壳 toast 的反馈源，而清单刷新紧接着事务终态到达，
+    /// 一旦在此清空，成功/失败提示就会与刷新抢同一次终态而间歇性丢失（2026-09-17 定位）。
+    /// 保留终态是安全的——<see cref="HandleInstallPlugin"/> 的并发守卫只拦非终态。
+    /// </remarks>
     [MviReduce(typeof(PluginsIntent.PluginsLoaded))]
     private MviReduceResult<PluginsState, PluginsEffect> HandlePluginsLoaded(
         PluginsState state,
@@ -76,7 +81,6 @@ public sealed partial class PluginsReducer
         {
             Plugins = intent.Plugins,
             PendingOperation = null,
-            Operation = null,
             LastError = null,
         });
     }

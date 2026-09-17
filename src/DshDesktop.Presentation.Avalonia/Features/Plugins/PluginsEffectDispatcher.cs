@@ -115,7 +115,9 @@ public sealed partial class PluginsEffectDispatcher
     }
 
     /// <summary>
-    /// 处理更新插件副作用（照 Updates 链路：安装 name@latest 后刷新清单）。
+    /// 处理更新插件副作用（照 Updates 链路：安装 name@latest）。
+    /// 成功后的清单刷新不在此处发起——事务 Completed 由组合根统一广播两侧刷新（见 DshCompositionRoot），
+    /// 否则插件页入口只刷新本侧 Store，更新中心的列表与徽标会停在旧值。
     /// </summary>
     [MviEffect(typeof(PluginsEffect.UpdatePlugin))]
     private async ValueTask HandleUpdatePlugin(
@@ -126,8 +128,6 @@ public sealed partial class PluginsEffectDispatcher
         {
             _ = await _mediator
                 .SendAsync(new Updates.UpdatePluginRequest(effect.Name), cancellationToken)
-                .ConfigureAwait(false);
-            await DispatchIntentAsync(new PluginsIntent.LoadPlugins(), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)

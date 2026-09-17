@@ -318,6 +318,66 @@ public static class DshDesktopConfigStore
     }
 
     /// <summary>
+    /// 迁移补全配置中的运行时路径（NodePath / DshEntryPath / WorkingDirectory）：字段非空但指向的
+    /// 文件已不存在时按重探测结果修复——探测到替代安装则重锚（入口 + 工作目录 + vendored node），
+    /// 探测不到则 DshEntryPath 清空（与 Detect 未探测到安装时同语义，启动链诚实失败）、
+    /// NodePath 回退 "node"（PATH 系统 node，与 Detect 回退同语义）。
+    /// 仅原地修改 loaded，返回是否发生变更。internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// 必须先于 <see cref="HealToolPaths"/> 调用：pnpm.cjs 的重推导依赖修复后的 DshEntryPath。
+    /// </summary>
+    /// <param name="loaded">已加载的配置实例（原地修改）。</param>
+    /// <param name="redetectResourcesDir">重探测委托（惰性）：仅在确有失效路径时调用；
+    /// 返回重探测到的安装 resources 目录，null 表示未探测到。惰性是为了健康配置不触发全盘扫描。</param>
+    /// <returns>是否发生了修改。</returns>
+    internal static bool HealRuntimePaths(DshDesktopConfig loaded, Func<string?> redetectResourcesDir)
+    {
+        ArgumentNullException.ThrowIfNull(loaded);
+        ArgumentNullException.ThrowIfNull(redetectResourcesDir);
+
+        // "node" 是 PATH 解析的合法值（Detect 的回退产物），不是文件路径，不参与失效判定。
+        bool nodeStale = !string.IsNullOrEmpty(loaded.NodePath)
+            && !string.Equals(loaded.NodePath, "node", StringComparison.OrdinalIgnoreCase)
+            && !File.Exists(loaded.NodePath);
+        bool entryStale = !string.IsNullOrEmpty(loaded.DshEntryPath) && !File.Exists(loaded.DshEntryPath);
+        if (!nodeStale && !entryStale)
+        {
+            return false;
+        }
+
+        if (redetectResourcesDir() is { } resourcesDir)
+        {
+            string appDir = Path.Combine(resourcesDir, "app");
+            if (entryStale)
+            {
+                loaded.DshEntryPath = Path.Combine(
+                    appDir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
+                loaded.WorkingDirectory = appDir;
+            }
+
+            if (nodeStale)
+            {
+                string vendoredNode = Path.Combine(appDir, "node_modules", "node", "bin", "node.exe");
+                loaded.NodePath = File.Exists(vendoredNode) ? vendoredNode : "node";
+            }
+        }
+        else
+        {
+            // 无替代安装可锚：清除已知失效值而非保留死路径（HealToolPaths 同款约定）。
+            if (entryStale)
+            {
+                loaded.DshEntryPath = string.Empty;
+            }
+
+            if (nodeStale)
+            {
+                loaded.NodePath = "node";
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// 加载配置；文件不存在时自动探测并回写。
     /// </summary>
     /// <param name="cancellationToken">取消标记。</param>
@@ -331,8 +391,15 @@ public static class DshDesktopConfigStore
             DshDesktopConfig? loaded = await LoadFromPathAsync(ConfigPath, cancellationToken).ConfigureAwait(false);
             if (loaded is not null)
             {
-                // 配置迁移：老配置缺少 / 失效工具路径时推导补全（见 HealToolPaths）。
+                // 配置迁移：借用安装被删除/改名后，先重锚运行时路径（NodePath / DshEntryPath），
+                // 再补全工具路径（pnpm 重推导依赖修复后的 DshEntryPath）。
                 bool dirty = false;
+                if (HealRuntimePaths(loaded, FindElectronResourcesDir))
+                {
+                    dirty = true;
+                }
+
+                // 配置迁移：老配置缺少 / 失效工具路径时推导补全（见 HealToolPaths）。
                 if (HealToolPaths(loaded))
                 {
                     dirty = true;

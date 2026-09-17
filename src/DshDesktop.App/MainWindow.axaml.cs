@@ -314,15 +314,17 @@ public sealed partial class MainWindow : Window
             return;
         }
 
+        // 同一套安装事务被"安装"与"更新"两个入口复用，文案按操作种类区分，避免点"更新"却报"安装"。
+        string verb = operation.Kind is PluginOperationKind.Update ? "更新" : "安装";
         if (operation.Stage is PluginOperationStage.Completed)
         {
             _notifiedPluginOperation = operation;
-            ShowToast($"插件 {operation.PluginName} 安装完成");
+            ShowToast($"插件 {operation.PluginName} {verb}完成");
         }
         else if (operation.Stage is PluginOperationStage.Failed)
         {
             _notifiedPluginOperation = operation;
-            ShowToast($"插件 {operation.PluginName} 安装失败：{operation.Error}");
+            ShowToast($"插件 {operation.PluginName} {verb}失败：{operation.Error}");
         }
     }
 

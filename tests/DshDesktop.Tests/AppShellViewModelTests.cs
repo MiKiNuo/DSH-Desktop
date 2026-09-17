@@ -187,6 +187,37 @@ public sealed class AppShellViewModelTests
         await Assert.That(shellStore.CurrentState.UpdateInProgress).IsFalse();
     }
 
+    [Test]
+    public async Task UpdateInProgress_AlsoTracksPluginTransaction()
+    {
+        // 插件页入口只写 PluginsStore（UpdatesStore 的待办始终为空），若遮罩只认
+        // UpdatesStore.PendingOperation，插件更新全程（停 Runtime → pnpm add → 重启 Runtime）
+        // 就没有任何全局进度指示（2026-09-17 定位）。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+
+        pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Installing, "dsh-foo", null),
+        });
+
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
+
+        pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Completed, "dsh-foo", null),
+        });
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsFalse();
+    }
+
     // ===== 2026-09-15 架构审查 C3：插件事务 / 更新下载投影收进 AppShell =====
 
     [Test]

@@ -44,22 +44,24 @@ public sealed class PluginsReducerTests
     }
 
     [Test]
-    public async Task PluginsLoaded_ClearsOperationAndError()
+    public async Task PluginsLoaded_KeepsTerminalOperation()
     {
-        PluginsState busy = PluginsState.Initial with
+        PluginsState completed = PluginsState.Initial with
         {
             PendingOperation = "安装中…",
-            Operation = new PluginOperation(PluginOperationStage.Installing, "dsh-foo", null),
+            Operation = new PluginOperation(PluginOperationStage.Completed, "dsh-foo", null),
             LastError = "旧错误",
         };
         IReadOnlyList<PluginInfo> plugins = [new PluginInfo("dsh-foo", "1.0.0", false, true, "")];
 
-        var result = _reducer.Reduce(busy, new PluginsIntent.PluginsLoaded(plugins));
+        var result = _reducer.Reduce(completed, new PluginsIntent.PluginsLoaded(plugins));
 
         await Assert.That(result.State.Plugins.Count).IsEqualTo(1);
         await Assert.That(result.State.PendingOperation).IsNull();
-        await Assert.That(result.State.Operation).IsNull();
         await Assert.That(result.State.LastError).IsNull();
+        // 终态事务必须留存：壳 toast 读 Operation 作反馈源，若被清单刷新清空，
+        // 成功/失败提示会与随后的 LoadPlugins 抢同一次终态而间歇性丢失（2026-09-17 定位）。
+        await Assert.That(result.State.Operation!.Stage).IsEqualTo(PluginOperationStage.Completed);
     }
 
     [Test]

@@ -74,6 +74,11 @@ public static class ProfileSeeder
             await CopyProfileAsync(sourceProfile, targetProfile, cancellationToken).ConfigureAwait(false);
         }
 
+        // 每次启动归一化清单（清除代际投影残留 + 悬空 overrides）：目标已存在时复制分支不执行，
+        // 而工作台市场的更新随时可能重新写入代际模型元数据（2026-09-17 实机：市场按代际模型
+        // 更新后 5 个投影插件实目录被删、重新启用即 cannot resolve profile bundle → ExitCode=1）。
+        ProfileManifestFixups.NormalizeToFlatModel(targetProfile);
+
         await EnsureDependenciesAsync(targetProfile, installer, cancellationToken).ConfigureAwait(false);
     }
 
@@ -99,9 +104,9 @@ public static class ProfileSeeder
             return;
         }
 
-        // 重建前剥离悬空 pnpm overrides（link:../.generations/... 目标不随 profile 复制）：
-        // 否则 pnpm install 会把已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
-        ProfileManifestFixups.StripDanglingOverrides(profileDir);
+        // 重建前归一化清单（剥离代际投影残留 + 悬空 overrides）：否则 pnpm install 会把
+        // 已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
+        ProfileManifestFixups.NormalizeToFlatModel(profileDir);
 
         (int exitCode, string outputTail) = await installer(profileDir, cancellationToken).ConfigureAwait(false);
         if (exitCode != 0)
@@ -180,9 +185,9 @@ public static class ProfileSeeder
         // 跨盘后把虚拟存储指向重写为本 profile，从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 根因。
         RewriteVirtualStoreDir(targetProfile);
 
-        // 复制后剥离悬空 pnpm overrides（link:../.generations/... 目标不随 profile 复制）：
-        // 否则首次 pnpm 操作会把已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
-        ProfileManifestFixups.StripDanglingOverrides(targetProfile);
+        // 复制后归一化清单（剥离代际投影残留 + 悬空 overrides）：否则首次 pnpm 操作会把
+        // 已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
+        ProfileManifestFixups.NormalizeToFlatModel(targetProfile);
     }
 
     /// <summary>

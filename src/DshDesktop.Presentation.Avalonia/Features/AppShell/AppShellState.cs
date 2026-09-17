@@ -13,10 +13,13 @@ namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 /// <param name="RuntimeProcessId">DSH 进程 ID 投影（状态栏 PID；未运行为 null，Phase 8 Issue 02）。</param>
 /// <param name="RuntimePort">实际监听端口投影（状态栏 Port；未运行为 null，Phase 8 Issue 02）。</param>
 /// <param name="DshVersion">当前 DSH 版本投影（状态栏 DSH 版本段；自 UpdatesStore.CurrentDshVersion，未知为 null）。</param>
-/// <param name="UpdateInProgress">是否有更新操作进行中投影（BindSiblingState 自 UpdatesStore.PendingOperation，§11.2；true 时壳显示全屏遮罩并锁定导航）。</param>
+/// <param name="UpdateInProgress">是否有更新操作进行中投影（= <paramref name="UpdatesInProgress"/> 或 <paramref name="PluginOperationInProgress"/>；true 时壳显示全屏遮罩并锁定导航）。</param>
 /// <param name="PluginOperation">插件安装事务投影（BindSiblingState 自 PluginsStore.Operation；壳 toast 数据源，2026-09-15 审查 C3：自 MainWindow 直订下沉）。</param>
 /// <param name="UpdateDownloadPercent">Desktop 更新下载进度投影（自 UpdatesStore.DesktopDownloadProgress；遮罩「旋转图标 ↔ 确定进度条」互斥依据）。</param>
 /// <param name="UpdateOperationText">进行中更新操作描述投影（自 UpdatesStore.PendingOperation；遮罩副标题）。</param>
+/// <param name="UpdatesInProgress">Updates 侧待办分量（BindSiblingState 自 UpdatesStore.PendingOperation）。</param>
+/// <param name="PluginOperationInProgress">Plugins 侧事务分量（BindSiblingState 自 PluginsStore.Operation 的非终态阶段）。
+/// 插件页的行内"更新"只写 PluginsStore，缺这一分量时该入口全程拉不起遮罩（2026-09-17 定位）。</param>
 public sealed record AppShellState(
     ShellPage CurrentPage,
     RuntimeLifecycle RuntimeIndicator,
@@ -27,7 +30,9 @@ public sealed record AppShellState(
     bool UpdateInProgress,
     PluginOperation? PluginOperation,
     int? UpdateDownloadPercent,
-    string? UpdateOperationText) : IMviState
+    string? UpdateOperationText,
+    bool UpdatesInProgress = false,
+    bool PluginOperationInProgress = false) : IMviState
 {
     /// <summary>
     /// 获取初始状态（顶部导航改造：默认页 = 工作台，即 DSH 官方 Web UI）。
