@@ -56,6 +56,30 @@ public sealed class RuntimeRepositoryTests
         }
     }
 
+    [Test]
+    public async Task ListRuntimesAsync_BorrowedEntryEmpty_SkipsBorrowed()
+    {
+        // 借用安装被删除后 HealRuntimePaths 会把 dshEntryPath 清空（全新无借用环境同形态）：
+        // 空路径不得让列表整体崩溃，只跳过借用条目（2026-09-17 更新中心 ArgumentNullException(path1) 回归）。
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string runtimeRoot = CreateSelfBuiltRuntime(root, "0.1.2");
+
+            var repository = new RuntimeRepository(runtimeRoot, "node", null, string.Empty);
+            IReadOnlyList<DshRuntimeInfo> runtimes = await repository.ListRuntimesAsync("0.1.2", CancellationToken.None);
+
+            await Assert.That(runtimes.Count).IsEqualTo(1);
+            await Assert.That(runtimes[0].IsBorrowed).IsFalse();
+            await Assert.That(runtimes[0].Version).IsEqualTo("0.1.2");
+            await Assert.That(runtimes[0].IsActive).IsTrue();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     /// <summary>
     /// 伪造借用安装：&lt;root&gt;/borrowed/package.json + lib/bin.js（入口的上级上级即包目录）。
     /// </summary>

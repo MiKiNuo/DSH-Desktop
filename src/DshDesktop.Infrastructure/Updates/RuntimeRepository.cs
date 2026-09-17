@@ -45,9 +45,14 @@ public sealed class RuntimeRepository : IRuntimeRepository
     {
         List<DshRuntimeInfo> runtimes = [];
 
-        string borrowedVersion = ReadDshVersion(
-            Path.GetFullPath(Path.Combine(Path.GetDirectoryName(_borrowedEntryPath)!, "..")));
-        runtimes.Add(new DshRuntimeInfo(borrowedVersion, activeRuntime is null, IsBorrowed: true));
+        // 借用入口可为空（HealRuntimePaths 在借用安装被删后清空 dshEntryPath；全新无借用环境同形态）：
+        // 空路径下 GetDirectoryName 返回 null，Path.Combine 必抛 ArgumentNullException(path1)——跳过即可。
+        if (!string.IsNullOrWhiteSpace(_borrowedEntryPath))
+        {
+            string borrowedVersion = ReadDshVersion(
+                Path.GetFullPath(Path.Combine(Path.GetDirectoryName(_borrowedEntryPath)!, "..")));
+            runtimes.Add(new DshRuntimeInfo(borrowedVersion, activeRuntime is null, IsBorrowed: true));
+        }
 
         foreach (string dir in Directory.GetDirectories(_runtimeRootDir))
         {
