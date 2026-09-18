@@ -292,5 +292,25 @@
                 </Grid>
             </Border>
         </Border>
+
+        <!-- ===== 首启 Runtime 安装弹层（缺 DSH Runtime 时 App 引导自检触发；壳渲染三态：询问/进度/失败，
+                 文案集中在 RuntimeSetupText，code-behind 填充，XAML 不写死文本） ===== -->
+        <Border x:Name="SetupScrim" Classes="scrim" IsVisible="False">
+            <Border Classes="modal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto">
+                    <TextBlock x:Name="SetupTitle" Classes="modal-title" Grid.Row="0" Margin="20,18,20,0" />
+                    <TextBlock x:Name="SetupBody" Classes="modal-body" Grid.Row="1" Margin="20,0,20,0" />
+                    <Panel x:Name="SetupProgressPanel" Grid.Row="2" Margin="20,16,20,0" IsVisible="False">
+                        <ProgressBar x:Name="SetupProgress" Classes="bar" Width="360" />
+                    </Panel>
+                    <Border Classes="modal-foot" Grid.Row="3" Margin="0,16,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+                            <Button x:Name="SetupDecline" Classes="btn secondary" />
+                            <Button x:Name="SetupAccept" Classes="btn primary" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Border>
+        </Border>
     </Grid>
 </Window>

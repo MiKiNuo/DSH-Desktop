@@ -57,7 +57,7 @@ public sealed partial class DshCompositionRoot
     private PluginProfileRepository? _pluginRepository;
     private PluginOrchestrator? _pluginOrchestrator;
     private RuntimeRepository? _runtimeRepository;
-    private VelopackDesktopUpdater? _desktopUpdater;
+    private GitHubDesktopUpdater? _desktopUpdater;
     private BalloonNotificationService? _notificationService;
     private DiagnosticsNotificationSubscriber? _notificationSubscriber;
 
@@ -238,28 +238,41 @@ public sealed partial class DshCompositionRoot
         // 必须早于 ProfileSeeder（其 EnsureDependenciesAsync 会直用 pnpm，路径无效即抛 → 整个
         // InitializeRuntimeAsync 抛 → 被 App.axaml.cs 吞成 Desktop.Bootstrap.Failed → 窗口能开但
         // Runtime 全链路不初始化）；也早于 PluginProfileRepository / ProfileSnapshotter 构造时固化路径。
-        string? provisionedPnpm = await PnpmProvisioner
-            .EnsureAvailableAsync(
-                DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (provisionedPnpm is not null
-            && !string.Equals(provisionedPnpm, _config.PnpmCjsPath, StringComparison.Ordinal))
+        // 无可用 node（干净机器首启）时跳过自举：PnpmProvisioner 对空 nodePath 硬抛参数校验，
+        // 缺 node 是合法首启形态（SetupRuntimeAsync 负责补装），不该炸掉整个编排初始化
+        // （2026-09-19 v0.1.2 便携版首启崩溃回归，守卫 CompositionRootGuardTests）。
+        if (NodeProvisioner.IsNodeAvailable(_config.NodePath))
         {
-            _config.PnpmCjsPath = provisionedPnpm;
-            try
+            string? provisionedPnpm = await PnpmProvisioner
+                .EnsureAvailableAsync(
+                    DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (provisionedPnpm is not null
+                && !string.Equals(provisionedPnpm, _config.PnpmCjsPath, StringComparison.Ordinal))
             {
-                // 持久化失败不得中断启动：内存里的 _config.PnpmCjsPath 已更新、本运行已生效；
-                // 落盘只为下次。SaveConfigAsync 用不可重入 SemaphoreSlim，此处不在持锁区间，安全。
-                await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+                _config.PnpmCjsPath = provisionedPnpm;
+                try
+                {
+                    // 持久化失败不得中断启动：内存里的 _config.PnpmCjsPath 已更新、本运行已生效；
+                    // 落盘只为下次。SaveConfigAsync 用不可重入 SemaphoreSlim，此处不在持锁区间，安全。
+                    await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    Log.Logger.Warning(
+                        exception,
+                        "pnpm 自举路径已生效于本次运行，但配置落盘失败（下次启动将重新自举）：{Error}",
+                        exception.Message);
+                }
             }
-            catch (Exception exception)
-            {
-                Log.Logger.Warning(
-                    exception,
-                    "pnpm 自举路径已生效于本次运行，但配置落盘失败（下次启动将重新自举）：{Error}",
-                    exception.Message);
-            }
+        }
+        else
+        {
+            Log.Logger.Warning(
+                "无可用 node（NodePath={NodePath}），跳过 pnpm 自举；插件安装/更新与 profile 重建暂不可用，"
+                + "待用户经首启弹窗安装 Runtime 时补全。",
+                string.IsNullOrWhiteSpace(_config.NodePath) ? "<空>" : _config.NodePath);
         }
 
         await ProfileSeeder
@@ -277,10 +290,7 @@ public sealed partial class DshCompositionRoot
         _supervisor = new RuntimeSupervisor(processHost, Log.Logger);
         _runtimeProbe = new RuntimeProbe();
         _reattacher = new RuntimeReattacher(_runtimeProbe, Log.Logger);
-        _pluginRepository = new PluginProfileRepository(
-            Path.Combine(_config.DshHome, "profiles", "web"),
-            _config.NodePath,
-            _config.PnpmCjsPath);
+        WirePluginStack();
 
         // 核心插件自愈（2026-09-18 实机：dshmarket 被外部改出 bundles 后工作台不可用，
         // 而核心插件只读约定让 Desktop 无任何入口救回）。在任何 StartAsync 前显式修复，
@@ -297,27 +307,10 @@ public sealed partial class DshCompositionRoot
                 exception.Message);
         }
 
-        ProfileSnapshotter snapshotter = new(
-            Path.Combine(_config.DshHome, "profiles", "web"),
-            Path.Combine(Directory.GetParent(_config.DshHome)!.FullName, "backups"),
-            _config.NodePath,
-            _config.PnpmCjsPath ?? string.Empty);
-        _pluginOrchestrator = new PluginOrchestrator(
-            _pluginRepository,
-            snapshotter,
-            _supervisor,
-            BuildLaunchOptions,
-            Log.Logger);
-        _pluginOrchestrator.OperationChanged += OnPluginOperationChanged;
+        CreateRuntimeRepository();
 
-        _runtimeRepository = new RuntimeRepository(
-            RuntimeRootDir,
-            _config.NodePath,
-            _config.NpmCjsPath,
-            _config.DshEntryPath);
-
-        // Velopack 自更新适配器（ADR-0003；未安装形态 no-op，不依赖 config）。
-        _desktopUpdater = new VelopackDesktopUpdater(Log.Logger);
+        // GitHub Releases 自更新适配器（Inno 安装形态；未安装形态 no-op，不依赖 config）。
+        _desktopUpdater = new GitHubDesktopUpdater(Log.Logger, DesktopInfo.Version);
 
         // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表 Run 键）；非 Windows 降级 null。
         if (OperatingSystem.IsWindows())
@@ -367,6 +360,113 @@ public sealed partial class DshCompositionRoot
         IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore =
             _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
         _ = pluginsStore.DispatchAsync(new PluginsIntent.LoadPlugins(), cancellationToken);
+    }
+
+    /// <summary>
+    /// 构造插件栈（仓库 + 快照器 + 编排器）。node / pnpm 路径在构造期固化，
+    /// 故首启安装补全工具链后必须重建（<see cref="SetupRuntimeAsync"/> 复用本方法）。
+    /// 调用前置：_config 与 _supervisor 已就绪。
+    /// </summary>
+    private void WirePluginStack()
+    {
+        _pluginRepository = new PluginProfileRepository(
+            Path.Combine(_config!.DshHome, "profiles", "web"),
+            _config.NodePath,
+            _config.PnpmCjsPath);
+        ProfileSnapshotter snapshotter = new(
+            Path.Combine(_config.DshHome, "profiles", "web"),
+            Path.Combine(Directory.GetParent(_config.DshHome)!.FullName, "backups"),
+            _config.NodePath,
+            _config.PnpmCjsPath ?? string.Empty);
+        _pluginOrchestrator = new PluginOrchestrator(
+            _pluginRepository,
+            snapshotter,
+            _supervisor!,
+            BuildLaunchOptions,
+            Log.Logger);
+        _pluginOrchestrator.OperationChanged += OnPluginOperationChanged;
+    }
+
+    /// <summary>
+    /// 构造 Runtime 仓库。node / npm 路径在构造期固化，工具链补全后必须重建
+    /// （<see cref="SetupRuntimeAsync"/> 复用本方法）。
+    /// </summary>
+    private void CreateRuntimeRepository() =>
+        _runtimeRepository = new RuntimeRepository(
+            RuntimeRootDir,
+            _config!.NodePath,
+            _config.NpmCjsPath,
+            _config.DshEntryPath);
+
+    /// <summary>
+    /// 首启自检（每次启动都应调用）：是否存在任何可用 DSH Runtime（借用外部安装或自建 side-by-side）。
+    /// true = 一个都没有，应向用户弹「下载并安装」提示。
+    /// </summary>
+    public async Task<bool> IsRuntimeSetupRequiredAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfNotInitialized();
+        IReadOnlyList<DshRuntimeInfo> runtimes = await _runtimeRepository!
+            .ListRuntimesAsync(_config!.ActiveDshRuntime, cancellationToken)
+            .ConfigureAwait(false);
+        return runtimes.Count == 0;
+    }
+
+    /// <summary>
+    /// 首启安装编排（用户在弹窗显式点「下载并安装」后由 App 调用）：
+    /// node 自举（干净机器才下载）→ pnpm 自举 → 工具链落盘 → 重建构造期固化路径的组件 →
+    /// 安装最新 DSH Runtime → 激活并落盘。
+    /// 与「装不了 ≠ 起不来」的内部组件约定不同：本方法是用户显式发起的安装动作，
+    /// 任何失败必须原样抛出（弹窗如实展示真实原因，静默失败会让用户误以为装好了）。
+    /// 成功返回后调用方可走正常 <see cref="AutoStartRuntimeAsync"/>。
+    /// </summary>
+    public async Task SetupRuntimeAsync(
+        IProgress<RuntimeSetupProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ThrowIfNotInitialized();
+
+        if (!NodeProvisioner.IsNodeAvailable(_config!.NodePath))
+        {
+            IProgress<int>? nodePercent = progress is null
+                ? null
+                : new Progress<int>(percent =>
+                    progress.Report(new RuntimeSetupProgress(RuntimeSetupText.DownloadingNodeStage, percent)));
+            NodeToolchain toolchain = await NodeProvisioner
+                .EnsureAvailableAsync(
+                    DshDesktopConfigStore.DataRoot, nodePercent, cancellationToken)
+                .ConfigureAwait(false);
+            _config.NodePath = toolchain.NodePath;
+            _config.NpmCjsPath = toolchain.NpmCjsPath;
+
+            // pnpm 自举（插件链用；Runtime 安装本身只用 npm）。失败只记日志不阻断——
+            // 插件功能降级 ≠ Runtime 装不上，下次启动 PnpmProvisioner 会重试。
+            string? provisionedPnpm = await PnpmProvisioner
+                .EnsureAvailableAsync(
+                    DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (provisionedPnpm is not null)
+            {
+                _config.PnpmCjsPath = provisionedPnpm;
+            }
+
+            await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+
+            // node/npm/pnpm 在组件构造期固化：工具链补全后必须重建，否则本运行插件链仍握空路径。
+            CreateRuntimeRepository();
+            WirePluginStack();
+        }
+
+        progress?.Report(new RuntimeSetupProgress(RuntimeSetupText.ResolvingVersionStage, -1));
+        string version = await _runtimeRepository!
+            .GetLatestVersionAsync(_config.DshChannel, cancellationToken)
+            .ConfigureAwait(false);
+        progress?.Report(new RuntimeSetupProgress(RuntimeSetupText.InstallingRuntimeStage(version), -1));
+        await _runtimeRepository.InstallAsync(version, cancellationToken).ConfigureAwait(false);
+
+        _config.ActiveDshRuntime = version;
+        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+        Log.Logger.Information("Runtime.Setup.Installed {Version}", version);
     }
 
     /// <summary>
@@ -817,7 +917,7 @@ public sealed partial class DshCompositionRoot
         string? currentDsh = runtimes.FirstOrDefault(r => r.IsActive)?.Version;
 
         // Phase 8 Issue 05：自动下载安装开关（默认关）——开 = 发现 Desktop 更新后后台预下载更新包，
-        // 应用与重启仍需用户在更新中心确认（复用现有 DownloadAndApply 链路；Velopack 对已下载文件幂等）。
+        // 应用与重启仍需用户在更新中心确认（复用现有 DownloadAndApply 链路；重复下载覆盖同名文件，幂等）。
         if (latestDesktop is not null && _config.AutoDownloadUpdates)
         {
             _ = AutoDownloadDesktopUpdateAsync();

@@ -7,14 +7,14 @@ namespace DshDesktop.Application.Updates;
 public sealed record DesktopUpdateInfo(string Version);
 
 /// <summary>
-/// 表示 Desktop 自更新端口（§4.4 VelopackUpdater；ADR-0003）。
+/// 表示 Desktop 自更新端口（Inno 安装形态 + GitHub Releases 源）。
 /// 线性三段流程：检查 → 下载 → 应用重启；检查到的更新由适配器持有（一次性语义）。
 /// 未安装形态（dotnet run / 便携解压）下全部操作 no-op。
 /// </summary>
 public interface IDesktopUpdater
 {
     /// <summary>
-    /// 获取当前是否为已安装形态（Velopack 安装包部署）。
+    /// 获取当前是否为已安装形态（Inno 安装包部署，按卸载注册表项判定）。
     /// </summary>
     bool IsInstalled { get; }
 

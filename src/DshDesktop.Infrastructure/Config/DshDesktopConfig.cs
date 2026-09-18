@@ -109,78 +109,33 @@ public static class DshDesktopConfigStore
     internal const string DataRootEnvironmentVariable = "DSH_DESKTOP_DATA_ROOT";
 
     /// <summary>
-    /// 获取数据根目录（ADR-0003 修订：默认跟随安装盘，避免用户数据落系统盘 C 盘）。
-    /// 解析顺序：环境变量 → 安装根同级 data → %LOCALAPPDATA% 兜底。
-    /// Velopack 更新只替换安装根下的 current\ 目录，data\ 与 current\ 平级不受影响。
+    /// 获取数据根目录（Inno 安装形态修订：安装目录在 Program Files 下为管理员目录、运行期不可写，
+    /// 数据根不再跟随安装盘）。解析顺序：环境变量 → %LOCALAPPDATA% 兜底。
     /// </summary>
     public static string DataRoot { get; } = ResolveDataRoot(
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "DshDesktop", "data"),
-        ResolveInstallRoot(AppContext.BaseDirectory),
         Environment.GetEnvironmentVariable(DataRootEnvironmentVariable));
 
     /// <summary>
-    /// 解析数据根：环境变量优先，其次安装根同级 data，最后回退默认根。
+    /// 解析数据根：环境变量优先，否则回退默认根。
     /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）；入参注入使用例确定且无副作用。
     /// </summary>
     /// <param name="defaultRoot">兜底数据根（%LOCALAPPDATA%\DshDesktop\data）。</param>
-    /// <param name="installRoot">安装根；null 表示未安装形态（便携 / dotnet run）。</param>
     /// <param name="environmentOverride">环境变量覆盖值。</param>
     /// <returns>最终数据根绝对路径。</returns>
     internal static string ResolveDataRoot(
         string defaultRoot,
-        string? installRoot,
         string? environmentOverride)
     {
-        if (!string.IsNullOrWhiteSpace(environmentOverride))
-        {
-            return environmentOverride;
-        }
-
-        return string.IsNullOrWhiteSpace(installRoot)
+        return string.IsNullOrWhiteSpace(environmentOverride)
             ? defaultRoot
-            : Path.Combine(installRoot, "data");
+            : environmentOverride;
     }
 
     /// <summary>
-    /// 解析安装根：Velopack 已安装形态下 exe 位于 &lt;安装根&gt;\current\，上跳一级即安装根；
-    /// 未安装形态（开发 bin 目录 / 便携解压）返回 null，由调用方回退默认根。
-    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
-    /// </summary>
-    /// <param name="baseDirectory">exe 所在目录（生产传 AppContext.BaseDirectory）。</param>
-    /// <returns>安装根；非安装形态为 null。</returns>
-    internal static string? ResolveInstallRoot(string baseDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(baseDirectory))
-        {
-            return null;
-        }
-
-        try
-        {
-            // BaseDirectory 形如 "<安装根>\current\"：去尾分隔符后取末段判断是否 current。
-            string trimmed = baseDirectory.TrimEnd(
-                Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (trimmed.Length == 0)
-            {
-                return null;
-            }
-
-            // 仅当 exe 位于名为 current 的目录下才认定是 Velopack 安装根，
-            // 避免开发形态（bin\Debug\net10.0-windows）被误判。
-            return string.Equals(Path.GetFileName(trimmed), "current", StringComparison.OrdinalIgnoreCase)
-                ? Path.GetDirectoryName(trimmed)
-                : null;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// 获取配置文件路径（ADR-0003：数据根 config 子目录——exe 旁会随 Velopack 更新被替换，§39）。
+    /// 获取配置文件路径（ADR-0003：数据根 config 子目录——exe 旁会随覆盖安装被替换，§39）。
     /// </summary>
     public static string ConfigPath { get; } =
         Path.Combine(DataRoot, "config", "dsh-desktop.config.json");

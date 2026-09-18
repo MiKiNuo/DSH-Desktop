@@ -4,6 +4,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using System.Threading.Tasks;
+using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Common;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
@@ -75,6 +76,16 @@ public sealed partial class MainWindow : Window
     private readonly Button _confirmOk;
     private readonly Button _confirmCancel;
     private TaskCompletionSource<bool>? _confirmTcs;
+
+    // ===== 首启 Runtime 安装弹层（缺 DSH Runtime 时 App 引导自检触发；文案集中在 RuntimeSetupText） =====
+    private readonly Border _setupScrim;
+    private readonly TextBlock _setupTitle;
+    private readonly TextBlock _setupBody;
+    private readonly Panel _setupProgressPanel;
+    private readonly ProgressBar _setupProgress;
+    private readonly Button _setupAccept;
+    private readonly Button _setupDecline;
+    private TaskCompletionSource<bool>? _setupTcs;
 
     /// <summary>
     /// 初始化主窗口。
@@ -173,6 +184,17 @@ public sealed partial class MainWindow : Window
         _confirmCancel.Click += (_, _) => CompleteConfirm(false);
         _confirmOk.Click += (_, _) => CompleteConfirm(true);
         ConfirmDialog.Register((action, subject) => RequestConfirmAsync(action, subject));
+
+        // 首启 Runtime 安装弹层：「下载并安装」转进度态并放行等待方；「暂不安装」（及失败态的「关闭」）收弹层。
+        _setupScrim = FindRequiredControl<Border>("SetupScrim");
+        _setupTitle = FindRequiredControl<TextBlock>("SetupTitle");
+        _setupBody = FindRequiredControl<TextBlock>("SetupBody");
+        _setupProgressPanel = FindRequiredControl<Panel>("SetupProgressPanel");
+        _setupProgress = FindRequiredControl<ProgressBar>("SetupProgress");
+        _setupAccept = FindRequiredControl<Button>("SetupAccept");
+        _setupDecline = FindRequiredControl<Button>("SetupDecline");
+        _setupAccept.Click += (_, _) => BeginSetupDownload();
+        _setupDecline.Click += (_, _) => CloseSetupPrompt(false);
 
         // 主题切换后必须重建并重算：Dsh*Brush 走 {DynamicResource} 会自动跟随主题字典，但下面这些是
         // C# 在构造期取出的**画刷引用** —— 状态栏圆点、各页就绪图标的着色与底色
@@ -275,6 +297,80 @@ public sealed partial class MainWindow : Window
         TaskCompletionSource<bool>? tcs = _confirmTcs;
         _confirmTcs = null;
         tcs?.TrySetResult(result);
+    }
+
+    // ===== 首启 Runtime 安装弹层（App 引导自检驱动，三态：询问 → 进度 → 成功收/失败态） =====
+
+    /// <summary>
+    /// 弹出「缺少 DSH Runtime」弹层并异步等待用户选择（与 RequestConfirmAsync 同一 TCS 收口范式）。
+    /// 返回 true = 用户点「下载并安装」（弹层转进度态，随后由 <see cref="ReportRuntimeSetupProgress"/>
+    /// / <see cref="CompleteRuntimeSetup"/> / <see cref="FailRuntimeSetup"/> 继续驱动）。
+    /// 必须在 UI 线程调用（与 ShowToast 的防御性编组不同：App 引导已显式编组，重复 Post 会让
+    /// 自检时序不可控）。
+    /// </summary>
+    public Task<bool> PromptRuntimeSetupAsync()
+    {
+        _setupTitle.Text = RuntimeSetupText.Title;
+        _setupBody.Text = RuntimeSetupText.Body;
+        _setupAccept.Content = RuntimeSetupText.AcceptLabel;
+        _setupAccept.IsVisible = true;
+        _setupDecline.Content = RuntimeSetupText.DeclineLabel;
+        _setupDecline.IsVisible = true;
+        _setupProgressPanel.IsVisible = false;
+
+        _setupScrim.IsVisible = true;
+        _setupTcs = new TaskCompletionSource<bool>();
+        return _setupTcs.Task;
+    }
+
+    /// <summary>「下载并安装」：转进度态并放行等待方（安装编排在 App 引导后台跑，进度经回流更新）。</summary>
+    private void BeginSetupDownload()
+    {
+        _setupAccept.IsVisible = false;
+        _setupDecline.IsVisible = false;
+        _setupProgressPanel.IsVisible = true;
+        _setupProgress.IsIndeterminate = true;
+        _setupBody.Text = RuntimeSetupText.DownloadingNodeStage;
+        _setupTcs?.TrySetResult(true);
+    }
+
+    /// <summary>收口弹层：隐藏并完成等待中的 <see cref="TaskCompletionSource{TResult}"/>（幂等）。</summary>
+    private void CloseSetupPrompt(bool result)
+    {
+        _setupScrim.IsVisible = false;
+        TaskCompletionSource<bool>? tcs = _setupTcs;
+        _setupTcs = null;
+        tcs?.TrySetResult(result);
+    }
+
+    /// <summary>安装进度回流：阶段文案 + 确定/不确定进度条切换（Percent &lt; 0 = 不确定态）。须在 UI 线程。</summary>
+    public void ReportRuntimeSetupProgress(RuntimeSetupProgress progress)
+    {
+        _setupBody.Text = progress.Stage;
+        _setupProgress.IsIndeterminate = progress.Percent < 0;
+        if (progress.Percent >= 0)
+        {
+            _setupProgress.Value = progress.Percent;
+        }
+    }
+
+    /// <summary>安装成功：收弹层 + toast（App 随后走正常自动启动链）。</summary>
+    public void CompleteRuntimeSetup()
+    {
+        CloseSetupPrompt(true);
+        ShowToast(RuntimeSetupText.CompletedToast);
+    }
+
+    /// <summary>
+    /// 安装失败：转失败态——保留真实原因与重试路径（每次启动都会自检），唯一按钮为「关闭」。
+    /// </summary>
+    public void FailRuntimeSetup(string message)
+    {
+        _setupTitle.Text = RuntimeSetupText.ErrorTitle;
+        _setupBody.Text = RuntimeSetupText.ErrorBody(message);
+        _setupProgressPanel.IsVisible = false;
+        _setupDecline.Content = RuntimeSetupText.CloseLabel;
+        _setupDecline.IsVisible = true;
     }
 
     // ===== Phase 8 评审 F7：toast 接线（只订阅壳 VM 投影，不新造事件源） =====

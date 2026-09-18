@@ -24,14 +24,26 @@ jobs:
           Write-Host "Publishing version=$version (from tag $env:GITHUB_REF_NAME)"
           dotnet publish src/DshDesktop.App -c Release -r win-x64 -p:Version=$version
 
-      - name: Install vpk
-        run: dotnet tool install --global vpk
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
 
-      - name: Velopack pack
+      # 安装包：默认 D:\Program Files\DSH-Desktop（无 D 盘回退系统盘），用户可在向导中自选目录。
+      - name: Inno Setup compile
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME.TrimStart('v')
-          vpk pack --packId DSH-Desktop --packVersion $version --packDir src/DshDesktop.App/bin/Release/net10.0-windows/win-x64/publish --outputDir releases --mainExe DshDesktop.App.exe --packTitle "DSH-Desktop"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$version installer/DshDesktop.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
 
-      - name: Upload GitHub Release (Setup.exe + nupkg + RELEASES index)
-        run: vpk upload github --repoUrl https://github.com/MiKiNuo/DSH-Desktop --token ${{ secrets.GITHUB_TOKEN }} --tag ${{ github.ref_name }} --releaseName ${{ github.ref_name }} --publish --outputDir releases
+      # 便携包：免安装解压即用（便携形态下自更新整体 no-op，升级需换包）。
+      - name: Portable zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "src/DshDesktop.App/bin/Release/net10.0-windows/win-x64/publish/*" -DestinationPath "releases/DSH-Desktop-win-Portable.zip" -Force
+
+      - name: Upload GitHub Release (Setup exe + portable zip)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME --repo MiKiNuo/DSH-Desktop --title $env:GITHUB_REF_NAME releases/*.exe releases/*.zip

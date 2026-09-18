@@ -1,8 +1,11 @@
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using DshDesktop.App.Composition;
 using DshDesktop.Application.Diagnostics;
+using DshDesktop.Application.Runtime;
 using DshDesktop.Application.Updates;
+using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using MiKiNuo.Mvi.Platforms.Avalonia.Threading;
 
 namespace DshDesktop.App;
@@ -35,17 +38,24 @@ public sealed partial class App : global::Avalonia.Application
             desktop.MainWindow = _compositionRoot.CreateMainWindow();
             desktop.Exit += (_, _) => _compositionRoot.Shutdown();
 
-            _ = BootstrapRuntimeAsync();
+            _ = BootstrapRuntimeAsync((MainWindow)desktop.MainWindow);
         }
 
         base.OnFrameworkInitializationCompleted();
     }
 
-    private async Task BootstrapRuntimeAsync()
+    private async Task BootstrapRuntimeAsync(MainWindow window)
     {
         try
         {
             await _compositionRoot!.InitializeRuntimeAsync().ConfigureAwait(false);
+
+            // 首启自检（每次启动执行）：无任何可用 DSH Runtime → 弹窗询问「下载并安装」。
+            // 用户拒绝或安装失败时不再尝试自动启动（没有可启动的东西，空跑只会白等 120s 超时）。
+            if (!await EnsureRuntimePresentAsync(window).ConfigureAwait(false))
+            {
+                return;
+            }
 
             // §34 修订注（Phase 8 Issue 04，评审 F2 语义修复）：两个时机独立——启动时开 =
             // 启动早期即检查（config 已载、Runtime 自举前，不等 UI Ready）；后台开 = UI Ready 后检查。
@@ -80,6 +90,43 @@ public sealed partial class App : global::Avalonia.Application
                 "{Event} {Error}",
                 DiagnosticEventNames.DesktopBootstrapFailed,
                 exception.Message);
+        }
+    }
+
+    /// <summary>
+    /// 首启 Runtime 自检：无可用 Runtime（无借用安装且无自建版本）时弹「下载并安装」提示。
+    /// 返回 true = 有可用 Runtime（原本就有 / 用户刚装好）；false = 用户拒绝或安装失败
+    /// （调用方不再自动启动）。失败原因由弹层失败态如实展示，不静默。
+    /// </summary>
+    private async Task<bool> EnsureRuntimePresentAsync(MainWindow window)
+    {
+        if (!await _compositionRoot!.IsRuntimeSetupRequiredAsync().ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        bool accepted = await Dispatcher.UIThread.InvokeAsync(window.PromptRuntimeSetupAsync);
+        if (!accepted)
+        {
+            Serilog.Log.Information("Runtime.Setup.Declined");
+            await Dispatcher.UIThread.InvokeAsync(() => window.ShowToast(RuntimeSetupText.DeclinedToast));
+            return false;
+        }
+
+        // 安装编排在后台线程跑，进度回流统一编组到 UI 线程（弹层控件只许 UI 线程触碰）。
+        Progress<RuntimeSetupProgress> progress = new(setupProgress =>
+            Dispatcher.UIThread.Post(() => window.ReportRuntimeSetupProgress(setupProgress)));
+        try
+        {
+            await _compositionRoot.SetupRuntimeAsync(progress).ConfigureAwait(false);
+            await Dispatcher.UIThread.InvokeAsync(window.CompleteRuntimeSetup);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Serilog.Log.Error(exception, "Runtime.Setup.Failed {Error}", exception.Message);
+            await Dispatcher.UIThread.InvokeAsync(() => window.FailRuntimeSetup(exception.Message));
+            return false;
         }
     }
 }

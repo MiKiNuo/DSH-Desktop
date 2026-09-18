@@ -74,7 +74,7 @@
                                 </StackPanel>
                                 <TextBlock
                                     Classes="panel-sub"
-                                    Text="自更新经 Velopack 检查。更新只替换安装根的 current 目录，不触碰 data。" />
+                                    Text="自更新经 GitHub Releases 检查。更新时下载安装包、请求管理员权限覆盖安装，不触碰数据目录。" />
                                 <Button
                                     Classes="btn primary"
                                     HorizontalAlignment="Left"

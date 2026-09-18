@@ -14,14 +14,21 @@ public sealed class CorePluginHealGuardTests
     {
         string source = await AppSourceAsync("Composition", "DshCompositionRoot.cs");
 
-        int repositoryIndex = source.IndexOf(
-            "_pluginRepository = new PluginProfileRepository", StringComparison.Ordinal);
-        int healIndex = source.IndexOf("HealCoreBundlesAsync", StringComparison.Ordinal);
-        await Assert.That(repositoryIndex).IsGreaterThan(-1);
-        await Assert.That(healIndex).IsGreaterThan(repositoryIndex);
+        // 插件栈构造已抽取为 WirePluginStack()（SetupRuntimeAsync 复用：工具链补全后重建），
+        // 故锚定 InitializeRuntimeAsync 方法体内的调用序：先 WirePluginStack 后 HealCoreBundlesAsync。
+        const string anchor = "public async Task InitializeRuntimeAsync(";
+        int start = source.IndexOf(anchor, StringComparison.Ordinal);
+        await Assert.That(start >= 0).IsTrue();
+        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
+        string body = end < 0 ? source[start..] : source[start..end];
+
+        int wireIndex = body.IndexOf("WirePluginStack();", StringComparison.Ordinal);
+        int healIndex = body.IndexOf("HealCoreBundlesAsync", StringComparison.Ordinal);
+        await Assert.That(wireIndex).IsGreaterThan(-1);
+        await Assert.That(healIndex).IsGreaterThan(wireIndex);
 
         // 自愈失败不得中断启动引导（同 PnpmProvisioner 约定：装不了/修不好 ≠ 应用起不来）。
-        int catchIndex = source.IndexOf("catch", healIndex, StringComparison.Ordinal);
+        int catchIndex = body.IndexOf("catch", healIndex, StringComparison.Ordinal);
         await Assert.That(catchIndex).IsGreaterThan(healIndex);
     }
 
