@@ -23,7 +23,24 @@ public sealed partial class UpdatesViewModel
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
+        // 派生投影跟随状态属性联动刷新（同 Runtime/Dashboard 先例）。
+        PropertyChanged += (_, args) =>
+        {
+            switch (args.PropertyName)
+            {
+                case nameof(CurrentDshVersion):
+                case nameof(LatestDshVersion):
+                case nameof(Runtimes):
+                    OnPropertyChanged(nameof(DshStage));
+                    break;
+            }
+        };
     }
+
+    /// <summary>
+    /// 获取 DSH Runtime 更新卡的展示阶段（派生自状态，视图 badge 与主按钮的唯一判定口径）。
+    /// </summary>
+    public DshRuntimeStage DshStage => Store.CurrentState.DshStage;
 
     /// <summary>
     /// 获取更新检查状态。

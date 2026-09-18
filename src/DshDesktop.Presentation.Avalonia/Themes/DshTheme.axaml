@@ -605,7 +605,7 @@
         <Setter Property="Background" Value="Transparent" />
     </Style>
     <Style Selector="ListBox.console ListBoxItem:selected">
-        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Background" Value="{DynamicResource DshAccentSoftBrush}" />
     </Style>
     <Style Selector="TextBlock.log-line">
         <Setter Property="FontFamily" Value="Geist Mono, Cascadia Code, Consolas" />

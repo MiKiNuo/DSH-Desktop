@@ -58,6 +58,81 @@ public sealed class UpdatesStateTests
     }
 
     [Test]
+    public async Task DshStage_LatestUnknown_UpToDate()
+    {
+        await Assert.That(UpdatesState.Initial.DshStage).IsEqualTo(DshRuntimeStage.UpToDate);
+    }
+
+    [Test]
+    public async Task DshStage_LatestEqualsCurrent_UpToDate()
+    {
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "rc.12",
+            CurrentDshVersion = "rc.12",
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.UpToDate);
+    }
+
+    [Test]
+    public async Task DshStage_LatestNotOnMachine_Available()
+    {
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "rc.13",
+            CurrentDshVersion = "rc.12",
+            Runtimes = [new DshRuntimeInfo("rc.12", IsActive: true, IsBorrowed: false)],
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.Available);
+    }
+
+    [Test]
+    public async Task DshStage_LatestDownloadedNotActive_ReadyToActivate()
+    {
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "rc.13",
+            CurrentDshVersion = "rc.12",
+            Runtimes =
+            [
+                new DshRuntimeInfo("rc.12", IsActive: true, IsBorrowed: false),
+                new DshRuntimeInfo("rc.13", IsActive: false, IsBorrowed: false),
+            ],
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.ReadyToActivate);
+    }
+
+    [Test]
+    public async Task DshStage_LatestOnlyBorrowed_Available()
+    {
+        // 借用安装是外部只读副本，不等于「已下载到本机」——仍引导 side-by-side 安装。
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "rc.13",
+            CurrentDshVersion = "rc.12",
+            Runtimes =
+            [
+                new DshRuntimeInfo("rc.13", IsActive: false, IsBorrowed: true),
+                new DshRuntimeInfo("rc.12", IsActive: true, IsBorrowed: false),
+            ],
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.Available);
+    }
+
+    [Test]
+    public async Task DshStage_CurrentUnknown_Available()
+    {
+        // 尚无激活 Runtime 时，最新版不在本机即引导安装。
+        UpdatesState state = UpdatesState.Initial with { LatestDshVersion = "rc.13" };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.Available);
+    }
+
+    [Test]
     public async Task AvailableCount_AllSources_SumsUp()
     {
         UpdatesState state = UpdatesState.Initial with

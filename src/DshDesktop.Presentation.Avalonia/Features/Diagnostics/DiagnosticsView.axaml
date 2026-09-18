@@ -89,14 +89,16 @@
                 <Border Classes="panel-body" Grid.Row="1">
                     <StackPanel>
                         <Border Classes="console">
-                            <ListBox x:Name="EntriesList" Classes="console">
+                            <ListBox x:Name="EntriesList" Classes="console" SelectionMode="Multiple">
                                 <!--
-                                  日志行是不可选中的 TextBlock，右键菜单是唯一拷贝通道；
+                                  Multiple 多选：左键拖选 / Shift 连选 / Ctrl 点选，Ctrl+C 复制选中行
+                                  （Avalonia 12 已移除 Extended，Multiple 即涵盖 Ctrl/Shift 语义）。
                                   菜单挂在 ListBox 上（单实例，不随虚拟化行复制），目标行由 code-behind
                                   在 ContextRequested 时解出（弹出层不继承行 DataContext）。
                                 -->
                                 <ListBox.ContextMenu>
                                     <ContextMenu>
+                                        <MenuItem Header="复制选中行" Click="OnCopySelectedClicked" />
                                         <MenuItem Header="复制此条" Click="OnCopyRowClicked" />
                                         <MenuItem Header="复制当前筛选全部" Click="OnCopyAllClicked" />
                                     </ContextMenu>

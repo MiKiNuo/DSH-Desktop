@@ -95,11 +95,25 @@
                         <Border Classes="panel-head">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Classes="panel-title" Text="DSH Runtime" />
+                                <!-- badge 由 DshStage 三态驱动：禁止再裸绑 LatestDshVersion 非空
+                                     （检查成功后该字段始终非空，曾导致已是最新仍显示有可用更新）。 -->
+                                <Border
+                                    Classes="tag ok"
+                                    Grid.Column="1"
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=UpToDate}">
+                                    <TextBlock Text="已是最新" />
+                                </Border>
                                 <Border
                                     Classes="tag accent"
                                     Grid.Column="1"
-                                    IsVisible="{Binding LatestDshVersion, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=Available}">
                                     <TextBlock Text="有可用更新" />
+                                </Border>
+                                <Border
+                                    Classes="tag accent"
+                                    Grid.Column="1"
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=ReadyToActivate}">
+                                    <TextBlock Text="待激活" />
                                 </Border>
                             </Grid>
                         </Border>
@@ -126,13 +140,28 @@
                                 <TextBlock
                                     Classes="panel-sub"
                                     Text="{Binding LatestDshVersion, StringFormat='最新（{0} 通道）', FallbackValue='最新：—', TargetNullValue='最新：—'}" />
+                                <TextBlock
+                                    Classes="panel-sub"
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=ReadyToActivate}"
+                                    Text="已下载到本机，激活即切换并重启" />
                                 <Button
                                     Classes="btn primary"
                                     HorizontalAlignment="Left"
-                                    Click="OnInstallLatestClicked">
+                                    Click="OnInstallLatestClicked"
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=Available}">
                                     <StackPanel Orientation="Horizontal" Spacing="6">
                                         <Path Classes="icon icon-sm" Data="{DynamicResource IconDownload}" Stroke="{Binding $parent[Button].Foreground}" />
                                         <TextBlock Text="安装最新版本" />
+                                    </StackPanel>
+                                </Button>
+                                <Button
+                                    Classes="btn primary"
+                                    HorizontalAlignment="Left"
+                                    Click="OnActivateLatestClicked"
+                                    IsVisible="{Binding DshStage, Converter={x:Static local:Converters.EnumEquals}, ConverterParameter=ReadyToActivate}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Path Classes="icon icon-sm" Data="{DynamicResource IconChevronRight}" Stroke="{Binding $parent[Button].Foreground}" />
+                                        <TextBlock Text="激活并切换" />
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

@@ -55,4 +55,20 @@ public sealed record UpdatesState(
         + (LatestDshVersion is not null
             && CurrentDshVersion is not null
             && LatestDshVersion != CurrentDshVersion ? 1 : 0);
+
+    /// <summary>
+    /// 获取 DSH Runtime 更新卡的展示阶段（视图 badge 与主按钮的唯一判定口径）。
+    /// 此前视图裸绑 <c>LatestDshVersion 非空</c> 判定「有可用更新」，导致当前版已等于最新版时
+    /// 仍显示可更新且安装按钮常显（2026-09-18 实机投诉）；三态推导集中于此，视图不再各自判等。
+    /// 借用副本是外部只读安装，不算「已下载到本机」；版本判等用 Ordinal（npm 与 package.json 同为裸 semver）。
+    /// </summary>
+    public DshRuntimeStage DshStage =>
+        LatestDshVersion is null
+        || string.Equals(LatestDshVersion, CurrentDshVersion, StringComparison.Ordinal)
+            ? DshRuntimeStage.UpToDate
+            : Runtimes.Any(r => !r.IsBorrowed
+                && !r.IsActive
+                && string.Equals(r.Version, LatestDshVersion, StringComparison.Ordinal))
+                ? DshRuntimeStage.ReadyToActivate
+                : DshRuntimeStage.Available;
 }

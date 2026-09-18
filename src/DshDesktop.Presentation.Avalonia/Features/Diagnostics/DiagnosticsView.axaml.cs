@@ -45,8 +45,10 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
         _entriesList = this.FindControl<ListBox>("EntriesList")
             ?? throw new InvalidOperationException("无法找到 EntriesList 控件。");
         _entriesList.ItemsSource = _rows;
-        // 日志行不可选中，右键菜单是唯一拷贝通道：先登记目标行，再交给菜单项处理器。
+        // 多选（XAML SelectionMode="Multiple"）+ Ctrl+C/右键复制选中行；
+        // 右键单条/全部仍走 ContextRequested 登记的目标行。
         _entriesList.ContextRequested += OnContextRequested;
+        _entriesList.KeyDown += OnEntriesListKeyDown;
         _emptyBorder = this.FindControl<Border>("EmptyState")
             ?? throw new InvalidOperationException("无法找到 EmptyState 控件。");
         _searchBox = this.FindControl<TextBox>("SearchBox")
@@ -92,6 +94,11 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
     private void SyncRows(DiagnosticsViewModel viewModel)
     {
         // 过滤由 View 层承担（搜索词 + 级别分段），数据来自 viewModel.Entries。
+        // Clear 重建会清空选择，先按源事件身份记下选中行，重建后恢复，Live 流水下多选才不会被刷掉。
+        var selectedEvents = _entriesList.SelectedItems?
+            .OfType<DiagnosticRow>()
+            .Select(row => row.Event)
+            .ToHashSet() ?? [];
         _rows.Clear();
         string q = _searchBox.Text?.Trim() ?? string.Empty;
         foreach (DiagnosticEvent entry in viewModel.Entries)
@@ -100,6 +107,11 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
             {
                 _rows.Add(new DiagnosticRow(entry));
             }
+        }
+
+        foreach (DiagnosticRow row in _rows.Where(row => selectedEvents.Contains(row.Event)))
+        {
+            _entriesList.SelectedItems.Add(row);
         }
 
         _emptyBorder.IsVisible = _rows.Count == 0;
@@ -172,6 +184,41 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
     {
         ListBoxItem? item = (args.Source as Visual)?.FindAncestorOfType<ListBoxItem>(includeSelf: true);
         _contextRow = item?.DataContext as DiagnosticRow ?? _entriesList.SelectedItem as DiagnosticRow;
+    }
+
+    /// <summary>Ctrl+C：有选中行时复制选中集（按列表顺序），无选中时不拦截，交给系统默认处理。</summary>
+    private async void OnEntriesListKeyDown(object? sender, KeyEventArgs args)
+    {
+        if (args.Key == Key.C
+            && args.KeyModifiers == KeyModifiers.Control
+            && _entriesList.SelectedItems?.Count > 0)
+        {
+            args.Handled = true;
+            await CopySelectedRowsAsync();
+        }
+    }
+
+    /// <summary>复制当前选中的日志行；无选中时回落到被右键的那条。</summary>
+    private async void OnCopySelectedClicked(object? sender, RoutedEventArgs args)
+    {
+        if (_entriesList.SelectedItems?.Count > 0)
+        {
+            await CopySelectedRowsAsync();
+        }
+        else if (_contextRow is { } row)
+        {
+            await CopyToClipboardAsync(DiagnosticCopyText.ForRow(row));
+        }
+    }
+
+    /// <summary>把选中行按列表显示顺序拼装后写剪贴板（SelectedItems 不保证顺序）。</summary>
+    private async Task CopySelectedRowsAsync()
+    {
+        var selected = _rows.Where(row => _entriesList.SelectedItems?.Contains(row) == true).ToList();
+        if (selected.Count > 0)
+        {
+            await CopyToClipboardAsync(DiagnosticCopyText.ForRows(selected));
+        }
     }
 
     /// <summary>复制被右键的那条日志（时间戳 + 级别 + 正文，多行堆栈原样保留）。</summary>

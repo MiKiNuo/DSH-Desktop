@@ -13,6 +13,7 @@ namespace DshDesktop.Tests;
 public sealed class DiagnosticsCopyGuardTests
 {
     private const string CopyRowHandler = "复制此条";
+    private const string CopySelectedHandler = "复制选中行";
     private const string CopyAllHandler = "复制当前筛选全部";
 
     [Test]
@@ -33,7 +34,45 @@ public sealed class DiagnosticsCopyGuardTests
 
         // 断言「Header 紧邻 Click」的整段：分开断言时把两个处理器对调仍会全绿。
         await Assert.That(xaml).Contains($"Header=\"{CopyRowHandler}\" Click=\"OnCopyRowClicked\"");
+        await Assert.That(xaml).Contains($"Header=\"{CopySelectedHandler}\" Click=\"OnCopySelectedClicked\"");
         await Assert.That(xaml).Contains($"Header=\"{CopyAllHandler}\" Click=\"OnCopyAllClicked\"");
+    }
+
+    [Test]
+    public async Task DiagnosticsView_EnablesMultiSelection()
+    {
+        // 多选是左键拖选 / Shift 连选 / Ctrl 点选的前提，缺失时整组交互静默退回单选。
+        // Avalonia 12 已移除 Extended，Multiple 即涵盖 Ctrl/Shift 语义。
+        var xaml = await ReadViewAsync();
+
+        await Assert.That(xaml).Contains("<ListBox x:Name=\"EntriesList\"");
+        await Assert.That(xaml).Contains("SelectionMode=\"Multiple\"");
+    }
+
+    [Test]
+    public async Task DiagnosticsView_CtrlCCopiesSelectedRows()
+    {
+        var code = await ReadCodeBehindAsync();
+
+        // Ctrl+C 与右键「复制选中行」都必须落到同一个选中集复制路径。
+        await Assert.That(code).Contains("KeyDown += OnEntriesListKeyDown");
+        await Assert.That(code).Contains("Key.C");
+        await Assert.That(code).Contains("KeyModifiers.Control");
+        await Assert.That(code).Contains("_entriesList.SelectedItems");
+        await Assert.That(code).Contains("CopySelectedRowsAsync(");
+        await Assert.That(code).Contains("await CopySelectedRowsAsync()");
+    }
+
+    [Test]
+    public async Task DiagnosticsView_PreservesSelectionAcrossSyncRows()
+    {
+        var code = await ReadCodeBehindAsync();
+
+        // SyncRows 每条新日志都会 Clear 重建所有行，选择随之清空；
+        // 必须按源事件身份（DiagnosticRow.Event）在重建后恢复选中，否则 Live 流水中多选形同虚设。
+        await Assert.That(code).Contains("selectedEvents");
+        await Assert.That(code).Contains("row => row.Event");
+        await Assert.That(code).Contains("_entriesList.SelectedItems.Add(");
     }
 
     [Test]

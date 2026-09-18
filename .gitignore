@@ -62,3 +62,4 @@ nunit-*.xml
 /.scratch
 /.workbuddy
 /.run
+obj-stage

@@ -28,6 +28,22 @@ public enum UpdateStatus
 }
 
 /// <summary>
+/// 表示 DSH Runtime 更新卡的展示阶段（2026-09-18 重设计：禁止布尔组合，单一枚举互斥三态）。
+/// 由 <c>UpdatesState.DshStage</c> 从 LatestDshVersion / CurrentDshVersion / Runtimes 纯推导。
+/// </summary>
+public enum DshRuntimeStage
+{
+    /// <summary>已是最新（通道最新版未知或等于当前激活版本）：不显示操作按钮。</summary>
+    UpToDate,
+
+    /// <summary>有可用更新（最新版不在本机）：主按钮为「安装最新版本」。</summary>
+    Available,
+
+    /// <summary>待激活（最新版已下载到本机但未激活）：主按钮为「激活并切换」。</summary>
+    ReadyToActivate,
+}
+
+/// <summary>
 /// 表示一个可用的 DSH Runtime（借用的外部安装或自建 side-by-side 版本）。
 /// </summary>
 /// <param name="Version">版本号。</param>
