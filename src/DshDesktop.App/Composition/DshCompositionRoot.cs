@@ -76,9 +76,9 @@ public sealed partial class DshCompositionRoot
     private IPathOpener? _pathOpener;
     private StartupRegistrationService? _startupRegistration;
 
-    // config 保存串行化：快照驱动的两处保存（启动耗时 / 重接管目标）落在同一 Ready 快照上，
-    // 并发 File.Create（无共享）会丢写。
-    private readonly SemaphoreSlim _configSaveLock = new(1, 1);
+    // config 落盘唯一入口：所有写路径（设置开关 / 版本切换 / 快照驱动的后台保存）
+    // 共用 ConfigPersistence 同一把锁，并发写不丢写（守卫 CompositionRootGuardTests）。
+    private readonly ConfigPersistence _configPersistence = new();
 
     // ADR-0007：Runtime 进入 Failed 后的有界自动恢复（每个失败周期最多 1 次自动重试）。
     private static readonly TimeSpan RecoveryRetryDelay = TimeSpan.FromSeconds(3);
@@ -281,6 +281,21 @@ public sealed partial class DshCompositionRoot
             Path.Combine(_config.DshHome, "profiles", "web"),
             _config.NodePath,
             _config.PnpmCjsPath);
+
+        // 核心插件自愈（2026-09-18 实机：dshmarket 被外部改出 bundles 后工作台不可用，
+        // 而核心插件只读约定让 Desktop 无任何入口救回）。在任何 StartAsync 前显式修复，
+        // 覆盖自动启动不经插件页的路径；失败只记日志不中断引导（同 PnpmProvisioner 约定）。
+        try
+        {
+            await _pluginRepository.HealCoreBundlesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Log.Logger.Warning(
+                exception,
+                "核心插件 bundles 自愈失败（本次启动可能缺核心插件）：{Error}",
+                exception.Message);
+        }
 
         ProfileSnapshotter snapshotter = new(
             Path.Combine(_config.DshHome, "profiles", "web"),
@@ -739,7 +754,7 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
         _config!.NotificationsEnabled = request.Enabled;
-        await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
         Log.Logger.Information("Settings.Notifications {Enabled}", request.Enabled);
         return true;
     }
@@ -750,7 +765,7 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
         _config!.DshChannel = request.Channel;
-        await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
         Log.Logger.Information("Settings.DshChannel {Channel}", request.Channel);
         return true;
     }
@@ -847,25 +862,50 @@ public sealed partial class DshCompositionRoot
         string? previous = _config!.ActiveDshRuntime;
         bool wasRunning = _supervisor!.Current.Lifecycle is RuntimeLifecycle.Running;
 
+        if (wasRunning)
+        {
+            // 编排停止回流（同插件链先例）：先把 MVI 生命周期对齐 Stopping，
+            // 随后的进程退出才不会被 Reducer 误判为崩溃（守卫 CompositionRootGuardTests）。
+            _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated());
+        }
+
         await StopRuntimeIfRunningAsync(cancellationToken).ConfigureAwait(false);
         _config.ActiveDshRuntime = target;
-        await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
         Log.Logger.Information("Update.DshRuntime.Activated {Version}", target ?? "借用");
 
         if (wasRunning)
         {
             try
             {
-                await _supervisor.StartAsync(BuildLaunchOptions(), cancellationToken).ConfigureAwait(false);
+                // 复用 MVI 启动链终点（TrackStartupAsync：失败计数进自动安全模式），
+                // 成功后显式回流 RuntimeStarted，不再依赖快照对账兜底。
+                RuntimeSnapshot snapshot = await TrackStartupAsync(
+                    ct => _supervisor.StartAsync(BuildLaunchOptions(), ct), cancellationToken).ConfigureAwait(false);
+                DispatchRuntimeStarted(snapshot);
             }
-            catch
+            catch (Exception exception)
             {
                 // 激活失败回退到之前的 Runtime（Q7-A 的兜底语义）。
                 _config.ActiveDshRuntime = previous;
-                await DshDesktopConfigStore.SaveAsync(_config, cancellationToken).ConfigureAwait(false);
+                await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
                 if (previous is null || Directory.Exists(Path.Combine(RuntimeRootDir, previous)))
                 {
-                    await _supervisor.StartAsync(BuildLaunchOptions(), cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        RuntimeSnapshot snapshot = await TrackStartupAsync(
+                            ct => _supervisor.StartAsync(BuildLaunchOptions(), ct), cancellationToken).ConfigureAwait(false);
+                        DispatchRuntimeStarted(snapshot);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        DispatchRuntimeFailed(rollbackException.Message);
+                        throw;
+                    }
+                }
+                else
+                {
+                    DispatchRuntimeFailed(exception.Message);
                 }
 
                 throw;
@@ -1168,14 +1208,32 @@ public sealed partial class DshCompositionRoot
         // （PID/端口非 Session 数据，允许落盘；Session URL 仍禁止落盘）。
         PersistReattachTarget(snapshot);
 
-        // 事实对账：supervisor 是真实状态源。插件链路与切换 Runtime 版本链路都直连 supervisor 启动且从不回流，
-        // 导致进程已 Running 但 MVI 仍停在 Stopped/Failed 等。此处把状态与事实对齐，补发 RuntimeStarted。
+        // 事实对账：supervisor 是真实状态源。插件链路直连 supervisor 启动且不经 MVI 启动链，
+        // 可能导致进程已 Running 但 MVI 仍停在 Stopped/Failed 等。此处把状态与事实对齐，补发 RuntimeStarted。
         if (snapshot.Lifecycle is RuntimeLifecycle.Running
             && store.CurrentState.Lifecycle is not RuntimeLifecycle.Running)
         {
-            _ = store.DispatchAsync(new RuntimeIntent.RuntimeStarted(
-                snapshot.ProcessId, snapshot.Port, snapshot.Url ?? string.Empty));
+            DispatchRuntimeStarted(snapshot);
         }
+    }
+
+    /// <summary>
+    /// 以 supervisor 快照为事实源显式回流 RuntimeStarted（激活切换链路与快照对账共用；
+    /// RuntimeSnapshotReceived 刻意不迁移 Lifecycle，故须单独派发）。
+    /// </summary>
+    private void DispatchRuntimeStarted(RuntimeSnapshot snapshot)
+    {
+        _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStarted(
+            snapshot.ProcessId, snapshot.Port, snapshot.Url ?? string.Empty));
+    }
+
+    /// <summary>
+    /// 回流 Runtime 启动失败（激活切换链路用：整条链含回退都失败时，让页面看到真实原因
+    /// 而非停在 Stopped/Starting）。
+    /// </summary>
+    private void DispatchRuntimeFailed(string error)
+    {
+        _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeFailed(error));
     }
 
     private void PersistReattachTarget(RuntimeSnapshot snapshot)
@@ -1193,20 +1251,10 @@ public sealed partial class DshCompositionRoot
     }
 
     /// <summary>
-    /// 串行化保存当前 config（快照驱动的多处保存并发时防丢写）。
+    /// 串行化保存当前 config（统一走 ConfigPersistence；守卫 CompositionRootGuardTests）。
     /// </summary>
-    private async Task SaveConfigAsync(CancellationToken cancellationToken = default)
-    {
-        await _configSaveLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            await DshDesktopConfigStore.SaveAsync(_config!, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _configSaveLock.Release();
-        }
-    }
+    private Task SaveConfigAsync(CancellationToken cancellationToken = default)
+        => _configPersistence.SaveAsync(_config!, cancellationToken);
 
     /// <summary>
     /// fire-and-forget 保存（Phase 8 评审 F12：异常必须观测——写盘失败不炸快照回调，但留 Warning 痕）。

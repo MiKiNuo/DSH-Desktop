@@ -29,6 +29,7 @@ public sealed class PluginProfileRepository(
     {
         JsonObject manifest = ReadManifest();
         HashSet<string> bundles = ReadBundles(manifest);
+        HealCoreBundles(manifest, bundles);
         List<PluginInfo> plugins = [];
 
         if (manifest["dependencies"] is JsonObject dependencies)
@@ -49,6 +50,48 @@ public sealed class PluginProfileRepository(
         }
 
         return Task.FromResult<IReadOnlyList<PluginInfo>>(plugins);
+    }
+
+    /// <inheritdoc />
+    public Task HealCoreBundlesAsync(CancellationToken cancellationToken)
+    {
+        JsonObject manifest = ReadManifest();
+        HealCoreBundles(manifest, ReadBundles(manifest));
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 把缺失于 bundles 的核心插件写回（磁盘可解析才写，见接口文档）；有改动才落盘一次。
+    /// </summary>
+    private void HealCoreBundles(JsonObject manifest, HashSet<string> bundles)
+    {
+        if (manifest["dependencies"] is not JsonObject dependencies)
+        {
+            return;
+        }
+
+        bool healed = false;
+        foreach ((string name, JsonNode? _) in dependencies)
+        {
+            if (!IsCore(name)
+                || bundles.Contains(name)
+                || !File.Exists(Path.Combine(profileDir, "node_modules", name, "package.json")))
+            {
+                continue;
+            }
+
+            // JsonArray.Add<T> 泛型重载带 IL2026/IL3050 标注（AOT 不友好），
+            // 经 ICollection<JsonNode?> 接口走非泛型实现（同 SetEnabledAsync）。
+            ((System.Collections.Generic.ICollection<JsonNode?>)GetOrCreateBundlesArray(manifest))
+                .Add(JsonValue.Create(name));
+            bundles.Add(name);
+            healed = true;
+        }
+
+        if (healed)
+        {
+            WriteManifest(manifest);
+        }
     }
 
     /// <inheritdoc />

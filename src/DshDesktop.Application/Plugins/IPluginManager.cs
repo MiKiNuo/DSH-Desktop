@@ -37,4 +37,17 @@ public interface IPluginManager
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>实际安装的插件包名。</returns>
     Task<string> InstallAsync(string source, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 自愈核心插件启用状态：核心插件（@deepseek-ai/* 与 dshmarket）恒应启用，
+    /// 清单被外部改出 bundles 时写回（2026-09-18 实机：dshmarket 被改坏后工作台不可用，
+    /// 而核心插件只读约定让 Desktop 无任何入口救回）。磁盘上不存在（不可解析）的
+    /// 核心插件不写入——否则 DSH 启动 resolveBundleDir 抛错，把「禁用」修成「启动崩溃」。
+    /// </summary>
+    /// <param name="cancellationToken">取消标记。</param>
+    Task HealCoreBundlesAsync(CancellationToken cancellationToken)
+    {
+        // 默认空实现：测试假实现无需逐个补齐；生产实现（PluginProfileRepository）覆盖。
+        return Task.CompletedTask;
+    }
 }

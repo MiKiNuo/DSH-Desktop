@@ -26,10 +26,14 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     {
         SeedProfile(
             dependencies: ["@deepseek-ai/dsh", "dshmarket", "dsh-foo"],
-            bundles: ["@deepseek-ai/dsh", "dsh-foo"]); // dshmarket 不在 bundles = 禁用
+            bundles: ["@deepseek-ai/dsh", "dsh-foo"]); // dshmarket 不在 bundles，但核心插件会自愈回启用
         File.WriteAllText(
             Path.Combine(ProfileDir, "node_modules", "dsh-foo", "package.json"),
             "{\"version\":\"2.0.0\"}");
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dshmarket", "package.json"),
+            "{\"version\":\"1.45.1\"}");
         var repository = new PluginProfileRepository(ProfileDir, "node", null);
 
         IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
@@ -39,11 +43,80 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         await Assert.That(core.IsCore).IsTrue();
         PluginInfo market = plugins.Single(p => p.Name == "dshmarket");
         await Assert.That(market.IsCore).IsTrue();
-        await Assert.That(market.Enabled).IsFalse();
+        await Assert.That(market.Enabled).IsTrue(); // 核心插件自愈回启用（见 CoreMissingFromBundles 用例）
         PluginInfo foo = plugins.Single(p => p.Name == "dsh-foo");
         await Assert.That(foo.IsCore).IsFalse();
         await Assert.That(foo.Enabled).IsTrue();
         await Assert.That(foo.Version).IsEqualTo("2.0.0");
+    }
+
+    [Test]
+    public async Task ListPluginsAsync_CoreMissingFromBundles_HealsToEnabled()
+    {
+        // 核心插件只读 ⇒ UI/仓库层都无法禁用它，但清单可能被外部改坏（2026-09-18 实机：
+        // dshmarket 不在 bundles，工作台不可用且 Desktop 无任何入口可救回）。
+        // 约定：核心插件恒应启用，读取路径发现缺失即自愈写回 bundles。
+        SeedProfile(dependencies: ["dshmarket", "dsh-foo"], bundles: ["dsh-foo"]);
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dshmarket", "package.json"),
+            "{\"version\":\"1.45.1\"}");
+        var repository = new PluginProfileRepository(ProfileDir, "node", null);
+
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(plugins.Single(p => p.Name == "dshmarket").Enabled).IsTrue();
+        // 自愈是持久修复：清单 bundles 已写回，下次 DSH 启动即生效。
+        string manifest = File.ReadAllText(Path.Combine(ProfileDir, "package.json"));
+        var bundles = (System.Text.Json.Nodes.JsonNode.Parse(manifest)!["dsh"]!["profile"]!["bundles"]!
+            .AsArray()).Select(node => node!.GetValue<string>()).ToArray();
+        await Assert.That(bundles.Contains("dshmarket")).IsTrue();
+    }
+
+    [Test]
+    public async Task ListPluginsAsync_ThirdPartyMissingFromBundles_StaysDisabled()
+    {
+        // 对照：自愈只针对核心插件，第三方插件的禁用状态不得被改写。
+        SeedProfile(dependencies: ["dsh-foo"], bundles: []);
+        var repository = new PluginProfileRepository(ProfileDir, "node", null);
+
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(plugins.Single(p => p.Name == "dsh-foo").Enabled).IsFalse();
+    }
+
+    [Test]
+    public async Task ListPluginsAsync_CoreNotInstalledOnDisk_StaysDisabled()
+    {
+        // 评审回归（Spec 轴 c1）：dependencies 声明了核心插件但 node_modules 缺失时不得
+        // 自愈写回 bundles——否则 DSH 启动 resolveBundleDir 抛错（ExitCode=1），
+        // 把「禁用」修成「启动崩溃」。
+        SeedProfile(dependencies: ["dshmarket"], bundles: []); // 注意：无 node_modules/dshmarket
+        var repository = new PluginProfileRepository(ProfileDir, "node", null);
+
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(plugins.Single(p => p.Name == "dshmarket").Enabled).IsFalse();
+        string manifest = File.ReadAllText(Path.Combine(ProfileDir, "package.json"));
+        await Assert.That(manifest.Contains("\"dshmarket\"", StringComparison.Ordinal)).IsTrue(); // dependencies 保留
+        await Assert.That(manifest.Contains("\"bundles\":[]", StringComparison.Ordinal)).IsTrue(); // bundles 未被改写
+    }
+
+    [Test]
+    public async Task HealCoreBundlesAsync_CoreMissing_WritesBack()
+    {
+        // 启动链路专用入口：不等用户访问插件页，InitializeRuntimeAsync 阶段显式自愈。
+        SeedProfile(dependencies: ["dshmarket", "dsh-foo"], bundles: ["dsh-foo"]);
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dshmarket"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dshmarket", "package.json"),
+            "{\"version\":\"1.45.1\"}");
+        var repository = new PluginProfileRepository(ProfileDir, "node", null);
+
+        await repository.HealCoreBundlesAsync(CancellationToken.None);
+
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+        await Assert.That(plugins.Single(p => p.Name == "dshmarket").Enabled).IsTrue();
     }
 
     [Test]
