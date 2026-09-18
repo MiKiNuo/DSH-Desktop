@@ -239,6 +239,15 @@ public sealed partial class DiagnosticsView : MviAvaloniaView<DiagnosticsViewMod
         }
     }
 
+    /// <summary>
+    /// 清除日志：经 MVI 命令清空 UI Store 展示窗口（右键弹层不继承行 DataContext，故走 Click 处理器）。
+    /// 只清界面，磁盘日志 data/logs/ 与后续 Live 事件流不受影响。
+    /// </summary>
+    private void OnClearClicked(object? sender, RoutedEventArgs args)
+    {
+        _viewModel?.ClearEntriesCommand.Execute(null);
+    }
+
     /// <summary>写系统剪贴板；写入失败非致命（async void 无人兜底，吞掉防崩进程）。</summary>
     private async Task CopyToClipboardAsync(string text)
     {

@@ -29,4 +29,10 @@ public abstract partial record DiagnosticsIntent : IMviIntent
     /// 表示打开日志目录意图。
     /// </summary>
     public sealed partial record OpenLogsDirectory : DiagnosticsIntent;
+
+    /// <summary>
+    /// 表示清除日志意图（右键菜单：只清 UI Store 展示窗口，无副作用；
+    /// 磁盘日志 data/logs/ 与后续 Live 事件流不受影响）。
+    /// </summary>
+    public sealed partial record ClearEntries : DiagnosticsIntent;
 }

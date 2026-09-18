@@ -101,6 +101,8 @@
                                         <MenuItem Header="复制选中行" Click="OnCopySelectedClicked" />
                                         <MenuItem Header="复制此条" Click="OnCopyRowClicked" />
                                         <MenuItem Header="复制当前筛选全部" Click="OnCopyAllClicked" />
+                                        <Separator />
+                                        <MenuItem Header="清除日志" Click="OnClearClicked" />
                                     </ContextMenu>
                                 </ListBox.ContextMenu>
                                 <ListBox.ItemTemplate>

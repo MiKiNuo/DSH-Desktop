@@ -101,6 +101,20 @@ public sealed class DiagnosticsCopyGuardTests
         await Assert.That(code).Contains("await CopyToClipboardAsync(DiagnosticCopyText.ForRows(");
     }
 
+    [Test]
+    public async Task DiagnosticsView_DeclaresClearMenuWiredToCommand()
+    {
+        // 右键「清除日志」（2026-09-18）：菜单项必须挂在 EntriesList 的 ContextMenu 上，
+        // 且 code-behind 处理器必须把点击落到 ClearEntriesCommand（经 MVI Intent 清空展示窗口）。
+        // 右键弹层不继承行 DataContext，故与复制项一样走 Click 处理器而非 Command 绑定。
+        var xaml = await ReadViewAsync();
+        var code = await ReadCodeBehindAsync();
+
+        await Assert.That(xaml).Contains("Header=\"清除日志\" Click=\"OnClearClicked\"");
+        await Assert.That(code).Contains("OnClearClicked");
+        await Assert.That(code).Contains("ClearEntriesCommand.Execute(");
+    }
+
     private static async Task<string> ReadViewAsync()
     {
         var root = XamlScan.FindRepositoryRoot();

@@ -51,6 +51,23 @@ public sealed class DiagnosticsReducerTests
     }
 
     [Test]
+    public async Task ClearEntries_EmptiesWindowWithoutEffect()
+    {
+        // 右键「清除日志」只清 UI Store 展示窗口：纯状态变更、不声明 Effect，
+        // 磁盘日志（data/logs/）与后续 Live 事件流不受影响。
+        // 本用例同时是「新增 Intent 漏 [MviReduce] 静默 no-op」的防呆断言。
+        DiagnosticsState state = DiagnosticsState.Initial with
+        {
+            Entries = [Event("A"), Event("B"), Event("C")],
+        };
+
+        var result = _reducer.Reduce(state, new DiagnosticsIntent.ClearEntries());
+
+        await Assert.That(result.State.Entries.Count).IsEqualTo(0);
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task RunDiagnosis_DeclaresEffect()
     {
         var result = _reducer.Reduce(DiagnosticsState.Initial, new DiagnosticsIntent.RunDiagnosis());

@@ -65,4 +65,15 @@ public sealed partial class DiagnosticsReducer
     {
         return WithEffect(state, new DiagnosticsEffect.OpenLogsDirectory());
     }
+
+    /// <summary>
+    /// 处理清除日志意图：清空 UI Store 展示窗口（纯状态变更，无副作用）。
+    /// </summary>
+    [MviReduce(typeof(DiagnosticsIntent.ClearEntries))]
+    private MviReduceResult<DiagnosticsState, DiagnosticsEffect> HandleClearEntries(
+        DiagnosticsState state,
+        DiagnosticsIntent.ClearEntries intent)
+    {
+        return Unchanged(state with { Entries = [] });
+    }
 }

@@ -48,4 +48,10 @@ public sealed partial class DiagnosticsViewModel
     /// </summary>
     [MviCommand(typeof(DiagnosticsIntent.OpenLogsDirectory))]
     public partial IMviAsyncCommand OpenLogsDirectoryCommand { get; private set; }
+
+    /// <summary>
+    /// 获取清除日志命令（右键菜单：清空当前展示窗口，磁盘日志不受影响）。
+    /// </summary>
+    [MviCommand(typeof(DiagnosticsIntent.ClearEntries))]
+    public partial IMviAsyncCommand ClearEntriesCommand { get; private set; }
 }
