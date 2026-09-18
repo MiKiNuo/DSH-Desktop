@@ -21,7 +21,7 @@
     </PropertyGroup>
     <WriteLinesToFile
         File="$(_DesktopInfoPath)"
-        Lines="namespace DshDesktop.Presentation.Avalonia%3B&#xA;&#xA;// Generated at build time from $(Version) (release: git tag via -p:Version; local: Directory.Build.props).&#xA;public static class DesktopInfo&#xA;{&#xA;    public const string Version = &quot;$(Version)&quot;%3B&#xA;}"
+        Lines="namespace DshDesktop.Presentation.Avalonia%3B&#xA;&#xA;// Generated at build time from $(Version) (release: git tag via -p:Version, local: Directory.Build.props).&#xA;public static class DesktopInfo&#xA;{&#xA;    public const string Version = &quot;$(Version)&quot;%3B&#xA;}"
         Overwrite="true"
         WriteOnlyWhenDifferent="true" />
     <ItemGroup>
