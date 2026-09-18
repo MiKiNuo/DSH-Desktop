@@ -284,6 +284,22 @@ public sealed class GitHubDesktopUpdaterTests
         await Assert.That(updater.Contains(appId, StringComparison.Ordinal)).IsTrue();
     }
 
+    [Test]
+    public async Task InstallerLanguageFile_VendoredAndReferenced()
+    {
+        // v0.1.3 发布失败根因：CI 的 choco Inno 不含 ChineseSimplified.isl。
+        // 语言文件必须随仓库自带且 iss 以相对路径引用（相对脚本目录解析）。
+        string? root = XamlScan.FindRepositoryRoot();
+        await Assert.That(root).IsNotNull();
+
+        string issPath = Path.Combine(root!, "installer", "DshDesktop.iss");
+        string islPath = Path.Combine(root!, "installer", "Languages", "ChineseSimplified.isl");
+        string iss = (await File.ReadAllTextAsync(issPath)).Replace("\r\n", "\n");
+
+        await Assert.That(iss.Contains("MessagesFile: \"Languages\\ChineseSimplified.isl\"", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(File.Exists(islPath)).IsTrue();
+    }
+
     private static string NewDownloadDir()
     {
         return Path.Combine(Path.GetTempPath(), "dsh-updater-tests", Guid.NewGuid().ToString("N"));
