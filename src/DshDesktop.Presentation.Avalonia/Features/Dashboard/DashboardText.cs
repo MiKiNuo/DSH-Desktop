@@ -184,8 +184,10 @@ public static class DashboardText
             return string.Create(CultureInfo.InvariantCulture, $"{(int)delta.TotalMinutes} 分钟前");
         }
 
-        DateTimeOffset local = timestamp.ToLocalTime();
-        if (local.Date == now.ToLocalTime().Date)
+        // 以 now 的偏移为显示时区（生产上 now=DateTimeOffset.Now 即本地时区），
+        // 不用 ToLocalTime()：后者依赖运行机器时区，CI（UTC）下会偏 8 小时。
+        DateTimeOffset local = timestamp.ToOffset(now.Offset);
+        if (local.Date == now.Date)
         {
             return string.Create(
                 CultureInfo.InvariantCulture,
