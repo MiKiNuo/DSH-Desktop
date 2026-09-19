@@ -450,6 +450,11 @@ public sealed class PluginProfileRepository(
                 "找不到 vendored pnpm（pnpmCjsPath），无法重建 lockfile。请检查 dsh-desktop.config.json。");
         }
 
+        // pnpm 写入前归一化清单（剥 BOM/代际投影/悬空 overrides）——卸载链路在此收口
+        // （2026-09-19 实机：种子 profile 带指向 .generations 的悬空 link: overrides，
+        // 卸载第④步未归一化直接 pnpm install 必失败，且①-③已生效留下半卸载现场）。
+        ProfileManifestFixups.NormalizeToFlatModel(profileDir);
+
         // 离线优先策略收敛在 NodeJsToolRunner.InstallWithOfflineFallbackAsync（变更路径不在启动主路径）。
         (int exitCode, string outputTail) = await NodeJsToolRunner.InstallWithOfflineFallbackAsync(
             nodePath, pnpmCjsPath, profileDir, cancellationToken, _runOnce).ConfigureAwait(false);

@@ -176,6 +176,125 @@ public sealed class PluginOrchestratorTests
     }
 
     [Test]
+    public async Task UninstallAsync_Success_CompletesFullStageSequence()
+    {
+        // 卸载走与安装同一套事务（A2 事务化）：目标名全程已知，每个阶段都应携带它与 Uninstall 种类。
+        var pluginManager = new UninstallingPluginManager();
+        var snapshotter = new FakeProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var operations = new List<PluginOperation>();
+        orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
+
+        await orchestrator.UninstallAsync("dsh-foo", CancellationToken.None);
+
+        await Assert.That(pluginManager.UninstalledNames.Count).IsEqualTo(1);
+        await Assert.That(pluginManager.UninstalledNames[0]).IsEqualTo("dsh-foo");
+        await Assert.That(snapshotter.RestoredSnapshotId).IsNull(); // 成功不回滚
+        var stages = operations.Select(o => o.Stage).ToArray();
+        await Assert.That(stages.Count).IsEqualTo(8);
+        await Assert.That(stages[0]).IsEqualTo(PluginOperationStage.Preparing);
+        await Assert.That(stages[1]).IsEqualTo(PluginOperationStage.CreatingSnapshot);
+        await Assert.That(stages[2]).IsEqualTo(PluginOperationStage.StoppingRuntime);
+        await Assert.That(stages[3]).IsEqualTo(PluginOperationStage.Uninstalling);
+        await Assert.That(stages[4]).IsEqualTo(PluginOperationStage.Validating);
+        await Assert.That(stages[5]).IsEqualTo(PluginOperationStage.StartingRuntime);
+        await Assert.That(stages[6]).IsEqualTo(PluginOperationStage.HealthChecking);
+        await Assert.That(stages[7]).IsEqualTo(PluginOperationStage.Completed);
+        await Assert.That(operations.All(o => o.Kind == PluginOperationKind.Uninstall)).IsTrue();
+        await Assert.That(operations.All(o => o.PluginName == "dsh-foo")).IsTrue();
+    }
+
+    [Test]
+    public async Task UninstallAsync_WhenUninstallFails_RollsBackRestartsAndRethrows()
+    {
+        // 兑现确认弹窗的承诺：「事务失败会自动回滚，并重启原 Runtime」。
+        var pluginManager = new FailingUninstallPluginManager();
+        var snapshotter = new FakeProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var operations = new List<PluginOperation>();
+        orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
+
+        await Assert.That(async () => await orchestrator.UninstallAsync("dsh-foo", CancellationToken.None))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(snapshotter.RestoredSnapshotId).IsEqualTo("snap-1");
+        await Assert.That(supervisor.StartCount).IsEqualTo(1); // 尽力重启原 Runtime
+        await Assert.That(supervisor.StopCount).IsEqualTo(1);
+        await Assert.That(operations.Count(o => o.Stage == PluginOperationStage.Failed)).IsEqualTo(1);
+        PluginOperation failed = operations.Single(o => o.Stage == PluginOperationStage.Failed);
+        await Assert.That(failed.Error).Contains("pnpm 卸载失败（Fake）");
+        await Assert.That(failed.Kind).IsEqualTo(PluginOperationKind.Uninstall);
+    }
+
+    [Test]
+    public async Task SetEnabledAsync_Enable_Success_CompletesAndCarriesKind()
+    {
+        // 启用事务化：变更后校验清单中目标插件确为启用，成功路径同样重启 Runtime。
+        var pluginManager = new ToggleablePluginManager();
+        var snapshotter = new FakeProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var operations = new List<PluginOperation>();
+        orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
+
+        await orchestrator.SetEnabledAsync("dsh-foo", true, CancellationToken.None);
+
+        await Assert.That(pluginManager.SetCalls.Count).IsEqualTo(1);
+        await Assert.That(pluginManager.SetCalls[0].Name).IsEqualTo("dsh-foo");
+        await Assert.That(pluginManager.SetCalls[0].Enabled).IsTrue();
+        await Assert.That(snapshotter.RestoredSnapshotId).IsNull();
+        var stages = operations.Select(o => o.Stage).ToArray();
+        await Assert.That(stages.Count).IsEqualTo(8);
+        await Assert.That(stages[3]).IsEqualTo(PluginOperationStage.Applying);
+        await Assert.That(stages[7]).IsEqualTo(PluginOperationStage.Completed);
+        await Assert.That(operations.All(o => o.Kind == PluginOperationKind.Enable)).IsTrue();
+    }
+
+    [Test]
+    public async Task SetEnabledAsync_WhenApplyFails_RollsBackRestartsAndRethrows()
+    {
+        // 禁用失败同样回滚：Runtime 被事务停掉后必须有人拉起，种类按目标态记为 Disable。
+        var pluginManager = new FailingSetEnabledPluginManager();
+        var snapshotter = new FakeProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        var orchestrator = new PluginOrchestrator(
+            pluginManager,
+            snapshotter,
+            supervisor,
+            OptionsFactory,
+            Serilog.Core.Logger.None);
+        var operations = new List<PluginOperation>();
+        orchestrator.OperationChanged += (_, operation) => operations.Add(operation);
+
+        await Assert.That(async () => await orchestrator.SetEnabledAsync("dsh-foo", false, CancellationToken.None))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(snapshotter.RestoredSnapshotId).IsEqualTo("snap-1");
+        await Assert.That(supervisor.StartCount).IsEqualTo(1);
+        await Assert.That(operations.Count(o => o.Stage == PluginOperationStage.Failed)).IsEqualTo(1);
+        PluginOperation failed = operations.Single(o => o.Stage == PluginOperationStage.Failed);
+        await Assert.That(failed.Error).Contains("写入 manifest 失败（Fake）");
+        await Assert.That(failed.Kind).IsEqualTo(PluginOperationKind.Disable);
+    }
+
+    [Test]
     public async Task DisableAllThirdPartyAsync_OnlyDisablesEnabledThirdParty()
     {
         var pluginManager = new MixedPluginManager();
@@ -272,6 +391,111 @@ public sealed class PluginOrchestratorTests
         public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
         {
             return Task.FromResult("dsh-foo");
+        }
+    }
+
+    private sealed class UninstallingPluginManager : IPluginManager
+    {
+        public List<string> UninstalledNames { get; } = [];
+
+        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
+        {
+            // 卸载后校验：清单中已不含目标插件。
+            return Task.FromResult<IReadOnlyList<PluginInfo>>(Array.Empty<PluginInfo>());
+        }
+
+        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task UninstallAsync(string name, CancellationToken cancellationToken)
+        {
+            UninstalledNames.Add(name);
+            return Task.CompletedTask;
+        }
+
+        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(source);
+        }
+    }
+
+    private sealed class FailingUninstallPluginManager : IPluginManager
+    {
+        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<PluginInfo>>(Array.Empty<PluginInfo>());
+        }
+
+        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task UninstallAsync(string name, CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("pnpm 卸载失败（Fake）");
+        }
+
+        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(source);
+        }
+    }
+
+    private sealed class ToggleablePluginManager : IPluginManager
+    {
+        private bool _enabled;
+
+        public List<(string Name, bool Enabled)> SetCalls { get; } = [];
+
+        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
+        {
+            // 校验读取变更后的真实状态（SetEnabledAsync 翻转 _enabled）。
+            return Task.FromResult<IReadOnlyList<PluginInfo>>(
+                [new PluginInfo("dsh-foo", "1.0.0", false, _enabled, "")]);
+        }
+
+        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+        {
+            SetCalls.Add((name, enabled));
+            _enabled = enabled;
+            return Task.CompletedTask;
+        }
+
+        public Task UninstallAsync(string name, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(source);
+        }
+    }
+
+    private sealed class FailingSetEnabledPluginManager : IPluginManager
+    {
+        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<PluginInfo>>(
+                [new PluginInfo("dsh-foo", "1.0.0", false, false, "")]);
+        }
+
+        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("写入 manifest 失败（Fake）");
+        }
+
+        public Task UninstallAsync(string name, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(source);
         }
     }
 

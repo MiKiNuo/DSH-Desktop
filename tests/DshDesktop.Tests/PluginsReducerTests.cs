@@ -113,6 +113,47 @@ public sealed class PluginsReducerTests
     }
 
     [Test]
+    public async Task UninstallPlugin_WhenTransactionInFlight_IsIgnored()
+    {
+        // 卸载也是事务（A2 事务化）：进行中禁止并发，守卫与 InstallPlugin 同则。
+        PluginsState inFlight = PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Uninstalling, "dsh-foo", null),
+        };
+
+        var result = _reducer.Reduce(inFlight, new PluginsIntent.UninstallPlugin("dsh-bar"));
+
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+        await Assert.That(result.State.Operation!.Stage).IsEqualTo(PluginOperationStage.Uninstalling);
+    }
+
+    [Test]
+    public async Task EnablePlugin_WhenTransactionInFlight_IsIgnored()
+    {
+        PluginsState inFlight = PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Applying, "dsh-foo", null),
+        };
+
+        var result = _reducer.Reduce(inFlight, new PluginsIntent.EnablePlugin("dsh-bar"));
+
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task DisablePlugin_WhenTransactionInFlight_IsIgnored()
+    {
+        PluginsState inFlight = PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Applying, "dsh-foo", null),
+        };
+
+        var result = _reducer.Reduce(inFlight, new PluginsIntent.DisablePlugin("dsh-bar"));
+
+        await Assert.That(result.Effects.Count).IsEqualTo(0);
+    }
+
+    [Test]
     public async Task PluginOperationChanged_InFlight_KeepsPendingText()
     {
         var operation = new PluginOperation(PluginOperationStage.StartingRuntime, "dsh-foo", null);

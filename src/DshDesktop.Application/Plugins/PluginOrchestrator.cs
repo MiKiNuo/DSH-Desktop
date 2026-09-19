@@ -8,6 +8,7 @@ namespace DshDesktop.Application.Plugins;
 
 /// <summary>
 /// 表示 <see cref="IPluginOrchestrator"/> 的默认实现（§19 安装事务，Q4-A 落点）。
+/// 安装/更新/卸载/启停共用同一套事务管线（<see cref="RunTransactionAsync"/>）。
 /// </summary>
 public sealed class PluginOrchestrator(
     IPluginManager pluginManager,
@@ -31,53 +32,62 @@ public sealed class PluginOrchestrator(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(source);
 
-        Publish(PluginOperationStage.Preparing, null, null, kind);
-        string? snapshotId = null;
-        string? pluginName = null;
-
-        try
-        {
-            Publish(PluginOperationStage.CreatingSnapshot, null, null, kind);
-            snapshotId = await snapshotter.CreateSnapshotAsync(cancellationToken).ConfigureAwait(false);
-
-            Publish(PluginOperationStage.StoppingRuntime, null, null, kind);
-            await supervisor.StopAsync(cancellationToken).ConfigureAwait(false);
-
-            Publish(PluginOperationStage.Installing, null, null, kind);
-            pluginName = await pluginManager.InstallAsync(source, cancellationToken).ConfigureAwait(false);
-            _logger.Information("Plugin.Install.Installed {PluginName}", pluginName);
-
-            Publish(PluginOperationStage.Validating, pluginName, null, kind);
-            // 文件级一致性校验（Q3-A）：列表解析必须能找到已安装、启用且磁盘可解析的插件。
-            // 仅断言 manifest 的 Enabled 不够——声明-but-未物化（悬空 junction / 中断安装残留）的插件
-            // 会让 DSH 启动期 resolveBundleDir 抛错（2026-09-14 实机），必须以磁盘可解析为准。
-            IReadOnlyList<PluginInfo> plugins = await pluginManager
-                .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-            if (!plugins.Any(p => p.Name == pluginName && p.Enabled && p.IsResolvable))
+        string pluginName = await RunTransactionAsync(
+            kind,
+            pluginName: null,
+            displayName: source,
+            mutateStage: PluginOperationStage.Installing,
+            mutate: async ct =>
             {
-                throw new InvalidOperationException(
-                    $"安装后校验失败：{pluginName} 未出现在启用且可解析的插件清单中。");
-            }
+                string installed = await pluginManager.InstallAsync(source, ct).ConfigureAwait(false);
+                _logger.Information("Plugin.Install.Installed {PluginName}", installed);
+                return installed;
+            },
+            validate: ValidateInstalledAsync,
+            cancellationToken).ConfigureAwait(false);
+        _logger.Information("Plugin.Install.Success {PluginName}", pluginName);
+        return pluginName;
+    }
 
-            Publish(PluginOperationStage.StartingRuntime, pluginName, null, kind);
-            await StartRuntimeWithTransientRetryAsync(cancellationToken).ConfigureAwait(false);
+    /// <inheritdoc />
+    public async Task UninstallAsync(string name, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-            Publish(PluginOperationStage.HealthChecking, pluginName, null, kind);
-            await ConfirmHealthyAsync(cancellationToken).ConfigureAwait(false);
+        _ = await RunTransactionAsync(
+            PluginOperationKind.Uninstall,
+            pluginName: name,
+            displayName: name,
+            mutateStage: PluginOperationStage.Uninstalling,
+            mutate: async ct =>
+            {
+                await pluginManager.UninstallAsync(name, ct).ConfigureAwait(false);
+                return name;
+            },
+            validate: ValidateUninstalledAsync,
+            cancellationToken).ConfigureAwait(false);
+        _logger.Information("Plugin.Uninstall.Success {PluginName}", name);
+    }
 
-            Publish(PluginOperationStage.Completed, pluginName, null, kind);
-            _logger.Information("Plugin.Install.Success {PluginName}", pluginName);
-            return pluginName;
-        }
-        catch (Exception exception)
-        {
-            _logger.Warning(
-                DiagnosticEventNames.PluginInstallRollback + " {PluginName} {Error}",
-                pluginName ?? source, exception.Message);
-            await RollbackAsync(snapshotId, pluginName ?? source, exception.Message, kind, cancellationToken)
-                .ConfigureAwait(false);
-            throw;
-        }
+    /// <inheritdoc />
+    public async Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        PluginOperationKind kind = enabled ? PluginOperationKind.Enable : PluginOperationKind.Disable;
+        _ = await RunTransactionAsync(
+            kind,
+            pluginName: name,
+            displayName: name,
+            mutateStage: PluginOperationStage.Applying,
+            mutate: async ct =>
+            {
+                await pluginManager.SetEnabledAsync(name, enabled, ct).ConfigureAwait(false);
+                return name;
+            },
+            validate: (n, ct) => ValidateEnabledStateAsync(n, enabled, ct),
+            cancellationToken).ConfigureAwait(false);
+        _logger.Information("Plugin.SetEnabled.Success {PluginName} {Enabled}", name, enabled);
     }
 
     /// <inheritdoc />
@@ -89,6 +99,108 @@ public sealed class PluginOrchestrator(
         {
             await pluginManager.SetEnabledAsync(plugin.Name, false, cancellationToken).ConfigureAwait(false);
             _logger.Information("Plugin.DisableAll.Disabled {PluginName}", plugin.Name);
+        }
+    }
+
+    /// <summary>
+    /// 事务管线共享段：快照 → 停 Runtime → 变更 → 校验 → 启动 → 健康检查 → 提交；
+    /// 任何失败 → 回滚（恢复快照 + 尽力重启 Runtime）→ Failed → 抛原异常。
+    /// </summary>
+    /// <param name="kind">操作种类（贯穿各阶段，供下游反馈文案区分）。</param>
+    /// <param name="pluginName">目标插件名；安装前未知传 null，安装完成后由 <paramref name="mutate"/> 解析。</param>
+    /// <param name="displayName">失败日志/回滚发布用的兜底显示名（安装场景为 source）。</param>
+    /// <param name="mutateStage">变更阶段（Installing / Uninstalling / Applying）。</param>
+    /// <param name="mutate">实际变更，返回解析后的插件名。</param>
+    /// <param name="validate">变更后校验，失败抛异常即触发回滚。</param>
+    /// <param name="cancellationToken">取消标记。</param>
+    /// <returns>解析后的插件名。</returns>
+    private async Task<string> RunTransactionAsync(
+        PluginOperationKind kind,
+        string? pluginName,
+        string displayName,
+        PluginOperationStage mutateStage,
+        Func<CancellationToken, Task<string>> mutate,
+        Func<string, CancellationToken, Task> validate,
+        CancellationToken cancellationToken)
+    {
+        Publish(PluginOperationStage.Preparing, pluginName, null, kind);
+        string? snapshotId = null;
+        string? resolvedName = pluginName;
+
+        try
+        {
+            Publish(PluginOperationStage.CreatingSnapshot, resolvedName, null, kind);
+            snapshotId = await snapshotter.CreateSnapshotAsync(cancellationToken).ConfigureAwait(false);
+
+            Publish(PluginOperationStage.StoppingRuntime, resolvedName, null, kind);
+            await supervisor.StopAsync(cancellationToken).ConfigureAwait(false);
+
+            Publish(mutateStage, resolvedName, null, kind);
+            resolvedName = await mutate(cancellationToken).ConfigureAwait(false);
+
+            Publish(PluginOperationStage.Validating, resolvedName, null, kind);
+            await validate(resolvedName, cancellationToken).ConfigureAwait(false);
+
+            Publish(PluginOperationStage.StartingRuntime, resolvedName, null, kind);
+            await StartRuntimeWithTransientRetryAsync(cancellationToken).ConfigureAwait(false);
+
+            Publish(PluginOperationStage.HealthChecking, resolvedName, null, kind);
+            await ConfirmHealthyAsync(cancellationToken).ConfigureAwait(false);
+
+            Publish(PluginOperationStage.Completed, resolvedName, null, kind);
+            return resolvedName;
+        }
+        catch (Exception exception)
+        {
+            _logger.Warning(
+                DiagnosticEventNames.PluginInstallRollback + " {PluginName} {Error}",
+                resolvedName ?? displayName, exception.Message);
+            await RollbackAsync(snapshotId, resolvedName ?? displayName, exception.Message, kind, cancellationToken)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 文件级一致性校验（Q3-A）：列表解析必须能找到已安装、启用且磁盘可解析的插件。
+    /// 仅断言 manifest 的 Enabled 不够——声明-but-未物化（悬空 junction / 中断安装残留）的插件
+    /// 会让 DSH 启动期 resolveBundleDir 抛错（2026-09-14 实机），必须以磁盘可解析为准。
+    /// </summary>
+    private async Task ValidateInstalledAsync(string pluginName, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PluginInfo> plugins = await pluginManager
+            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
+        if (!plugins.Any(p => p.Name == pluginName && p.Enabled && p.IsResolvable))
+        {
+            throw new InvalidOperationException(
+                $"安装后校验失败：{pluginName} 未出现在启用且可解析的插件清单中。");
+        }
+    }
+
+    /// <summary>卸载后校验：清单中不得再出现目标插件（声明残留同样视为失败）。</summary>
+    private async Task ValidateUninstalledAsync(string pluginName, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PluginInfo> plugins = await pluginManager
+            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
+        if (plugins.Any(p => p.Name == pluginName))
+        {
+            throw new InvalidOperationException(
+                $"卸载后校验失败：{pluginName} 仍出现在插件清单中。");
+        }
+    }
+
+    /// <summary>启停后校验：清单中目标插件必须处于目标启用状态。</summary>
+    private async Task ValidateEnabledStateAsync(
+        string pluginName,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<PluginInfo> plugins = await pluginManager
+            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
+        if (!plugins.Any(p => p.Name == pluginName && p.Enabled == enabled))
+        {
+            throw new InvalidOperationException(
+                $"启用状态校验失败：{pluginName} 未处于目标状态（Enabled={enabled}）。");
         }
     }
 

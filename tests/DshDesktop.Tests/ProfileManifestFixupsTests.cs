@@ -235,6 +235,94 @@ public sealed class ProfileManifestFixupsTests : IDisposable
         }
         """;
 
+    // ---- BOM 剥离（2026-09-19 实机：种子复制来的 profile 中某 bundle 的 package.json 带
+    // UTF-8 BOM，DSH loadProfileDirectory 裸 JSON.parse 抛 SyntaxError（乱码 "锘?"）→
+    // Runtime 就绪前退出 ExitCode=1，连续失败进 SafeMode；.NET 侧 File.ReadAllText 解码时
+    // 自动剥 BOM 所以本仓无感，必须按原始字节判定）----
+
+    /// <summary>profile 清单带 BOM：剥离 BOM，其余字节不变。</summary>
+    [Test]
+    public async Task StripUtf8ByteOrderMarks_ManifestWithBom_StripsBomPreservingBytes()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        const string pkg = "{\n  \"name\": \"web\"\n}\n";
+        string manifestPath = Path.Combine(ProfileDir, "package.json");
+        File.WriteAllText(manifestPath, pkg, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        ProfileManifestFixups.StripUtf8ByteOrderMarks(ProfileDir);
+
+        byte[] bytes = await File.ReadAllBytesAsync(manifestPath);
+        await Assert.That(bytes[0]).IsEqualTo((byte)'{');
+        await Assert.That(System.Text.Encoding.UTF8.GetString(bytes)).IsEqualTo(pkg);
+    }
+
+    /// <summary>清单声明的 bundle 的 package.json 带 BOM：一并剥离（DSH 按 bundles 逐个 JSON.parse）。</summary>
+    [Test]
+    public async Task StripUtf8ByteOrderMarks_DeclaredBundleWithBom_StripsIt()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"),
+            """{ "dsh": { "profile": { "bundles": ["@scope/dsh-foo"] } } }""");
+        string bundleManifest = Path.Combine(ProfileDir, "node_modules", "@scope/dsh-foo", "package.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(bundleManifest)!);
+        const string bundlePkg = "{\n  \"name\": \"@scope/dsh-foo\"\n}\n";
+        File.WriteAllText(bundleManifest, bundlePkg, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        ProfileManifestFixups.StripUtf8ByteOrderMarks(ProfileDir);
+
+        byte[] bytes = await File.ReadAllBytesAsync(bundleManifest);
+        await Assert.That(bytes[0]).IsEqualTo((byte)'{');
+        await Assert.That(System.Text.Encoding.UTF8.GetString(bytes)).IsEqualTo(bundlePkg);
+    }
+
+    /// <summary>全部无 BOM：逐字节不动（不无谓改写时间戳）。</summary>
+    [Test]
+    public async Task StripUtf8ByteOrderMarks_NoBom_LeavesBytesUntouched()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        const string pkg = "{\n  \"name\": \"web\",\n  \"dsh\": { \"profile\": { \"bundles\": [\"dsh-foo\"] } }\n}\n";
+        string manifestPath = Path.Combine(ProfileDir, "package.json");
+        File.WriteAllText(manifestPath, pkg);
+        string bundleManifest = Path.Combine(ProfileDir, "node_modules", "dsh-foo", "package.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(bundleManifest)!);
+        const string bundlePkg = "{\n  \"name\": \"dsh-foo\"\n}\n";
+        File.WriteAllText(bundleManifest, bundlePkg);
+
+        ProfileManifestFixups.StripUtf8ByteOrderMarks(ProfileDir);
+
+        await Assert.That(await File.ReadAllTextAsync(manifestPath)).IsEqualTo(pkg);
+        await Assert.That(await File.ReadAllTextAsync(bundleManifest)).IsEqualTo(bundlePkg);
+    }
+
+    /// <summary>profile 目录/文件缺失：静默返回不抛（幂等，与兄弟修正方法同约定）。</summary>
+    [Test]
+    public async Task StripUtf8ByteOrderMarks_MissingFiles_DoesNotThrow()
+    {
+        ProfileManifestFixups.StripUtf8ByteOrderMarks(Path.Combine(_root, "nope"));
+
+        Directory.CreateDirectory(ProfileDir);
+        File.WriteAllText(Path.Combine(ProfileDir, "package.json"),
+            """{ "dsh": { "profile": { "bundles": ["dsh-ghost"] } } }"""); // 声明了 bundle 但磁盘无实目录
+        ProfileManifestFixups.StripUtf8ByteOrderMarks(ProfileDir);
+
+        await Task.CompletedTask; // 不抛异常即通过
+    }
+
+    /// <summary>NormalizeToFlatModel 入口同样剥离 BOM：所有 pnpm/启动入口都走它，不能漏。</summary>
+    [Test]
+    public async Task NormalizeToFlatModel_AlsoStripsBom()
+    {
+        Directory.CreateDirectory(ProfileDir);
+        string manifestPath = Path.Combine(ProfileDir, "package.json");
+        File.WriteAllText(manifestPath, "{\n  \"name\": \"web\"\n}\n",
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+
+        ProfileManifestFixups.NormalizeToFlatModel(ProfileDir);
+
+        byte[] bytes = await File.ReadAllBytesAsync(manifestPath);
+        await Assert.That(bytes[0]).IsEqualTo((byte)'{');
+    }
+
     private static string ProfileWithOverrides() => """
         {
           "name": "web",

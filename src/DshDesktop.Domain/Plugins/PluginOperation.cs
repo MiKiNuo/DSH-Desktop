@@ -20,6 +20,12 @@ public enum PluginOperationStage
     /// <summary>安装插件。</summary>
     Installing,
 
+    /// <summary>卸载插件。</summary>
+    Uninstalling,
+
+    /// <summary>应用插件启用状态变更。</summary>
+    Applying,
+
     /// <summary>校验 Profile 一致性。</summary>
     Validating,
 
@@ -50,6 +56,15 @@ public enum PluginOperationKind
 
     /// <summary>把已安装插件升级到最新版。</summary>
     Update,
+
+    /// <summary>卸载第三方插件。</summary>
+    Uninstall,
+
+    /// <summary>启用第三方插件。</summary>
+    Enable,
+
+    /// <summary>禁用第三方插件。</summary>
+    Disable,
 }
 
 /// <summary>

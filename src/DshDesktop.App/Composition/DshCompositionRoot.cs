@@ -1169,11 +1169,11 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        await StopRuntimeIfRunningAsync(cancellationToken).ConfigureAwait(false);
-        await _pluginRepository!.SetEnabledAsync(request.Name, request.Enabled, cancellationToken)
+        // A2：启停走插件事务（快照→停→变更→校验→重启→健康检查），失败自动回滚；
+        // 阶段进度经 OnPluginOperationChanged 回流，壳遮罩与终态 toast 随之生效。
+        await _pluginOrchestrator!.SetEnabledAsync(request.Name, request.Enabled, cancellationToken)
             .ConfigureAwait(false);
-        Log.Logger.Information("Plugin.SetEnabled {Name} {Enabled}", request.Name, request.Enabled);
-        return await _pluginRepository.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
+        return await _pluginRepository!.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<IReadOnlyList<PluginInfo>> HandleUninstallPluginAsync(
@@ -1181,9 +1181,8 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        await StopRuntimeIfRunningAsync(cancellationToken).ConfigureAwait(false);
-        await _pluginRepository!.UninstallAsync(request.Name, cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Plugin.Uninstall {Name}", request.Name);
+        // A2：卸载走插件事务（同管线），兑现确认弹窗「失败自动回滚，并重启原 Runtime」的承诺。
+        await _pluginOrchestrator!.UninstallAsync(request.Name, cancellationToken).ConfigureAwait(false);
         return await _pluginRepository.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
     }
 

@@ -33,6 +33,11 @@ public sealed partial class PluginsReducer
         PluginsState state,
         PluginsIntent.EnablePlugin intent)
     {
+        if (IsTransactionInFlight(state))
+        {
+            return Unchanged(state); // 已有事务进行中。
+        }
+
         return WithEffect(
             state with { PendingOperation = $"启用 {intent.Name}…", LastError = null },
             new PluginsEffect.SetPluginEnabled(intent.Name, true));
@@ -46,6 +51,11 @@ public sealed partial class PluginsReducer
         PluginsState state,
         PluginsIntent.DisablePlugin intent)
     {
+        if (IsTransactionInFlight(state))
+        {
+            return Unchanged(state); // 已有事务进行中。
+        }
+
         return WithEffect(
             state with { PendingOperation = $"禁用 {intent.Name}…", LastError = null },
             new PluginsEffect.SetPluginEnabled(intent.Name, false));
@@ -59,6 +69,11 @@ public sealed partial class PluginsReducer
         PluginsState state,
         PluginsIntent.UninstallPlugin intent)
     {
+        if (IsTransactionInFlight(state))
+        {
+            return Unchanged(state); // 已有事务进行中。
+        }
+
         return WithEffect(
             state with { PendingOperation = $"卸载 {intent.Name}…", LastError = null },
             new PluginsEffect.UninstallPlugin(intent.Name));
@@ -117,7 +132,7 @@ public sealed partial class PluginsReducer
         PluginsState state,
         PluginsIntent.InstallPlugin intent)
     {
-        if (state.Operation is { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed })
+        if (IsTransactionInFlight(state))
         {
             return Unchanged(state); // 已有事务进行中。
         }
@@ -159,5 +174,15 @@ public sealed partial class PluginsReducer
             PendingOperation = null,
             LastError = intent.Error,
         });
+    }
+
+    /// <summary>
+    /// 是否有插件事务进行中：非终态（含失败前的回滚中）即视为进行中。
+    /// 安装/更新/卸载/启停共用同一事务管线（A2），并发守卫单点定义。
+    /// </summary>
+    private static bool IsTransactionInFlight(PluginsState state)
+    {
+        return state.Operation is
+        { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed };
     }
 }

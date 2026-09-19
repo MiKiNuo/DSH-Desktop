@@ -15,12 +15,54 @@ internal static class ProfileManifestFixups
     /// 把 profile 清单归一化到扁平 pnpm 模型：剥离代际投影残留与悬空 overrides。
     /// 两者同源（旧 Electron harness 的代际模型在我们环境无 .generations 支撑），必须成对清理——
     /// 所有会对 profile 执行 pnpm 操作或启动 Runtime 的入口都调用本方法，而非只调其中一半。
+    /// 顺带剥离 UTF-8 BOM（见 <see cref="StripUtf8ByteOrderMarks"/>）。
     /// </summary>
     /// <param name="profileDir">profile 目录（含 package.json）。</param>
     internal static void NormalizeToFlatModel(string profileDir)
     {
+        StripUtf8ByteOrderMarks(profileDir);
         StripGenerationProjection(profileDir);
         StripDanglingOverrides(profileDir);
+    }
+
+    /// <summary>
+    /// 剥离 profile 清单与已声明 bundle 的 <c>package.json</c> 的 UTF-8 BOM（EF BB BF）。
+    ///
+    /// <b>根因</b>：DSH 的 loadProfileDirectory 对每个 bundle 的 package.json 裸
+    /// <c>JSON.parse(readFileSync(..., "utf8"))</c>，不容 BOM → SyntaxError（GBK 控制台乱码
+    /// "锘?"）→ Runtime 就绪前退出 ExitCode=1，连续失败进 SafeMode（2026-09-19 实机：种子复制来的
+    /// 第三方插件 package.json 带 BOM）。.NET 侧 File.ReadAllText 解码时自动剥 BOM，本仓读写
+    /// 全程无感，故必须按原始字节判定。npm/pnpm 能容忍 BOM，只有 DSH 启动路径不容。
+    ///
+    /// <b>范围</b>：profile 根 package.json + 清单 <c>dsh.profile.bundles</c> 声明的每个 bundle 的
+    /// <c>node_modules/&lt;bundle&gt;/package.json</c>（与 DSH 实际 JSON.parse 的文件集合一致）；
+    /// in-box bundle 解析在安装侧、npm 产物无 BOM，不在范围内。无 BOM 逐字节不动（不改写时间戳）。
+    /// </summary>
+    /// <param name="profileDir">profile 目录（含 package.json）。</param>
+    internal static void StripUtf8ByteOrderMarks(string profileDir)
+    {
+        StripBomIfPresent(Path.Combine(profileDir, "package.json"));
+        foreach (string bundle in ProfileBundleProbe.DeclaredBundles(profileDir))
+        {
+            StripBomIfPresent(Path.Combine(profileDir, "node_modules", bundle, "package.json"));
+        }
+    }
+
+    /// <summary>文件带 UTF-8 BOM 时按字节剥离重写；缺失或无 BOM 静默跳过（幂等）。</summary>
+    private static void StripBomIfPresent(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        byte[] bytes = File.ReadAllBytes(path);
+        if (bytes.Length < 3 || bytes[0] != 0xEF || bytes[1] != 0xBB || bytes[2] != 0xBF)
+        {
+            return;
+        }
+
+        File.WriteAllBytes(path, bytes[3..]);
     }
 
     /// <summary>

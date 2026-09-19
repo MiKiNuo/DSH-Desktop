@@ -410,8 +410,9 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // 同一套安装事务被"安装"与"更新"两个入口复用，文案按操作种类区分，避免点"更新"却报"安装"。
-        string verb = operation.Kind is PluginOperationKind.Update ? "更新" : "安装";
+        // 同一套事务被"安装/更新/卸载/启用/禁用"五个入口复用，文案按操作种类区分，
+        // 避免点"卸载"却报"安装"（动词映射集中单测：PluginOperationText）。
+        string verb = PluginOperationText.Verb(operation.Kind);
         if (operation.Stage is PluginOperationStage.Completed)
         {
             _notifiedPluginOperation = operation;

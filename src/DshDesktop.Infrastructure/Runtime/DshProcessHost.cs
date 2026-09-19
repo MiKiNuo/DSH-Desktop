@@ -294,7 +294,14 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         lock (_sync)
         {
             string tail = _stderrTail.ToString().Trim();
-            return tail.Length == 0 ? string.Empty : $"stderr 末尾：{tail}";
+            if (tail.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            // 已知崩溃特征附排查提示（BOM / 命名导出缺失），未知特征不附（不误导）。
+            string? hint = RuntimeStderrHints.Describe(tail);
+            return hint is null ? $"stderr 末尾：{tail}" : $"stderr 末尾：{tail}\n{hint}";
         }
     }
 
