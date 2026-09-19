@@ -79,6 +79,12 @@ public static class ProfileSeeder
         // 更新后 5 个投影插件实目录被删、重新启用即 cannot resolve profile bundle → ExitCode=1）。
         ProfileManifestFixups.NormalizeToFlatModel(targetProfile);
 
+        // 每次启动重写虚拟存储指向（同理不能只挂在复制分支）：数据根迁移 / 快照还原 / 更早的种子
+        // 都会让目标 profile 带着**旧位置**的 virtualStoreDir，此后任何 pnpm 操作都报
+        // ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 并回滚（2026-09-19 v0.1.6 实机：数据根迁移把
+        // 旧根 .modules.yaml 一并带入，插件安装 dshmarket@latest 失败回滚）。幂等：值已一致不写盘。
+        RewriteVirtualStoreDir(targetProfile);
+
         await EnsureDependenciesAsync(targetProfile, installer, cancellationToken).ConfigureAwait(false);
     }
 
@@ -139,9 +145,9 @@ public static class ProfileSeeder
         // 该报错只影响后续 pnpm 操作，启动可用性由 Node 解析 node_modules/<bundle> 决定，
         // 根本不读 virtualStoreDir；旧方案依赖 NodeJsToolRunner 的自动重试去重置虚拟存储，
         // 但实机证明该重试本身因缺少 --force / --no-frozen-lockfile 而失败（2026-09 现场），
-        // 且即便成功也会 purge 再重建、风险高。现改为：复制后直接把 .modules.yaml 的 virtualStoreDir
-        // 重写为本 profile 的绝对路径（CopyProfileAsync 内调用 RewriteVirtualStoreDir），从源头消除
-        // 跨盘错位，使复制出的 profile 立刻可离线、无破坏地执行 pnpm 操作。只改 virtualStoreDir；
+        // 且即便成功也会 purge 再重建、风险高。现改为：每次启动把 .modules.yaml 的 virtualStoreDir
+        // 重写为本 profile 的绝对路径（SeedIfNeededAsync 复制分支之外统一调用 RewriteVirtualStoreDir），
+        // 从源头消除跨盘错位，使复制出的 profile 立刻可离线、无破坏地执行 pnpm 操作。只改 virtualStoreDir；
         // storeDir 由 .npmrc 决定、跨盘仍匹配，不处理 .pnpm-workspace-state-v1.json（无证据有害）。
         ProcessStartInfo psi = new()
         {
@@ -181,17 +187,10 @@ public static class ProfileSeeder
         ReparsePointMaterializer.Materialize(
             Path.Combine(targetProfile, "node_modules"),
             Path.Combine(sourceProfile, "node_modules"));
-
-        // 跨盘后把虚拟存储指向重写为本 profile，从源头消除 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 根因。
-        RewriteVirtualStoreDir(targetProfile);
-
-        // 复制后归一化清单（剥离代际投影残留 + 悬空 overrides）：否则首次 pnpm 操作会把
-        // 已 materialize 的真实依赖重建为悬空 junction，打坏 profile。
-        ProfileManifestFixups.NormalizeToFlatModel(targetProfile);
     }
 
     /// <summary>
-    /// 复制后重写 node_modules/.modules.yaml 的 virtualStoreDir 为当前 profile 的绝对路径，
+    /// 重写 node_modules/.modules.yaml 的 virtualStoreDir 为当前 profile 的绝对路径，
     /// 从源头消除跨盘后的 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE（实机根因）。只改 virtualStoreDir，
     /// 不改 storeDir（由 .npmrc 决定、跨盘仍匹配）；文件/字段缺失则静默跳过；值已一致则不动（幂等）。
     ///

@@ -389,6 +389,34 @@ public sealed class ProfileSeederTests : IDisposable
     }
 
     /// <summary>
+    /// 目标 profile **已存在**（数据根迁移、快照还原或更早的种子）时复制分支不执行——
+    /// 但虚拟存储指向的重写仍必须发生：旧实现把 RewriteVirtualStoreDir 只放在复制分支里，
+    /// 于是新数据根里的 profile 一直带着旧根的 virtualStoreDir，任何后续 pnpm 操作
+    /// （插件安装 / 卸载重建）都报 ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 并回滚（2026-09-19 v0.1.6 实机）。
+    /// </summary>
+    [Test]
+    public async Task SeedIfNeededAsync_TargetProfileExists_StillRewritesVirtualStoreDir()
+    {
+        Directory.CreateDirectory(Path.Combine(SourceProfile, "node_modules"));
+        File.WriteAllText(
+            Path.Combine(SourceProfile, "node_modules", ".modules.yaml"), SeedModulesManifest);
+        File.WriteAllText(Path.Combine(SourceProfile, "package.json"), "{ \"name\": \"seed\" }");
+
+        // 既有 profile：清单与 .modules.yaml 都已在目标落盘，复制分支不会执行。
+        Directory.CreateDirectory(Path.Combine(TargetProfile, "node_modules"));
+        File.WriteAllText(
+            Path.Combine(TargetProfile, "node_modules", ".modules.yaml"), SeedModulesManifest);
+        File.WriteAllText(Path.Combine(TargetProfile, "package.json"), "{ \"name\": \"seed\" }");
+
+        await ProfileSeeder.SeedIfNeededAsync(
+            TargetHome, SourceHome, (_, _) => Task.FromResult((0, string.Empty)), CancellationToken.None);
+
+        string content = await File.ReadAllTextAsync(
+            Path.Combine(TargetProfile, "node_modules", ".modules.yaml"));
+        await Assert.That(content).Contains(VirtualStoreDirEntry(TargetProfile));
+    }
+
+    /// <summary>
     /// 种子 profile 的 <c>node_modules/.modules.yaml</c>：pnpm 写出的是 <b>JSON</b>（文件名是 yaml），
     /// virtualStoreDir 指向**种子源盘**——跨盘复制后 pnpm 的 checkCompatibility 即因此抛
     /// ERR_PNPM_UNEXPECTED_VIRTUAL_STORE。

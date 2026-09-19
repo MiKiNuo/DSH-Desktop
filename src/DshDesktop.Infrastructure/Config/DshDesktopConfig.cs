@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using DshDesktop.Infrastructure.Updates;
 using Serilog;
@@ -103,8 +104,14 @@ public sealed partial class DshConfigJsonContext : JsonSerializerContext;
 /// 旧数据根一次性迁移结果（ADR-0009，<see cref="DshDesktopConfigStore.MigrateLegacyDataRootIfNeeded"/>）。
 /// </summary>
 /// <param name="Attempted">是否实际尝试了迁移（false = 无需迁移/环境变量覆盖）。</param>
-/// <param name="Error">失败原因；成功或未尝试为 null。</param>
-public sealed record LegacyDataRootMigrationOutcome(bool Attempted, string? Error);
+/// <param name="Error">迁移失败原因（内容未完整并入新根）；成功或未尝试为 null。</param>
+/// <param name="CleanupError">迁移已生效、仅旧根残留未清理的原因（可手工删除）；无残留为 null。</param>
+/// <param name="SafeModeCleared">是否清掉了继承来的自动安全模式（迁移成功时判定）。</param>
+public sealed record LegacyDataRootMigrationOutcome(
+    bool Attempted,
+    string? Error,
+    string? CleanupError = null,
+    bool SafeModeCleared = false);
 
 /// <summary>
 /// 表示配置的加载、自动探测与回写（Q2 决策：配置文件持久化 + 缺失时探测并回写）。
@@ -175,14 +182,67 @@ public static class DshDesktopConfigStore
 
         try
         {
-            LegacyDataRootMigration.Migrate(LegacyDataRoot, DataRoot);
-            return new LegacyDataRootMigrationOutcome(Attempted: true, Error: null);
+            string? cleanupError = LegacyDataRootMigration.Migrate(LegacyDataRoot, DataRoot);
+
+            // 迁移继承来的自动安全模式必须清掉：它是对**旧数据根**连续失败的判定，新根首启继承它
+            // 会让 bootstrap 跳过自动启动（2026-09-19 v0.1.6 实机："更新后无法自动启动"）。
+            // 返回值交给调用方补日志——本方法跑在日志初始化之前，此处记什么都会被静默丢弃。
+            bool safeModeCleared = ClearInheritedSafeMode(ConfigPath);
+
+            return new LegacyDataRootMigrationOutcome(
+                Attempted: true,
+                Error: null,
+                CleanupError: cleanupError,
+                SafeModeCleared: safeModeCleared);
         }
         catch (Exception exception)
         {
             return new LegacyDataRootMigrationOutcome(Attempted: true, Error: exception.Message);
         }
     }
+
+    /// <summary>
+    /// 清掉数据根迁移继承来的自动安全模式（<c>safeMode: true → false</c>）。
+    /// 判据只有字段本身：调用点保证「刚迁移完」，字段为 true 即来自旧现场。
+    /// 直接改 JSON 而非走 <see cref="SaveAsync"/>——迁移发生在配置装配与日志初始化之前（组合根构造期，
+    /// 同步），与 ProfileManifestFixups 同款外科式改字段；字段缺失、已为 false 或文件不可解析时
+    /// 一律不动文件（幂等；不可解析的配置本就会在 <see cref="LoadOrDetectAsync"/> 走探测重建）。
+    /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
+    /// </summary>
+    /// <param name="configPath">配置文件完整路径。</param>
+    /// <returns>是否真的翻转了该字段（供调用方在日志起效后如实上报）。</returns>
+    internal static bool ClearInheritedSafeMode(string configPath)
+    {
+        if (string.IsNullOrWhiteSpace(configPath) || !File.Exists(configPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            JsonNode? root = JsonNode.Parse(File.ReadAllText(configPath));
+            if (root is not JsonObject config
+                || config["safeMode"] is not JsonValue safeMode
+                || !safeMode.TryGetValue(out bool enabled)
+                || !enabled)
+            {
+                return false;
+            }
+
+            config["safeMode"] = false;
+            File.WriteAllText(configPath, config.ToJsonString(IndentedJson));
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            // 配置是派生数据：改不动不影响本次启动（内存中的配置仍按默认值/探测结果继续）。
+            return false;
+        }
+    }
+
+    /// <summary>外科式改配置字段时的缩进写出选项（与 pnpm/Profile 清单处理同款）。</summary>
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
 
     /// <summary>
     /// 获取配置文件路径（ADR-0003：数据根 config 子目录——exe 旁会随覆盖安装被替换，§39）。

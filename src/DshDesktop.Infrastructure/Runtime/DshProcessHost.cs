@@ -44,6 +44,10 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         ArgumentNullException.ThrowIfNull(options);
         ValidateOptions(options);
 
+        // harness 跨进程写锁孤儿回收：锁被强杀进程留下时，healProfilesModuleFallback 会 2s 超时
+        // 直接终止启动（每次必现，日志只显示锁路径）。见 HarnessWriterLockGuard。
+        HarnessWriterLockGuard.TryReclaimOrphan(options.DshHome);
+
         lock (_sync)
         {
             if (_launch is { Process.HasExited: false })

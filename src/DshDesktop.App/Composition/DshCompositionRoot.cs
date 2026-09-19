@@ -159,8 +159,24 @@ public sealed partial class DshCompositionRoot
             else
             {
                 Log.Logger.Warning(
-                    "Desktop.DataRoot.MigrationFailed {Error}（旧根未动，按新根全新初始化继续）",
+                    "Desktop.DataRoot.MigrationFailed {Error}（迁移未完成，按新根继续初始化）",
                     migrationOutcome.Error);
+            }
+
+            // 迁移已生效、仅旧根残留未清理：与「迁移失败」语义不同（内容已在新根），分开上报，
+            // 否则日志会把已在用新根的用户指向旧根（2026-09-19 v0.1.6 实机）。
+            if (migrationOutcome.Error is null && migrationOutcome.CleanupError is { } cleanupError)
+            {
+                Log.Logger.Warning(
+                    "Desktop.DataRoot.LegacyRootNotRemoved {Error}（内容已并入新根，旧根残留可手工删除）",
+                    cleanupError);
+            }
+
+            // 迁移继承的自动安全模式被清掉：不清会让 bootstrap 跳过自动启动，用户只看到"窗口开了、
+            // Runtime 不动"（清除本身发生在日志起效之前，故在此补记）。
+            if (migrationOutcome.SafeModeCleared)
+            {
+                Log.Logger.Information("Desktop.DataRoot.InheritedSafeModeCleared");
             }
         }
     }

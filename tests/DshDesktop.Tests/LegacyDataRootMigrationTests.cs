@@ -191,6 +191,162 @@ public sealed class LegacyDataRootMigrationTests
         }
     }
 
+    /// <summary>
+    /// 迁移必须排除 harness 自管易失物（2026-09-19 v0.1.6 实机根因）：
+    /// ① <c>&lt;DSH_HOME&gt;\profiles\node_modules.lock</c> —— harness 跨进程写锁，搬走 = 新根永久持锁，
+    /// 此后每次启动 2s 超时 ExitCode=1；
+    /// ② <c>&lt;DSH_HOME&gt;\profiles\node_modules</c> —— harness 自管共享 fallback，启动时自建为 junction，
+    /// 实体化副本会让它抛 "exists and is not a symlink or dsh-managed module proxy"。
+    /// 任意 <c>*.lock</c> 同源（原子写瞬时锁），一并排除；profile 自身依赖树必须保留。
+    /// </summary>
+    [Test]
+    public async Task Migrate_HarnessOwnedState_NotCarriedOver()
+    {
+        string root = NewTempDir();
+        try
+        {
+            string legacy = Path.Combine(root, "legacy");
+            string target = Path.Combine(root, "target");
+            string profiles = Path.Combine(legacy, "dsh-home", "profiles");
+            Directory.CreateDirectory(Path.Combine(profiles, "node_modules", "undici"));
+            File.WriteAllText(Path.Combine(profiles, "node_modules", "undici", "package.json"), "{}");
+            File.WriteAllText(Path.Combine(profiles, "node_modules.lock"), "28572\n");
+            Directory.CreateDirectory(Path.Combine(profiles, "web", "node_modules", "dshmarket"));
+            File.WriteAllText(
+                Path.Combine(profiles, "web", "node_modules", "dshmarket", "package.json"), "{}");
+            File.WriteAllText(Path.Combine(profiles, "web", "atomic-write.lock"), "x");
+            // profile 自管 fallback（healProfileModuleFallback 的 <profile>/.dsh-module-fallback/node_modules）：
+            // 与共享 fallback 同类，ProfileSeeder 的 robocopy 同样以 /XD 排除它。
+            Directory.CreateDirectory(Path.Combine(profiles, "web", ".dsh-module-fallback", "node_modules"));
+            File.WriteAllText(
+                Path.Combine(profiles, "web", ".dsh-module-fallback", "node_modules", "leftover.txt"), "x");
+            Directory.CreateDirectory(Path.Combine(legacy, "config"));
+            File.WriteAllText(Path.Combine(legacy, "config", "dsh-desktop.config.json"), "{}");
+
+            LegacyDataRootMigration.Migrate(legacy, target);
+
+            string targetProfiles = Path.Combine(target, "dsh-home", "profiles");
+            await Assert.That(File.Exists(Path.Combine(targetProfiles, "node_modules.lock"))).IsFalse();
+            await Assert.That(Directory.Exists(Path.Combine(targetProfiles, "node_modules"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(targetProfiles, "web", "atomic-write.lock"))).IsFalse();
+            await Assert.That(Directory.Exists(
+                    Path.Combine(targetProfiles, "web", ".dsh-module-fallback")))
+                .IsFalse();
+            // profile 依赖树是启动可用性的根据，必须原样保留。
+            await Assert.That(File.Exists(Path.Combine(
+                    targetProfiles, "web", "node_modules", "dshmarket", "package.json")))
+                .IsTrue();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    /// <summary>
+    /// 旧根清理失败必须是**可上报的部分失败**，不得改判为整次迁移失败（2026-09-19 v0.1.6 实机：
+    /// 内容已并入新根，仅旧根删除失败，日志却报 "MigrationFailed（旧根未动，按新根全新初始化继续）"
+    /// —— 误导排查方向：用户据此以为还在旧根，实际新根已在用）。
+    /// </summary>
+    [Test]
+    public async Task Migrate_LegacyRootUndeletable_ReportsCleanupErrorWithoutFailingMigration()
+    {
+        string root = NewTempDir();
+        try
+        {
+            string legacy = Path.Combine(root, "legacy");
+            string target = Path.Combine(root, "target");
+            Directory.CreateDirectory(Path.Combine(legacy, "dsh-home"));
+            File.WriteAllText(Path.Combine(legacy, "dsh-home", "marker.txt"), "x");
+            Directory.CreateDirectory(Path.Combine(legacy, "config"));
+            File.WriteAllText(Path.Combine(legacy, "config", "dsh-desktop.config.json"), "{}");
+
+            // 共享掩码不含 Delete：复制可读该文件，旧根整树删除必然失败。
+            using FileStream blocker = new(
+                Path.Combine(legacy, "dsh-home", "blocker.bin"),
+                FileMode.Create,
+                FileAccess.ReadWrite,
+                FileShare.ReadWrite);
+
+            string? cleanupError = LegacyDataRootMigration.Migrate(legacy, target);
+
+            await Assert.That(File.Exists(Path.Combine(target, "dsh-home", "marker.txt"))).IsTrue();
+            await Assert.That(File.Exists(
+                Path.Combine(target, "config", "dsh-desktop.config.json"))).IsTrue();
+            await Assert.That(cleanupError).IsNotNull();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    /// <summary>
+    /// 迁移会把旧数据根的 config 一并带入新根，其中的自动安全模式属于**旧现场**（连续启动失败自动进入）。
+    /// 新根首启继承它会让 bootstrap 直接跳过自动启动，用户侧表现为"更新后不自动启动"
+    /// （2026-09-19 v0.1.6 实机：迁移继承 safeMode=true，两次启动都没有 Runtime.Start.Begin）。
+    /// </summary>
+    [Test]
+    public async Task ClearInheritedSafeMode_SafeModeOn_ResetsToFalseKeepingOtherFields()
+    {
+        string root = NewTempDir();
+        try
+        {
+            string configPath = Path.Combine(root, "config", "dsh-desktop.config.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+            File.WriteAllText(configPath, """{ "safeMode": true, "theme": "Dark" }""");
+
+            DshDesktopConfigStore.ClearInheritedSafeMode(configPath);
+
+            string content = await File.ReadAllTextAsync(configPath);
+            await Assert.That(content).Contains("\"safeMode\": false");
+            await Assert.That(content).Contains("\"theme\": \"Dark\"");
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    [Test]
+    public async Task ClearInheritedSafeMode_SafeModeOff_LeavesFileUntouched()
+    {
+        string root = NewTempDir();
+        try
+        {
+            string configPath = Path.Combine(root, "config", "dsh-desktop.config.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+            string original = """{ "safeMode": false }""";
+            File.WriteAllText(configPath, original);
+
+            DshDesktopConfigStore.ClearInheritedSafeMode(configPath);
+
+            await Assert.That(await File.ReadAllTextAsync(configPath)).IsEqualTo(original);
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    [Test]
+    public async Task ClearInheritedSafeMode_MissingFile_NoThrow()
+    {
+        string root = NewTempDir();
+        try
+        {
+            string configPath = Path.Combine(root, "config", "dsh-desktop.config.json");
+
+            DshDesktopConfigStore.ClearInheritedSafeMode(configPath);
+
+            await Assert.That(File.Exists(configPath)).IsFalse();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
     private static string NewTempDir()
         => Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
 
