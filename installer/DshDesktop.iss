@@ -22,6 +22,8 @@ DisableDirPage=no
 OutputDir=..\releases
 OutputBaseFilename=DSH-Desktop-Setup-{#MyAppVersion}
 UninstallDisplayIcon={app}\{#MyAppExe}
+; 安装程序自身图标（鲸鱼，与应用 exe 内嵌图标同源；相对脚本目录解析）。
+SetupIconFile=..\src\DshDesktop.App\Assets\app.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- DSH-Desktop 应用图标源文件：白底圆角方块 + 蓝色鲸鱼（全身剪影，头朝左，尾鳍上扬，头顶水花）。
+       改动此文件后需重新生成 app.ico（多尺寸打包）。 -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EDF1FF"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="52" fill="url(#tile)" stroke="#E3E9FC" stroke-width="1.5"/>
+  <g fill="#4D6BFE">
+    <!-- 鲸鱼全身剪影：头部 → 背弓 → 尾鳍 → 腹线 -->
+    <path d="M30 130
+             C30 100 60 78 100 76
+             C140 74 168 84 188 100
+             L216 74
+             L196 108
+             L214 106
+             L184 124
+             C160 152 110 168 72 160
+             C48 154 30 146 30 130 Z"/>
+    <!-- 头顶水花 -->
+    <circle cx="52" cy="54" r="6"/>
+    <circle cx="68" cy="46" r="5"/>
+  </g>
+  <!-- 眼睛 -->
+  <circle cx="58" cy="118" r="7" fill="#FFFFFF"/>
+  <!-- 胸鳍（镂空） -->
+  <path d="M96 146 C104 138 116 136 122 140 C118 150 106 156 96 154 Z" fill="#FFFFFF"/>
+</svg>
