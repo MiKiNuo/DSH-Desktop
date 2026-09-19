@@ -177,4 +177,26 @@ public sealed class PluginRowProjectionTests
 
         await Assert.That(row.Description).IsEqualTo(Sample[0].Description);
     }
+
+    // ===== 核心插件更新入口（2026-09-19 实机：旧 dshmarket × 新 Runtime 版本漂移硬崩，核心插件无更新入口则永不自愈）=====
+
+    [Test]
+    public async Task Row_CorePluginUpdatable_ShowsUpdate()
+    {
+        // 核心插件仍不可禁用/卸载，但「更新」必须可达——这是版本漂移崩溃的唯一自助修复通道。
+        PluginRow row = new(Sample[1], IsUpdatable: true);
+
+        await Assert.That(row.ShowUpdate).IsTrue();
+        await Assert.That(row.ShowManage).IsFalse();
+        await Assert.That(row.ShowUninstall).IsFalse();
+    }
+
+    [Test]
+    public async Task Row_UnresolvablePlugin_NoUpdate()
+    {
+        // 声明-未物化（含 in-box bundle）：Version 是占位符，查更新出假结果，不显示更新按钮。
+        PluginRow row = new(Sample[0] with { IsResolvable = false }, IsUpdatable: true);
+
+        await Assert.That(row.ShowUpdate).IsFalse();
+    }
 }

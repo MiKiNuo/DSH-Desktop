@@ -70,6 +70,9 @@ public sealed partial class DshCompositionRoot
     // Phase 8 评审 F9：探测原语下沉 Infrastructure 端口（RuntimeProbe 持有 HttpClient 并随 Shutdown 释放）。
     private RuntimeProbe? _runtimeProbe;
     private readonly StartupFailureTracker _failureTracker = new();
+
+    /// <summary>本会话已尝试过版本漂移自愈的插件名（每插件只试一次，防自愈-失败循环）。</summary>
+    private readonly HashSet<string> _crashHealAttempted = new(StringComparer.Ordinal);
     private RuntimeReattacher? _reattacher;
 
     // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表；非 Windows 平台为 null）。
@@ -976,7 +979,10 @@ public sealed partial class DshCompositionRoot
         IReadOnlyList<PluginInfo> plugins = await _pluginRepository!.ListPluginsAsync(cancellationToken)
             .ConfigureAwait(false);
         List<PluginUpdateInfo> pluginUpdates = [];
-        foreach (PluginInfo plugin in plugins.Where(p => p is { IsCore: false, Enabled: true }))
+        // 核心插件（dshmarket 等）也查更新——2026-09-19 v0.1.4 实机：旧核心插件 × 新 Runtime
+        // 版本漂移导致启动硬崩且无任何更新入口。IsResolvable 自然排除 in-box bundle 与
+        // 声明-未物化插件（它们的 Version 是占位符，查 npm 必出假更新）。
+        foreach (PluginInfo plugin in plugins.Where(p => p is { Enabled: true, IsResolvable: true }))
         {
             string? latest = await _runtimeRepository!.GetLatestPluginVersionAsync(plugin.Name, cancellationToken)
                 .ConfigureAwait(false);
@@ -1286,8 +1292,37 @@ public sealed partial class DshCompositionRoot
             _failureTracker.RecordSuccess();
             return snapshot;
         }
-        catch
+        catch (OperationCanceledException)
         {
+            throw; // 调用方取消不是失败：不自愈、不计数（同 RuntimeSupervisor 语义）。
+        }
+        catch (Exception exception)
+        {
+            // 版本漂移自愈（2026-09-19 v0.1.4 实机）：旧插件静态 import 了 Runtime 已删除的
+            // 命名导出 ⇒ 启动必崩，且肇事者可能是核心插件（无 UI 更新入口）⇒ 在此自动走
+            // 编排器事务化升级（快照/停/变更/校验/启动/健康/回滚），成功即 Runtime 已被事务拉起。
+            // 刻意绕开 MVI 的 IsTransactionInFlight 守卫：启动失败现场 Runtime 已停，用户事务不可能在飞。
+            // 每会话每插件只试一次（_crashHealAttempted），失败回落原失败计数链，绝不循环。
+            if (IncompatiblePluginCrashProbe.TryParseOffender(exception.Message) is { } offender
+                && _crashHealAttempted.Add(offender))
+            {
+                Log.Logger.Warning("Runtime.Start.CrashHeal.Begin {PluginName}", offender);
+                try
+                {
+                    _ = await _pluginOrchestrator!
+                        .InstallAsync($"{offender}@latest", PluginOperationKind.Update, cancellationToken)
+                        .ConfigureAwait(false);
+                    Log.Logger.Information("Runtime.Start.CrashHeal.Success {PluginName}", offender);
+                    _failureTracker.RecordSuccess();
+                    return _supervisor!.Current;
+                }
+                catch (Exception healException)
+                {
+                    Log.Logger.Warning(
+                        "Runtime.Start.CrashHeal.Failed {PluginName} {Error}", offender, healException.Message);
+                }
+            }
+
             await OnStartupFailureAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }

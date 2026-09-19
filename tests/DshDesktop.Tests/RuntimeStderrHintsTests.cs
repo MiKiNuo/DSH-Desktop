@@ -10,7 +10,7 @@ namespace DshDesktop.Tests;
 /// </summary>
 public sealed class RuntimeStderrHintsTests
 {
-    /// <summary>命名导出缺失（插件与 Runtime 版本不兼容）：提示升级/卸载插件。</summary>
+    /// <summary>命名导出缺失（插件与 Runtime 版本不兼容）：提示自动升级自愈 + 插件页手动更新（核心插件不可卸载，旧文案的「卸载」是死路）。</summary>
     [Test]
     public async Task Describe_MissingNamedExport_HintsPluginRuntimeMismatch()
     {
@@ -23,7 +23,8 @@ public sealed class RuntimeStderrHintsTests
 
         await Assert.That(hint).IsNotNull();
         await Assert.That(hint!).Contains("不兼容");
-        await Assert.That(hint!).Contains("插件");
+        await Assert.That(hint!).Contains("自动升级");
+        await Assert.That(hint!).Contains("更新");
     }
 
     /// <summary>JSON.parse 失败（插件 package.json 含 BOM 或损坏）：提示 BOM/JSON 损坏方向。</summary>

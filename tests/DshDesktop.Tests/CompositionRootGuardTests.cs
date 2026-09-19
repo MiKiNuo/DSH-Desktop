@@ -97,6 +97,39 @@ public sealed class CompositionRootGuardTests
         await Assert.That(heal > repository).IsTrue();
     }
 
+    /// <summary>
+    /// 插件版本漂移自愈守卫（2026-09-19 v0.1.4 实机回归：旧 dshmarket import 了 Runtime 已删除的
+    /// 命名导出 → 启动必崩且核心插件无更新入口，ConsecutiveFailures=12 永久死锁）：
+    /// 启动失败必须经 IncompatiblePluginCrashProbe 解析肇事插件并走编排器事务化升级自愈；
+    /// 更新检查必须纳入核心插件（IsResolvable 过滤自然排除 in-box bundle）。
+    /// </summary>
+    [Test]
+    public async Task TrackStartupAsync_HealsIncompatiblePluginCrash()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        const string anchor = "private async ValueTask<RuntimeSnapshot> TrackStartupAsync(";
+        int start = source.IndexOf(anchor, StringComparison.Ordinal);
+        await Assert.That(start >= 0).IsTrue();
+
+        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
+        string body = end < 0 ? source[start..] : source[start..end];
+
+        await Assert.That(body.Contains("IncompatiblePluginCrashProbe.TryParseOffender", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(body.Contains("Runtime.Start.CrashHeal", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(body.Contains("PluginOperationKind.Update", StringComparison.Ordinal)).IsTrue();
+    }
+
+    [Test]
+    public async Task CheckUpdates_IncludesResolvableCorePlugins()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        await Assert.That(
+            source.Contains("plugins.Where(p => p is { Enabled: true, IsResolvable: true })", StringComparison.Ordinal))
+            .IsTrue();
+    }
+
     private static async Task<string> CompositionRootSourceAsync()
     {
         string? root = XamlScan.FindRepositoryRoot();

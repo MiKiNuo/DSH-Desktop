@@ -28,8 +28,13 @@ public sealed record PluginRow(PluginInfo Info, bool IsUpdatable = false)
     /// <summary>获取状态 tag 是否 warn 配色（已启用且有可用更新）。</summary>
     public bool StatusIsWarn => Info.Enabled && IsUpdatable;
 
-    /// <summary>获取是否显示"更新"操作（有可用更新的第三方插件，走 UpdatePlugin 链路）。</summary>
-    public bool ShowUpdate => !Info.IsCore && Info.Enabled && IsUpdatable;
+    /// <summary>
+    /// 获取是否显示"更新"操作（有可用更新且磁盘可解析的插件，走 UpdatePlugin 链路）。
+    /// 核心插件可更新（2026-09-19 实机：旧 dshmarket × 新 Runtime 版本漂移硬崩，
+    /// 核心插件无更新入口则永不自愈）；IsResolvable 排除 in-box bundle 与
+    /// 声明-未物化插件（Version 是占位符，查更新必出假结果）。
+    /// </summary>
+    public bool ShowUpdate => Info.Enabled && Info.IsResolvable && IsUpdatable;
 
     /// <summary>获取是否显示"启用"操作（已禁用的第三方插件）。</summary>
     public bool ShowEnable => !Info.IsCore && !Info.Enabled;
