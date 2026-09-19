@@ -46,6 +46,11 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
     private string? _downloadedSetupPath;
 
     /// <summary>
+    /// 下载单飞锁：后台预下载与手动下载共用同一目标路径，必须串行化。
+    /// </summary>
+    private readonly SemaphoreSlim _downloadGate = new(1, 1);
+
+    /// <summary>
     /// 初始化 GitHub Desktop 更新适配器（生产入口，真实探测/下载/提权）。
     /// </summary>
     /// <param name="logger">结构化日志。</param>
@@ -208,21 +213,81 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
     /// <inheritdoc />
     public async Task DownloadAsync(IProgress<int>? progress, CancellationToken cancellationToken)
     {
-        // 无持有更新时抛错：让调用方走失败回流，避免 UI 的"下载中"悬挂。
-        if (_pendingUpdate is null)
+        // 单飞：后台预下载与手动下载写同一路径，交叠时先到者已以 FileShare.None 持有文件，
+        // 后到者用 FileMode.Create 打开必抛 sharing violation（2026-09-19 实机 "being used by
+        // another process"）。串行化后再以"已下载即复用"短路，重复调用幂等。
+        await _downloadGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new InvalidOperationException("没有已检查到的 Desktop 更新，请先检查更新。");
+            // 无持有更新时抛错：让调用方走失败回流，避免 UI 的"下载中"悬挂。
+            PendingDesktopUpdate pending = _pendingUpdate
+                ?? throw new InvalidOperationException("没有已检查到的 Desktop 更新，请先检查更新。");
+
+            if (await IsReusableAsync(pending, cancellationToken).ConfigureAwait(false))
+            {
+                _logger.Information("Update.Desktop.DownloadReused {Version}", pending.Version);
+                progress?.Report(100);
+                return;
+            }
+
+            await DownloadCoreAsync(pending, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _downloadGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 判断此前下载的包是否仍可复用：资产名带版本号，同名即同版本；再校验文件在、字节数吻合、
+    /// SHA256 一致（被外部删除、写了一半的残包、同尺寸篡改都判为不可复用，回落到重新下载）。
+    /// 复用不跳过哈希：包落在同账户可任意改写的 temp 目录，且随后会被提权执行。
+    /// </summary>
+    private async Task<bool> IsReusableAsync(PendingDesktopUpdate pending, CancellationToken cancellationToken)
+    {
+        if (_downloadedSetupPath is not { } path
+            || !string.Equals(Path.GetFileName(path), pending.AssetName, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
         }
 
+        var file = new FileInfo(path);
+        if (!file.Exists || file.Length != pending.Size)
+        {
+            return false;
+        }
+
+        return pending.Sha256 is not { Length: > 0 } expected
+            || await Sha256MatchesAsync(path, expected, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 校验文件 SHA256 是否为期望值（hex，大小写不敏感）。
+    /// </summary>
+    private static async Task<bool> Sha256MatchesAsync(
+        string path, string expected, CancellationToken cancellationToken)
+    {
+        await using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        byte[] hash = await System.Security.Cryptography.SHA256
+            .HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
+        return string.Equals(Convert.ToHexStringLower(hash), expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 实际下载并校验安装包（调用方须已持有 <see cref="_downloadGate"/>）。
+    /// </summary>
+    private async Task DownloadCoreAsync(
+        PendingDesktopUpdate pending, IProgress<int>? progress, CancellationToken cancellationToken)
+    {
         Directory.CreateDirectory(_downloadDirectory);
-        string targetPath = Path.Combine(_downloadDirectory, _pendingUpdate.AssetName);
+        string targetPath = Path.Combine(_downloadDirectory, pending.AssetName);
 
         using (HttpResponseMessage response = await _http
-            .GetAsync(_pendingUpdate.AssetUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .GetAsync(pending.AssetUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false))
         {
             _ = response.EnsureSuccessStatusCode();
-            long total = response.Content.Headers.ContentLength ?? _pendingUpdate.Size;
+            long total = response.Content.Headers.ContentLength ?? pending.Size;
             await using Stream source = await response.Content
                 .ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
             await using FileStream destination = new(
@@ -241,24 +306,15 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
             }
         }
 
-        if (_pendingUpdate.Sha256 is { Length: > 0 } expected)
+        if (pending.Sha256 is { Length: > 0 } expected
+            && !await Sha256MatchesAsync(targetPath, expected, cancellationToken).ConfigureAwait(false))
         {
-            byte[] hash;
-            await using (FileStream stream = new(targetPath, FileMode.Open, FileAccess.Read, FileShare.Read))
-            {
-                hash = await System.Security.Cryptography.SHA256
-                    .HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
-            }
-
-            if (!string.Equals(Convert.ToHexStringLower(hash), expected, StringComparison.OrdinalIgnoreCase))
-            {
-                File.Delete(targetPath);
-                throw new InvalidDataException("下载的安装包校验失败（SHA256 不匹配），已丢弃。");
-            }
+            File.Delete(targetPath);
+            throw new InvalidDataException("下载的安装包校验失败（SHA256 不匹配），已丢弃。");
         }
 
         _downloadedSetupPath = targetPath;
-        _logger.Information("Update.Desktop.Downloaded {Version}", _pendingUpdate.Version);
+        _logger.Information("Update.Desktop.Downloaded {Version}", pending.Version);
     }
 
     /// <inheritdoc />

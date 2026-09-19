@@ -734,7 +734,17 @@ public sealed partial class DshCompositionRoot
             _ = store.DispatchAsync(new UpdatesIntent.DesktopDownloadProgress(percent));
         });
 
-        await _desktopUpdater!.DownloadAsync(progress, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _desktopUpdater!.DownloadAsync(progress, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // 下载失败此前只回流成 UI 文案，日志零痕迹（2026-09-19 实机排查全靠猜）：补一条留痕后原样上抛。
+            // 取消（应用退出等）不算失败，不记 Error。
+            Log.Logger.Error("Update.Desktop.DownloadFailed {Error}", exception.Message);
+            throw;
+        }
 
         // 应用并重启：进程退出，此行正常路径不返回之后的托管逻辑（§22 三套版本独立）。
         _desktopUpdater.ApplyAndRestart();
@@ -1013,7 +1023,8 @@ public sealed partial class DshCompositionRoot
         string? currentDsh = runtimes.FirstOrDefault(r => r.IsActive)?.Version;
 
         // Phase 8 Issue 05：自动下载安装开关（默认关）——开 = 发现 Desktop 更新后后台预下载更新包，
-        // 应用与重启仍需用户在更新中心确认（复用现有 DownloadAndApply 链路；重复下载覆盖同名文件，幂等）。
+        // 应用与重启仍需用户在更新中心确认（复用现有 DownloadAndApply 链路；DownloadAsync 已单飞 +
+        // "已下载即复用"，与手动点击交叠只会等待/复用，不再抢同一文件）。
         if (latestDesktop is not null && _config.AutoDownloadUpdates)
         {
             _ = AutoDownloadDesktopUpdateAsync();

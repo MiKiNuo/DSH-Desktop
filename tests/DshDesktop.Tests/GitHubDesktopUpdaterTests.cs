@@ -223,6 +223,153 @@ public sealed class GitHubDesktopUpdaterTests
     }
 
     [Test]
+    public async Task Download_SecondCallWhileFirstInFlight_ReusesInsteadOfColliding()
+    {
+        // 回归（2026-09-19 实机）：后台自动下载与手动下载同路径同名文件并发时，后到者以
+        // FileMode.Create + FileShare.None 打开被拒 —— 用户看到 "being used by another process"。
+        // 期望：串行化 + 已下载即复用（第二次不发 HTTP、不重写文件）。
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes("fake-setup-payload");
+        string downloadDir = NewDownloadDir();
+        var gate = new GatedStream(payload);
+        int assetCalls = 0;
+        try
+        {
+            GitHubDesktopUpdater updater = NewUpdater(
+                isInstalled: true,
+                handler: request =>
+                {
+                    if (request.RequestUri!.AbsoluteUri.Contains("api.github.com", StringComparison.Ordinal))
+                    {
+                        return JsonResponse(ReleaseJsonWithDigest(payload));
+                    }
+
+                    assetCalls++;
+                    return new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new GatedContent(gate),
+                    };
+                },
+                downloadDirectory: downloadDir);
+            _ = await updater.CheckForUpdatesAsync(CancellationToken.None);
+
+            Task first = updater.DownloadAsync(null, CancellationToken.None);
+            await gate.Entered;
+            Task second = updater.DownloadAsync(null, CancellationToken.None);
+            // 让 second 走到"打开目标文件/等锁"这一步：旧实现在此立刻抛 sharing violation，修复后它会
+            // 一直等锁，故用有界等待兜住两种情形（不断言它此刻是否完成）。
+            _ = await Task.WhenAny(second, Task.Delay(TimeSpan.FromMilliseconds(500)));
+            gate.Release();
+
+            await first;
+            await second;
+
+            string expectedPath = Path.Combine(downloadDir, "DSH-Desktop-Setup-0.1.3.exe");
+            await Assert.That(assetCalls).IsEqualTo(1);
+            await Assert.That(await File.ReadAllBytesAsync(expectedPath)).IsEquivalentTo(payload);
+        }
+        finally
+        {
+            Directory.Delete(downloadDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task Download_AlreadyDownloaded_SkipsSecondHttpCallAndAppliesSameFile()
+    {
+        // 后台预下载已完成时，手动点击不应重复下载，且安装指向同一个已校验的包。
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes("fake-setup-payload");
+        string downloadDir = NewDownloadDir();
+        System.Diagnostics.ProcessStartInfo? launched = null;
+        try
+        {
+            (Func<HttpRequestMessage, HttpResponseMessage> handler, Func<int> assetCalls) =
+                JsonWithAssetHandler(payload);
+            GitHubDesktopUpdater updater = NewUpdater(
+                isInstalled: true,
+                handler: handler,
+                downloadDirectory: downloadDir,
+                launcher: startInfo => launched = startInfo,
+                exitProcess: _ => { });
+            _ = await updater.CheckForUpdatesAsync(CancellationToken.None);
+
+            await updater.DownloadAsync(null, CancellationToken.None);
+            await updater.DownloadAsync(null, CancellationToken.None);
+
+            await Assert.That(assetCalls()).IsEqualTo(1);
+            updater.ApplyAndRestart();
+            await Assert.That(launched!.FileName)
+                .IsEqualTo(Path.Combine(downloadDir, "DSH-Desktop-Setup-0.1.3.exe"));
+        }
+        finally
+        {
+            Directory.Delete(downloadDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task Download_FileDeletedAfterDownload_Redownloads()
+    {
+        // 复用判定必须同时看文件是否还在：包被外部删掉（或写了一半）时回落到重新下载。
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes("fake-setup-payload");
+        string downloadDir = NewDownloadDir();
+        string expectedPath = Path.Combine(downloadDir, "DSH-Desktop-Setup-0.1.3.exe");
+        try
+        {
+            (Func<HttpRequestMessage, HttpResponseMessage> handler, Func<int> assetCalls) =
+                JsonWithAssetHandler(payload);
+            GitHubDesktopUpdater updater = NewUpdater(
+                isInstalled: true, handler: handler, downloadDirectory: downloadDir);
+            _ = await updater.CheckForUpdatesAsync(CancellationToken.None);
+
+            await updater.DownloadAsync(null, CancellationToken.None);
+            await Assert.That(assetCalls()).IsEqualTo(1);
+
+            File.Delete(expectedPath);
+            await updater.DownloadAsync(null, CancellationToken.None);
+
+            await Assert.That(assetCalls()).IsEqualTo(2);
+            await Assert.That(await File.ReadAllBytesAsync(expectedPath)).IsEquivalentTo(payload);
+        }
+        finally
+        {
+            Directory.Delete(downloadDir, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task Download_ReuseAfterFileTampered_ReVerifiesAndRedownloads()
+    {
+        // 复用不跳过完整性校验：包落在可被同账户任意进程改写的 temp 目录，且随后会被提权执行，
+        // 只比字节数不足以防同尺寸篡改。
+        byte[] payload = System.Text.Encoding.UTF8.GetBytes("fake-setup-payload");
+        byte[] tampered = (byte[])payload.Clone();
+        tampered[0] ^= 0xFF;
+        string downloadDir = NewDownloadDir();
+        string expectedPath = Path.Combine(downloadDir, "DSH-Desktop-Setup-0.1.3.exe");
+        try
+        {
+            (Func<HttpRequestMessage, HttpResponseMessage> handler, Func<int> assetCalls) =
+                JsonWithAssetHandler(payload);
+            GitHubDesktopUpdater updater = NewUpdater(
+                isInstalled: true, handler: handler, downloadDirectory: downloadDir);
+            _ = await updater.CheckForUpdatesAsync(CancellationToken.None);
+
+            await updater.DownloadAsync(null, CancellationToken.None);
+            await Assert.That(assetCalls()).IsEqualTo(1);
+
+            await File.WriteAllBytesAsync(expectedPath, tampered);
+            await updater.DownloadAsync(null, CancellationToken.None);
+
+            await Assert.That(assetCalls()).IsEqualTo(2);
+            await Assert.That(await File.ReadAllBytesAsync(expectedPath)).IsEquivalentTo(payload);
+        }
+        finally
+        {
+            Directory.Delete(downloadDir, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task ApplyAndRestart_WithoutDownload_Throws()
     {
         GitHubDesktopUpdater updater = NewUpdater(isInstalled: true, handler: _ => JsonResponse(ReleaseJson));
@@ -329,6 +476,106 @@ public sealed class GitHubDesktopUpdaterTests
         {
             Content = new ByteArrayContent(payload),
         };
+    }
+
+    /// <summary>
+    /// 检查走 Release JSON、资产走 <paramref name="payload"/> 的桩；返回值第二项读资产下载次数。
+    /// </summary>
+    private static (Func<HttpRequestMessage, HttpResponseMessage> Handler, Func<int> AssetCalls)
+        JsonWithAssetHandler(byte[] payload)
+    {
+        int assetCalls = 0;
+        return (
+            request =>
+            {
+                if (request.RequestUri!.AbsoluteUri.Contains("api.github.com", StringComparison.Ordinal))
+                {
+                    return JsonResponse(ReleaseJsonWithDigest(payload));
+                }
+
+                assetCalls++;
+                return BytesResponse(payload);
+            },
+            () => assetCalls);
+    }
+
+    /// <summary>
+    /// 首次读取前阻塞的响应体：用于让第一个下载稳定地停在"已打开目标文件"这一刻。
+    /// </summary>
+    private sealed class GatedStream(byte[] payload) : Stream
+    {
+        private readonly MemoryStream _inner = new(payload);
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task Entered => _entered.Task;
+
+        public void Release() => _release.TrySetResult();
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => true;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _inner.Length;
+
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await WaitFirstReadAsync().ConfigureAwait(false);
+            return await _inner.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            WaitFirstReadAsync().GetAwaiter().GetResult();
+            return _inner.Read(buffer, offset, count);
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private Task WaitFirstReadAsync()
+        {
+            if (_entered.Task.IsCompleted)
+            {
+                return Task.CompletedTask;
+            }
+
+            _entered.TrySetResult();
+            return _release.Task;
+        }
+    }
+
+    /// <summary>
+    /// 以 <see cref="GatedStream"/> 为响应体的内容（不预缓冲，ReadAsStreamAsync 直取该流）。
+    /// </summary>
+    private sealed class GatedContent(GatedStream stream) : HttpContent
+    {
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult<Stream>(stream);
+
+        protected override Task SerializeToStreamAsync(Stream target, System.Net.TransportContext? context)
+            => throw new NotSupportedException();
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
     }
 
     private sealed class ProgressCapture : IProgress<int>

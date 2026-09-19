@@ -85,6 +85,10 @@
                                         <TextBlock Text="下载并重启更新" />
                                     </StackPanel>
                                 </Button>
+                                <TextBlock
+                                    Classes="panel-sub"
+                                    TextWrapping="Wrap"
+                                    Text="已开启「设置 → 更新策略 → 自动下载安装」时，更新包会在后台提前下好，点击此处将直接安装；若仍在下载中，会自动等待其完成后安装。" />
                             </StackPanel>
                         </Border>
                     </StackPanel>
