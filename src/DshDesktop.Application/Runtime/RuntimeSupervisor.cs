@@ -104,9 +104,27 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
         });
 
         RuntimeLaunchOptions instrumented = options with { Progress = progress };
-        RuntimeStartResult result = await _orchestrator
-            .StartAsync(instrumented, cancellationToken)
-            .ConfigureAwait(false);
+        RuntimeStartResult result;
+        try
+        {
+            result = await _orchestrator
+                .StartAsync(instrumented, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // 调用方取消不是失败，不留错误日志。
+        }
+        catch (Exception exception)
+        {
+            // 真实原因必须进日志与诊断流：此前只有 Start.Begin 与 AutoSafeMode，
+            // 启动秒抛（如入口路径未配置）时用户面对安全模式毫无线索（2026-09-19 v0.1.3 实机）。
+            _logger.Error(
+                exception,
+                DiagnosticEventNames.RuntimeStartFailed + " {Error}",
+                exception.Message);
+            throw;
+        }
 
         stopwatch.Stop();
         _logger.Information(

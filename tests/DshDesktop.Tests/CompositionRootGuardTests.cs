@@ -81,6 +81,22 @@ public sealed class CompositionRootGuardTests
         await Assert.That(selfCheck < autoStart).IsTrue();
     }
 
+    /// <summary>
+    /// 借用失效自愈守卫（2026-09-19 v0.1.3 实机回归）：借用安装被删后 dshEntryPath 清空、
+    /// activeDshRuntime 仍为 null，启动秒抛进安全模式而磁盘上自建 Runtime 完好。
+    /// InitializeRuntimeAsync 必须在 CreateRuntimeRepository 之后调用自愈（顺序反了仓库还没建）。
+    /// </summary>
+    [Test]
+    public async Task InitializeRuntimeAsync_HealsActiveRuntimeSelection()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        int repository = source.IndexOf("CreateRuntimeRepository();", StringComparison.Ordinal);
+        int heal = source.IndexOf("HealActiveRuntimeSelectionAsync(", StringComparison.Ordinal);
+        await Assert.That(repository >= 0).IsTrue();
+        await Assert.That(heal > repository).IsTrue();
+    }
+
     private static async Task<string> CompositionRootSourceAsync()
     {
         string? root = XamlScan.FindRepositoryRoot();

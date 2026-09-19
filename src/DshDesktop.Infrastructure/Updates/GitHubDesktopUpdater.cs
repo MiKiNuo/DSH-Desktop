@@ -28,8 +28,10 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
 
     /// <summary>
     /// Inno 卸载注册表子键（AppId 与 installer/DshDesktop.iss 必须一致；per-machine 安装落 HKLM64）。
+    /// 字面量单源：InnoSetupInstallProbe（数据根安装形态判定）复用本常量，
+    /// 文本守卫 InstallerAppId_MatchesUpdaterRegistryProbe 锁定与 iss 一致。
     /// </summary>
-    private const string UninstallSubKey =
+    internal const string UninstallSubKey =
         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8F3A2C1E-7B4D-4E6F-9A1B-2C3D4E5F6A7B}_is1";
 
     private readonly ILogger _logger;

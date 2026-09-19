@@ -205,6 +205,67 @@ public sealed class ConfigRuntimePathHealTests
         }
     }
 
+    /// <summary>
+    /// WorkingDirectory 失效自愈（2026-09-19 v0.1.3 实机回归）：借用安装整目录被删后
+    /// NodePath="node"（合法字面量）、DshEntryPath 已被清空（合法空值）——旧判定两个锚点都
+    /// 不命中，WorkingDirectory 抱着死目录永不修正；Process.Start 以不存在的工作目录拉起即抛。
+    /// 失效且重探测不到 → 清空（BuildStartInfo 回退入口所在目录）。
+    /// </summary>
+    [Test]
+    public async Task HealRuntimePaths_StaleWorkingDirectory_RedetectMissing_ClearedToEmpty()
+    {
+        string root = NewTempDir();
+        try
+        {
+            DshDesktopConfig config = new()
+            {
+                NodePath = "node",
+                DshEntryPath = string.Empty,
+                WorkingDirectory = Path.Combine(root, "gone"),
+            };
+
+            bool dirty = DshDesktopConfigStore.HealRuntimePaths(config, () => null);
+
+            await Assert.That(dirty).IsTrue();
+            await Assert.That(config.WorkingDirectory).IsEqualTo(string.Empty);
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
+    /// <summary>
+    /// 入口有效而工作目录失效：清空回退（BuildStartInfo 回落入口所在目录），
+    /// 不触发全盘扫描重探测，更不重锚到另一个安装（混合锚定，独立评审发现）。
+    /// </summary>
+    [Test]
+    public async Task HealRuntimePaths_StaleWorkingDirectory_ValidEntry_ClearedWithoutRedetect()
+    {
+        string root = NewTempDir();
+        try
+        {
+            DshDesktopConfig config = new()
+            {
+                NodePath = "node",
+                DshEntryPath = Touch(root, "dsh", "bin.js"), // 入口有效：不应被牵连改动
+                WorkingDirectory = Path.Combine(root, "gone"),
+            };
+            bool invoked = false;
+
+            bool dirty = DshDesktopConfigStore.HealRuntimePaths(config, () => { invoked = true; return null; });
+
+            await Assert.That(dirty).IsTrue();
+            await Assert.That(config.WorkingDirectory).IsEqualTo(string.Empty);
+            await Assert.That(config.DshEntryPath).IsEqualTo(Path.Combine(root, "dsh", "bin.js"));
+            await Assert.That(invoked).IsFalse();
+        }
+        finally
+        {
+            Cleanup(root);
+        }
+    }
+
     private static string NewTempDir()
         => Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
 

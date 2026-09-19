@@ -32,6 +32,29 @@ public sealed class RuntimeSupervisorTests
     }
 
     [Test]
+    public async Task StartAsync_OrchestratorThrows_LogsStartFailedWithReason()
+    {
+        // 2026-09-19 v0.1.3 实机回归：启动秒抛（ValidateOptions 拒绝空入口）时日志只有
+        // Runtime.Start.Begin 与 AutoSafeMode，真实异常完全没落盘，用户面对安全模式无线索。
+        var orchestrator = new FakeRuntimeOrchestrator
+        {
+            StartHandler = _ => throw new InvalidOperationException("Runtime 路径未配置（NodePath / EntryPath 为空）"),
+        };
+        var sink = new CollectingSink();
+        var supervisor = new RuntimeSupervisor(orchestrator, CreateLogger(sink));
+
+        await Assert.That(async () => await supervisor.StartAsync(Options, CancellationToken.None))
+            .Throws<InvalidOperationException>();
+
+        await Assert.That(
+                sink.Messages.Any(m => m.StartsWith(
+                    DshDesktop.Application.Diagnostics.DiagnosticEventNames.RuntimeStartFailed,
+                    StringComparison.Ordinal)
+                    && m.Contains("Runtime 路径未配置", StringComparison.Ordinal)))
+            .IsTrue();
+    }
+
+    [Test]
     public async Task StartAsync_OrchestratorThrows_Propagates()
     {
         var orchestrator = new FakeRuntimeOrchestrator

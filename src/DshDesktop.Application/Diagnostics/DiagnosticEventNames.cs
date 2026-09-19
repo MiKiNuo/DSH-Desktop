@@ -20,6 +20,19 @@ public static class DiagnosticEventNames
     public const string RuntimeAutoSafeModeEntered = "Runtime.AutoSafeMode.Entered";
 
     /// <summary>
+    /// Runtime 启动失败事件名（Supervisor 发）：编排器抛出的真实原因（入口缺失 / 进程拉起失败 /
+    /// 超时 stderr 末尾）必须进日志与诊断流——此前只有 Runtime.Start.Begin 与 AutoSafeMode，
+    /// 用户面对安全模式无线索（2026-09-19 v0.1.3 实机）。
+    /// </summary>
+    public const string RuntimeStartFailed = "Runtime.Start.Failed";
+
+    /// <summary>
+    /// 借用失效自动激活自建 Runtime 事件名（组合根发，Message 附带激活的版本目录名）：
+    /// 借用安装被删且未激活自建版本时，磁盘上完好的自建版本被自动激活（ActiveRuntimeFallback）。
+    /// </summary>
+    public const string RuntimeActiveRuntimeAutoActivated = "Runtime.ActiveRuntime.AutoActivated";
+
+    /// <summary>
     /// Runtime Failed 后的有界自动恢复发起事件名（ADR-0007，组合根发，Message 附带尝试次数）。
     /// 只在「新进入 Failed」这一沿触发且每次失败周期仅一次，不构成重启循环。
     /// </summary>

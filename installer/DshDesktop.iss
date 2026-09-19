@@ -37,6 +37,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Dirs]
+; ADR-0009：数据根随安装根（<安装根>\data）。Program Files 下标准用户默认不可写，
+; 预建并赋 users-modify ACL，运行期所有落盘（config / logs / runtime / dsh-home）才可写。
+; 卸载时不删除（不在 [UninstallDelete]）：用户数据保留。
+Name: "{app}\data"; Permissions: users-modify
+
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon

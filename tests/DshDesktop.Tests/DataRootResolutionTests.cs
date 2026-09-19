@@ -3,11 +3,11 @@ using DshDesktop.Infrastructure.Config;
 namespace DshDesktop.Tests;
 
 /// <summary>
-/// 数据根解析测试（Inno 安装形态修订：安装目录在 Program Files 下为管理员目录，
-/// 运行期不可写，故数据根不再跟随安装盘）。
+/// 数据根解析测试——未安装形态（dotnet run / 便携解压）与优先级边界。
+/// ADR-0009 起安装形态数据根随安装根（覆盖用例见 <see cref="InstallRootDataRootTests"/>）；
+/// 本类锁兜底路径：环境变量 DSH_DESKTOP_DATA_ROOT → 默认 %LOCALAPPDATA%\DshDesktop\data。
 /// 接缝：<see cref="DshDesktopConfigStore.ResolveDataRoot"/> —— 纯函数（入参注入环境变量取值），
 /// 不触碰真实文件系统与环境变量，故用例完全确定。
-/// 解析优先级：环境变量 DSH_DESKTOP_DATA_ROOT → 默认 %LOCALAPPDATA%\DshDesktop\data。
 /// </summary>
 public sealed class DataRootResolutionTests
 {

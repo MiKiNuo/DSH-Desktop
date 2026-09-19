@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using DshDesktop.Infrastructure.Updates;
 using Serilog;
 
 namespace DshDesktop.Infrastructure.Config;
@@ -99,6 +100,13 @@ public sealed class DshDesktopConfig
 public sealed partial class DshConfigJsonContext : JsonSerializerContext;
 
 /// <summary>
+/// 旧数据根一次性迁移结果（ADR-0009，<see cref="DshDesktopConfigStore.MigrateLegacyDataRootIfNeeded"/>）。
+/// </summary>
+/// <param name="Attempted">是否实际尝试了迁移（false = 无需迁移/环境变量覆盖）。</param>
+/// <param name="Error">失败原因；成功或未尝试为 null。</param>
+public sealed record LegacyDataRootMigrationOutcome(bool Attempted, string? Error);
+
+/// <summary>
 /// 表示配置的加载、自动探测与回写（Q2 决策：配置文件持久化 + 缺失时探测并回写）。
 /// </summary>
 public static class DshDesktopConfigStore
@@ -109,29 +117,71 @@ public static class DshDesktopConfigStore
     internal const string DataRootEnvironmentVariable = "DSH_DESKTOP_DATA_ROOT";
 
     /// <summary>
-    /// 获取数据根目录（Inno 安装形态修订：安装目录在 Program Files 下为管理员目录、运行期不可写，
-    /// 数据根不再跟随安装盘）。解析顺序：环境变量 → %LOCALAPPDATA% 兜底。
+    /// 旧版数据根（%LOCALAPPDATA%\DshDesktop\data）：ADR-0009 前所有形态的落盘位置，
+    /// 保留常量供一次性迁移（<see cref="LegacyDataRootMigration"/>）与默认兜底。
+    /// ⚠️ 必须声明在 <see cref="DataRoot"/> 之前：静态初始化器按文本顺序执行，
+    /// 声明在后会让 DataRoot 初始化时读到 null（未安装形态首次访问即 TypeInitializationException）。
     /// </summary>
-    public static string DataRoot { get; } = ResolveDataRoot(
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "DshDesktop", "data"),
-        Environment.GetEnvironmentVariable(DataRootEnvironmentVariable));
+    internal static string LegacyDataRoot { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "DshDesktop", "data");
 
     /// <summary>
-    /// 解析数据根：环境变量优先，否则回退默认根。
+    /// 获取数据根目录（ADR-0009 回迁修订：数据根随安装根，安装器预建 {app}\data 并赋 users-modify
+    /// ACL 保证运行期可写）。解析顺序：环境变量 → 安装形态（exe 位于注册表 InstallLocation 下）
+    /// 取 <安装根>\data → %LOCALAPPDATA% 兜底（dotnet run / 便携解压）。
+    /// </summary>
+    public static string DataRoot { get; } = ResolveDataRoot(
+        LegacyDataRoot,
+        Environment.GetEnvironmentVariable(DataRootEnvironmentVariable),
+        InnoSetupInstallProbe.ProbeRunningInstallRoot());
+
+    /// <summary>
+    /// 解析数据根：环境变量优先，其次安装根（已安装形态），否则回退默认根。
     /// internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）；入参注入使用例确定且无副作用。
     /// </summary>
     /// <param name="defaultRoot">兜底数据根（%LOCALAPPDATA%\DshDesktop\data）。</param>
     /// <param name="environmentOverride">环境变量覆盖值。</param>
+    /// <param name="installRoot">安装根（未安装 / exe 不在安装根下为 null）。</param>
     /// <returns>最终数据根绝对路径。</returns>
     internal static string ResolveDataRoot(
         string defaultRoot,
-        string? environmentOverride)
+        string? environmentOverride,
+        string? installRoot = null)
     {
-        return string.IsNullOrWhiteSpace(environmentOverride)
+        if (!string.IsNullOrWhiteSpace(environmentOverride))
+        {
+            return environmentOverride;
+        }
+
+        return string.IsNullOrWhiteSpace(installRoot)
             ? defaultRoot
-            : environmentOverride;
+            : Path.Combine(installRoot, "data");
+    }
+
+    /// <summary>
+    /// 旧数据根一次性迁移入口（ADR-0009）：环境变量覆盖在场（用户显式指定数据根）或
+    /// 不满足迁移条件时直接返回未尝试；迁移失败不抛——旧根仍在，启动链按新根继续
+    /// （全新初始化可自愈：首启自检会引导重装 Runtime），错误经返回值如实上报。
+    /// </summary>
+    /// <returns>迁移结果（是否尝试 + 失败原因）。</returns>
+    public static LegacyDataRootMigrationOutcome MigrateLegacyDataRootIfNeeded()
+    {
+        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(DataRootEnvironmentVariable))
+            || !LegacyDataRootMigration.IsMigrationNeeded(LegacyDataRoot, DataRoot))
+        {
+            return new LegacyDataRootMigrationOutcome(Attempted: false, Error: null);
+        }
+
+        try
+        {
+            LegacyDataRootMigration.Migrate(LegacyDataRoot, DataRoot);
+            return new LegacyDataRootMigrationOutcome(Attempted: true, Error: null);
+        }
+        catch (Exception exception)
+        {
+            return new LegacyDataRootMigrationOutcome(Attempted: true, Error: exception.Message);
+        }
     }
 
     /// <summary>
@@ -274,8 +324,9 @@ public static class DshDesktopConfigStore
 
     /// <summary>
     /// 迁移补全配置中的运行时路径（NodePath / DshEntryPath / WorkingDirectory）：字段非空但指向的
-    /// 文件已不存在时按重探测结果修复——探测到替代安装则重锚（入口 + 工作目录 + vendored node），
+    /// 文件/目录已不存在时按重探测结果修复——探测到替代安装则重锚（入口 + 工作目录 + vendored node），
     /// 探测不到则 DshEntryPath 清空（与 Detect 未探测到安装时同语义，启动链诚实失败）、
+    /// WorkingDirectory 清空（BuildStartInfo 回退入口所在目录；抱着死目录 Process.Start 即抛）、
     /// NodePath 回退 "node"（PATH 系统 node，与 Detect 回退同语义）。
     /// 仅原地修改 loaded，返回是否发生变更。internal 供 DshDesktop.Tests 直测（InternalsVisibleTo）。
     /// 必须先于 <see cref="HealToolPaths"/> 调用：pnpm.cjs 的重推导依赖修复后的 DshEntryPath。
@@ -294,9 +345,21 @@ public static class DshDesktopConfigStore
             && !string.Equals(loaded.NodePath, "node", StringComparison.OrdinalIgnoreCase)
             && !File.Exists(loaded.NodePath);
         bool entryStale = !string.IsNullOrEmpty(loaded.DshEntryPath) && !File.Exists(loaded.DshEntryPath);
-        if (!nodeStale && !entryStale)
+        // 工作目录是目录而非文件：借用安装整目录被删时入口可能已是合法空值，
+        // 没有这一条死目录会永远残留（2026-09-19 v0.1.3 实机）。
+        bool workingDirStale = !string.IsNullOrEmpty(loaded.WorkingDirectory)
+            && !Directory.Exists(loaded.WorkingDirectory);
+        if (!nodeStale && !entryStale && !workingDirStale)
         {
             return false;
+        }
+
+        // 仅工作目录失效且入口仍有效：清空即可（BuildStartInfo 回退入口所在目录）。
+        // 不为它触发全盘扫描，更不重锚到重探测到的**另一个**安装（混合锚定，评审发现）。
+        if (!nodeStale && !entryStale)
+        {
+            loaded.WorkingDirectory = string.Empty;
+            return true;
         }
 
         if (redetectResourcesDir() is { } resourcesDir)
@@ -307,6 +370,11 @@ public static class DshDesktopConfigStore
                 loaded.DshEntryPath = Path.Combine(
                     appDir, "node_modules", "@deepseek-ai", "dsh", "lib", "bin.js");
                 loaded.WorkingDirectory = appDir;
+            }
+            else if (workingDirStale)
+            {
+                // 入口有效而工作目录失效（随 node 失效一并走到这里）：清空回退，不混合锚定。
+                loaded.WorkingDirectory = string.Empty;
             }
 
             if (nodeStale)
@@ -321,6 +389,11 @@ public static class DshDesktopConfigStore
             if (entryStale)
             {
                 loaded.DshEntryPath = string.Empty;
+            }
+
+            if (workingDirStale)
+            {
+                loaded.WorkingDirectory = string.Empty;
             }
 
             if (nodeStale)

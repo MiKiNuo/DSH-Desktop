@@ -122,6 +122,12 @@ public sealed partial class DshCompositionRoot
     {
         ArgumentNullException.ThrowIfNull(uiDispatcher);
 
+        // ADR-0009 旧数据根一次性迁移：必须先于日志目录确立（迁移把旧根 logs 一并搬走，
+        // 且迁移后日志必须落在**新**根）。失败不阻断——旧根还在，启动链按新根继续。
+        // 代价注记：UI 线程同步复制（junction 实体化会放大 pnpm node_modules 体积），
+        // 一次性、升级后首启发生；日志初始化依赖迁移完成故无法后台化（评审记录，可接受）。
+        LegacyDataRootMigrationOutcome migrationOutcome = DshDesktopConfigStore.MigrateLegacyDataRootIfNeeded();
+
         // 日志目录统一走数据根（ADR-0003：Velopack 安装后落到 <安装根>\data\logs）。
         string logDirectory = Path.Combine(DshDesktopConfigStore.DataRoot, "logs");
         Log.Logger = new LoggerConfiguration()
@@ -140,6 +146,20 @@ public sealed partial class DshCompositionRoot
 
         _diagnosticsHub.Events.Subscribe(OnDiagnosticEvent);
         Log.Logger.Information("Desktop.Startup");
+        if (migrationOutcome.Attempted)
+        {
+            if (migrationOutcome.Error is null)
+            {
+                Log.Logger.Information(
+                    "Desktop.DataRoot.Migrated {DataRoot}", DshDesktopConfigStore.DataRoot);
+            }
+            else
+            {
+                Log.Logger.Warning(
+                    "Desktop.DataRoot.MigrationFailed {Error}（旧根未动，按新根全新初始化继续）",
+                    migrationOutcome.Error);
+            }
+        }
     }
 
     /// <summary>
@@ -309,6 +329,12 @@ public sealed partial class DshCompositionRoot
 
         CreateRuntimeRepository();
 
+        // 借用失效自愈（2026-09-19 v0.1.3 实机回归）：借用 Electron 安装被删后
+        // HealRuntimePaths 清空 dshEntryPath，activeDshRuntime 仍为 null → BuildLaunchOptions
+        // 抱空入口在 ValidateOptions 秒抛，连续 2 次进安全模式，而磁盘上自建 Runtime 完好。
+        // 必须在 CreateRuntimeRepository 之后（自愈复用同一合法性规则枚举候选目录）。
+        await HealActiveRuntimeSelectionAsync(cancellationToken).ConfigureAwait(false);
+
         // GitHub Releases 自更新适配器（Inno 安装形态；未安装形态 no-op，不依赖 config）。
         _desktopUpdater = new GitHubDesktopUpdater(Log.Logger, DesktopInfo.Version);
 
@@ -397,6 +423,54 @@ public sealed partial class DshCompositionRoot
             _config!.NodePath,
             _config.NpmCjsPath,
             _config.DshEntryPath);
+
+    /// <summary>
+    /// 借用失效自愈：未激活自建版本且借用入口不可用（空 / 文件已不存在）时，
+    /// 自动激活磁盘上最新的合法自建版本并落盘；其余形态（借用可用 / 已激活 / 无候选）不动。
+    /// 候选枚举与 <see cref="RuntimeRepository.ListRuntimesAsync"/> 同一合法性规则（入口包目录存在）。
+    /// 刻意不复用仓库枚举：仓库返回 package.json 版本号而激活需要**目录名**，两者可能不同；
+    /// 规则演进时此处与仓库必须同步（漂移风险已在评审中记录并 accepted——共用的代价是扩张公共接口）。
+    /// 落盘失败不阻断：内存态已生效，本次启动照常（同 TrySaveAsync 约定，配置是派生数据）。
+    /// </summary>
+    private async Task HealActiveRuntimeSelectionAsync(CancellationToken cancellationToken)
+    {
+        bool borrowedUsable = !string.IsNullOrWhiteSpace(_config!.DshEntryPath)
+            && File.Exists(_config.DshEntryPath);
+
+        List<string> selfBuilt = [];
+        if (Directory.Exists(RuntimeRootDir))
+        {
+            selfBuilt.AddRange(Directory
+                .GetDirectories(RuntimeRootDir)
+                .Where(dir => Directory.Exists(
+                    Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh")))
+                .Select(dir => Path.GetFileName(dir)));
+        }
+
+        string? selected = ActiveRuntimeFallback.Select(
+            _config.ActiveDshRuntime, borrowedUsable, selfBuilt);
+        if (selected is null)
+        {
+            return;
+        }
+
+        _config.ActiveDshRuntime = selected;
+        try
+        {
+            await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Log.Logger.Warning(
+                exception,
+                "Active Runtime 自愈已生效于本次运行，但配置落盘失败（下次启动将重新自愈）：{Error}",
+                exception.Message);
+        }
+
+        Log.Logger.Warning(
+            DiagnosticEventNames.RuntimeActiveRuntimeAutoActivated + " {Version}（借用入口不可用，自动激活磁盘自建版本）",
+            selected);
+    }
 
     /// <summary>
     /// 首启自检（每次启动都应调用）：是否存在任何可用 DSH Runtime（借用外部安装或自建 side-by-side）。
