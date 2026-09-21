@@ -1177,15 +1177,17 @@ public sealed partial class DshCompositionRoot
 
         // 事务成功提交是两侧清单刷新的**唯一发起源**：更新中心入口与插件页入口都收口到这里，
         // 避免"各入口只刷新本侧 Store"导致对面页面（插件版本号 / 可更新列表 / 顶栏徽标）停在旧值。
-        // 失败分支刻意不广播：Failed 时 PluginOperationFailed 已把真实原因写进页内 LastError，
-        // 自动 LoadPlugins/CheckUpdates 会把它清掉或覆盖；且回滚后可更新列表本就未变，无需刷新。
+        // 更新侧发显式终态意图（而非 CheckUpdates 兼职终态）：后者兼任"发起检查"，与在飞检查的完成回流
+        // 交错时会互踩来源标记，使待办永不清空 ⇒ 全屏遮罩永久卡死（2026-09-21 v0.1.8 实机）。
+        // 终态意图自带一次检查回流，插件版本仍以检查结果为准；失败分支刻意不广播：Failed 时
+        // PluginOperationFailed 已把真实原因写进页内 LastError，自动 LoadPlugins/CheckUpdates 会把它清掉或覆盖。
         if (operation.Stage is PluginOperationStage.Completed)
         {
             _ = store.DispatchAsync(new PluginsIntent.LoadPlugins());
 
             IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore =
                 _container.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
-            _ = updatesStore.DispatchAsync(new UpdatesIntent.CheckUpdates());
+            _ = updatesStore.DispatchAsync(new UpdatesIntent.PluginOperationFinished(operation.PluginName));
         }
     }
 

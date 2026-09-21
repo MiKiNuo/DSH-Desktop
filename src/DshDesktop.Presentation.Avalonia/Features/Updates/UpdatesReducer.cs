@@ -15,37 +15,31 @@ public sealed partial class UpdatesReducer
     /// <summary>
     /// 处理检查更新意图。
     /// </summary>
+    /// <remarks>
+    /// 只发起检查与刷新，<b>不碰 PendingOperation</b>：本意图有两个来源（用户按钮 / 启动期后台静默检查，
+    /// App.axaml.cs → BackgroundCheckUpdatesAsync），而检查是 N 次 npm 查询 + GitHub 的慢网络调用，
+    /// 与进行中的 Desktop 下载 / Runtime 安装 / 插件更新的区间必然重叠。它过去兼任「插件更新终态」，
+    /// 使在飞检查的完成回流与终态清空互相踩踏（2026-09-21 v0.1.8 实机：遮罩永久卡死 / 遮罩被提前释放）；
+    /// 终态清空已收口到 <see cref="HandlePluginOperationFinished"/>。
+    /// </remarks>
     [MviReduce(typeof(UpdatesIntent.CheckUpdates))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdates(
         UpdatesState state,
         UpdatesIntent.CheckUpdates intent)
     {
-        // 仅当"当前进行中操作即本次检查自身"时才清空 PendingOperation：空闲检查本就为空；
-        // 插件更新成功经此处终态回流（§23）需清空其自身标记。后台静默检查
-        // （App.axaml.cs 启动路径 BackgroundCheckUpdatesAsync，绕过按钮）可能在 Desktop 下载 / Runtime 安装 /
-        // 激活进行中抵达，若无条件清空会释放遮罩与导航锁（§22）。
-        // 来源判定读 state.IsPluginUpdatePending（显式标记），不再依赖 PendingOperation 文案前缀。
-        if (state.PendingOperation is not null && !state.IsPluginUpdatePending)
-        {
-            return WithEffect(
-                state with { Status = UpdateStatus.Checking, LastError = null },
-                new UpdatesEffect.CheckUpdates());
-        }
-
         return WithEffect(
-            state with
-            {
-                Status = UpdateStatus.Checking,
-                LastError = null,
-                PendingOperation = null,
-                IsPluginUpdatePending = false,
-            },
+            state with { Status = UpdateStatus.Checking, LastError = null },
             new UpdatesEffect.CheckUpdates());
     }
 
     /// <summary>
     /// 处理检查更新完成回流意图。
     /// </summary>
+    /// <remarks>
+    /// 刻意不动 <c>IsPluginUpdatePending</c>：该标记表示「待办属于插件操作」，只有插件操作自己的终态
+    /// （<see cref="HandlePluginOperationFinished"/>）才能清。检查完成只说明本次检查结束，
+    /// 与插件更新是否结束无关；在此清标记会让进行中的插件更新此后无法被终态清空（遮罩永久卡死）。
+    /// </remarks>
     [MviReduce(typeof(UpdatesIntent.CheckUpdatesCompleted))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdatesCompleted(
         UpdatesState state,
@@ -66,8 +60,51 @@ public sealed partial class UpdatesReducer
             PluginUpdates = result.PluginUpdates,
             LatestDesktopVersion = result.LatestDesktopVersion,
             LastError = null,
-            IsPluginUpdatePending = false,
         });
+    }
+
+    /// <summary>
+    /// 处理插件事务终态意图（组合根订阅 <c>IPluginOrchestrator.OperationChanged</c> 后在 Completed 阶段发布）：
+    /// 释放本次插件操作自己的待办（壳遮罩 + 导航锁的唯一释放点）、按名摘除该插件的可更新行
+    /// （乐观刷新，不等慢网络检查回来，§23），并回流一次检查以对账。
+    /// </summary>
+    /// <remarks>
+    /// 终态清空用显式来源标记判定，而不是借用「发起检查」意图：否则检查与终态互相踩踏
+    /// （2026-09-21 v0.1.8 实机：遮罩永久卡死 / 被提前释放）。
+    /// </remarks>
+    [MviReduce(typeof(UpdatesIntent.PluginOperationFinished))]
+    private MviReduceResult<UpdatesState, UpdatesEffect> HandlePluginOperationFinished(
+        UpdatesState state,
+        UpdatesIntent.PluginOperationFinished intent)
+    {
+        // 仅当待办确属插件操作时才清空：Desktop 下载 / Runtime 安装 / 激活进行中抵达的插件事务终态
+        // 不得释放遮罩与导航锁（§22）。标记非真时它本就是 false，故可无条件写 false。
+        bool ownedByPluginOperation = state.IsPluginUpdatePending;
+        return WithEffect(
+            state with
+            {
+                Status = UpdateStatus.Checking,
+                PendingOperation = ownedByPluginOperation ? null : state.PendingOperation,
+                IsPluginUpdatePending = false,
+                PluginUpdates = RemoveByName(state.PluginUpdates, intent.PluginName),
+                LastError = null,
+            },
+            new UpdatesEffect.CheckUpdates());
+    }
+
+    /// <summary>
+    /// 按包名摘除可更新行；无匹配（或包名未知）时原样返回同一引用，避免无谓的状态重发。
+    /// </summary>
+    private static IReadOnlyList<PluginUpdateInfo> RemoveByName(
+        IReadOnlyList<PluginUpdateInfo> updates,
+        string? name)
+    {
+        if (name is null || !updates.Any(u => string.Equals(u.Name, name, StringComparison.Ordinal)))
+        {
+            return updates;
+        }
+
+        return updates.Where(u => !string.Equals(u.Name, name, StringComparison.Ordinal)).ToArray();
     }
 
     /// <summary>
@@ -103,9 +140,10 @@ public sealed partial class UpdatesReducer
         UpdatesIntent.DesktopDownloadProgress intent)
     {
         // 防"终态事件之后的进度回流"复活 PendingOperation（§22：进度回调 fire-and-forget，操作失败/成功后
-        // 仍可能有一个进度回调在队列中）。仅当确有进行中操作时才更新进度文本/百分比；否则原样返回——
-        // 否则壳遮罩会被凭空拉起并永久卡死（用户无法关闭）。
-        if (state.PendingOperation is null)
+        // 仍可能有一个进度回调在队列中），也防"插件更新期间抵达的迟到进度回调"劫持待办：
+        // 后者会把待办改写成下载文案并清掉来源标记，使插件终态再也不能释放遮罩（2026-09-21 复审 P1）。
+        // 正确判据是「确在 Desktop 下载期」——DesktopDownloadProgress 仅下载期间非空（其余操作与终态一律 null）。
+        if (state.PendingOperation is null || state.DesktopDownloadProgress is null)
         {
             return Unchanged(state);
         }

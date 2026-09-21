@@ -206,6 +206,43 @@ public sealed class UpdatesReducerTests
     }
 
     [Test]
+    public async Task DesktopDownloadProgress_WhilePluginUpdatePending_DoesNotHijackPendingOperation()
+    {
+        // 2026-09-21 复审 P1：Desktop 进度回流是 fire-and-forget 的延迟回调（Progress<int> 经同步上下文投递），
+        // 可能在插件更新事务期间抵达。旧守卫只判「PendingOperation 非空」⇒ 会把待办改写成下载文案并清掉
+        // 来源标记，之后插件终态不再能清空待办 ⇒ 遮罩永久卡死。
+        // 正确判据是「确在 Desktop 下载期」（DesktopDownloadProgress 仅下载期间非空）。
+        UpdatesState updating = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
+
+        var result = _reducer.Reduce(updating, new UpdatesIntent.DesktopDownloadProgress(42));
+
+        await Assert.That(result.State.PendingOperation).IsEqualTo(updating.PendingOperation);
+        await Assert.That(result.State.IsPluginUpdatePending).IsTrue();
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task PluginOperationFinished_WithUnknownPluginName_KeepsUpdatableRows()
+    {
+        // 插件名未知（null）时不得误摘可更新行：终态照常清待办，列表只由随后的检查对账。
+        UpdatesState withRows = _reducer.Reduce(
+            UpdatesState.Initial,
+            new UpdatesIntent.UpdatePlugin("dsh-foo")).State with
+        {
+            PluginUpdates =
+            [
+                new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0"),
+                new PluginUpdateInfo("dsh-bar", "2.0.0", "2.1.0"),
+            ],
+        };
+
+        var result = _reducer.Reduce(withRows, new UpdatesIntent.PluginOperationFinished(null));
+
+        await Assert.That(result.State.PendingOperation).IsNull();
+        await Assert.That(result.State.PluginUpdates.Count).IsEqualTo(2);
+    }
+
+    [Test]
     public async Task CheckUpdates_BackgroundCheckDuringInstall_DoesNotReleasePendingOperation()
     {
         // Should-fix 2：启动期后台静默检查（App.axaml.cs → BackgroundCheckUpdatesAsync）绕过按钮，
@@ -222,18 +259,91 @@ public sealed class UpdatesReducerTests
     }
 
     [Test]
-    public async Task PluginUpdate_SuccessPath_ClearsPendingOperation()
+    public async Task PluginUpdate_SuccessPath_TerminalIntentClearsPendingOperation()
     {
-        // 插件更新成功回流检查更新（§23）；终态必须清空 PendingOperation，否则壳遮罩永久卡死。
+        // 插件更新成功 → 组合根在事务 Completed 发布显式终态（§23）；终态必须清空 PendingOperation，
+        // 否则壳遮罩永久卡死。终态清空与「发起检查更新」解耦：CheckUpdates 只发起检查（见下两条用例）。
         UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
         await Assert.That(busy.PendingOperation).IsNotNull();
 
-        UpdatesState afterCheck = _reducer.Reduce(busy, new UpdatesIntent.CheckUpdates()).State;
-        await Assert.That(afterCheck.PendingOperation).IsNull();
+        var result = _reducer.Reduce(busy, new UpdatesIntent.PluginOperationFinished("dsh-foo"));
+
+        await Assert.That(result.State.PendingOperation).IsNull();
+        await Assert.That(result.State.IsPluginUpdatePending).IsFalse();
+        await Assert.That(result.Effects[0] is UpdatesEffect.CheckUpdates).IsTrue();
+    }
+
+    [Test]
+    public async Task PluginOperationFinished_AfterCheckCompletedMidTransaction_StillClearsPendingOperation()
+    {
+        // 2026-09-21 v0.1.8 实机回归（遮罩永久卡死）：事务进行中，一次本就在飞的检查完成回流
+        // （CheckUpdatesCompleted）不得把「来源标记」清掉——旧实现清掉后，之后所有 CheckUpdates
+        // （含事务 Completed 那次广播）都落进「保留 PendingOperation」分支 ⇒ 待办永不清空 ⇒
+        // 遮罩「更新进行中」与导航锁永久不释放，只能重启应用。
+        UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
 
         var response = new CheckUpdatesResponse("0.1.2", "0.1.2", [], [], null);
-        UpdatesState done = _reducer.Reduce(afterCheck, new UpdatesIntent.CheckUpdatesCompleted(response)).State;
-        await Assert.That(done.PendingOperation).IsNull();
+        UpdatesState midStream = _reducer.Reduce(busy, new UpdatesIntent.CheckUpdatesCompleted(response)).State;
+        await Assert.That(midStream.PendingOperation).IsNotNull();
+        await Assert.That(midStream.IsPluginUpdatePending).IsTrue();
+
+        UpdatesState finished = _reducer.Reduce(midStream, new UpdatesIntent.PluginOperationFinished("dsh-foo")).State;
+        await Assert.That(finished.PendingOperation).IsNull();
+    }
+
+    [Test]
+    public async Task CheckUpdates_DuringPluginUpdate_DoesNotReleasePendingOperation()
+    {
+        // 与 InstallDshRuntime 同款保护（反向漏洞）：插件更新期间任何 CheckUpdates 抵达
+        // （启动后台静默检查 / 上一次事务成功广播的那次检查）都不得提前释放遮罩与导航锁。
+        UpdatesState busy = _reducer.Reduce(UpdatesState.Initial, new UpdatesIntent.UpdatePlugin("dsh-foo")).State;
+
+        var result = _reducer.Reduce(busy, new UpdatesIntent.CheckUpdates());
+
+        await Assert.That(result.State.PendingOperation).IsNotNull();
+        await Assert.That(result.State.IsPluginUpdatePending).IsTrue();
+    }
+
+    [Test]
+    public async Task PluginOperationFinished_RemovesFinishedPluginFromUpdatableList()
+    {
+        // 2026-09-21 v0.1.8 实机回归（列表不刷新）：成功后立即摘除该插件行，不依赖慢网络检查回来。
+        // 否则更新中心「插件更新」卡与插件页「↻ 可更新 / 更新」按钮在成功后仍停在旧值。
+        UpdatesState withRows = _reducer.Reduce(
+            UpdatesState.Initial,
+            new UpdatesIntent.UpdatePlugin("dsh-foo")).State with
+        {
+            PluginUpdates =
+            [
+                new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0"),
+                new PluginUpdateInfo("dsh-bar", "2.0.0", "2.1.0"),
+            ],
+        };
+
+        var result = _reducer.Reduce(withRows, new UpdatesIntent.PluginOperationFinished("dsh-foo"));
+
+        await Assert.That(result.State.PluginUpdates.Count).IsEqualTo(1);
+        await Assert.That(result.State.PluginUpdates[0].Name).IsEqualTo("dsh-bar");
+    }
+
+    [Test]
+    public async Task PluginOperationFinished_WhileDesktopDownloadPending_KeepsItsPendingOperation()
+    {
+        // 守卫：仅当待办确属插件操作（来源标记为真）才清空——Desktop 下载进行中抵达的插件事务终态
+        // 不得释放遮罩（§22），但仍可按名摘除插件的可更新行并回流一次检查。
+        UpdatesState downloading = UpdatesState.Initial with
+        {
+            PendingOperation = "下载 Desktop 更新 0.2.0…",
+            DesktopDownloadProgress = 42,
+            LatestDesktopVersion = "0.2.0",
+            PluginUpdates = [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")],
+        };
+
+        var result = _reducer.Reduce(downloading, new UpdatesIntent.PluginOperationFinished("dsh-foo"));
+
+        await Assert.That(result.State.PendingOperation).IsNotNull();
+        await Assert.That(result.State.DesktopDownloadProgress).IsEqualTo(42);
+        await Assert.That(result.State.PluginUpdates.Count).IsEqualTo(0);
     }
 
     [Test]

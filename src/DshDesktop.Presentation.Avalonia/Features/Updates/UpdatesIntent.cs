@@ -38,6 +38,12 @@ public abstract partial record UpdatesIntent : IMviIntent
     public sealed partial record UpdatePlugin(string Name) : UpdatesIntent;
 
     /// <summary>
+    /// 表示插件事务终态意图（组合根订阅 <c>IPluginOrchestrator.OperationChanged</c> 后在 Completed 阶段发布）。
+    /// </summary>
+    /// <param name="PluginName">事务解析出的插件名；未知为 null。</param>
+    public sealed partial record PluginOperationFinished(string? PluginName) : UpdatesIntent;
+
+    /// <summary>
     /// 表示 Runtime 列表变化的回流意图。
     /// </summary>
     /// <param name="Runtimes">最新 Runtime 列表。</param>
