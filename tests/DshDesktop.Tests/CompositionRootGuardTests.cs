@@ -81,45 +81,6 @@ public sealed class CompositionRootGuardTests
         await Assert.That(selfCheck < autoStart).IsTrue();
     }
 
-    /// <summary>
-    /// 借用失效自愈守卫（2026-09-19 v0.1.3 实机回归）：借用安装被删后 dshEntryPath 清空、
-    /// activeDshRuntime 仍为 null，启动秒抛进安全模式而磁盘上自建 Runtime 完好。
-    /// InitializeRuntimeAsync 必须在 CreateRuntimeRepository 之后调用自愈（顺序反了仓库还没建）。
-    /// </summary>
-    [Test]
-    public async Task InitializeRuntimeAsync_HealsActiveRuntimeSelection()
-    {
-        string source = await CompositionRootSourceAsync();
-
-        int repository = source.IndexOf("CreateRuntimeRepository();", StringComparison.Ordinal);
-        int heal = source.IndexOf("HealActiveRuntimeSelectionAsync(", StringComparison.Ordinal);
-        await Assert.That(repository >= 0).IsTrue();
-        await Assert.That(heal > repository).IsTrue();
-    }
-
-    /// <summary>
-    /// 插件版本漂移自愈守卫（2026-09-19 v0.1.4 实机回归：旧 dshmarket import 了 Runtime 已删除的
-    /// 命名导出 → 启动必崩且核心插件无更新入口，ConsecutiveFailures=12 永久死锁）：
-    /// 启动失败必须经 IncompatiblePluginCrashProbe 解析肇事插件并走编排器事务化升级自愈；
-    /// 更新检查必须纳入核心插件（IsResolvable 过滤自然排除 in-box bundle）。
-    /// </summary>
-    [Test]
-    public async Task TrackStartupAsync_HealsIncompatiblePluginCrash()
-    {
-        string source = await CompositionRootSourceAsync();
-
-        const string anchor = "private async ValueTask<RuntimeSnapshot> TrackStartupAsync(";
-        int start = source.IndexOf(anchor, StringComparison.Ordinal);
-        await Assert.That(start >= 0).IsTrue();
-
-        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
-        string body = end < 0 ? source[start..] : source[start..end];
-
-        await Assert.That(body.Contains("IncompatiblePluginCrashProbe.TryParseOffender", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(body.Contains("Runtime.Start.CrashHeal", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(body.Contains("PluginOperationKind.Update", StringComparison.Ordinal)).IsTrue();
-    }
-
     [Test]
     public async Task CheckUpdates_IncludesResolvableCorePlugins()
     {
@@ -151,6 +112,41 @@ public sealed class CompositionRootGuardTests
         await Assert.That(body.Contains("PluginsIntent.LoadPlugins()", StringComparison.Ordinal)).IsTrue();
         await Assert.That(body.Contains("UpdatesIntent.PluginOperationFinished(", StringComparison.Ordinal)).IsTrue();
         await Assert.That(body.Contains("UpdatesIntent.CheckUpdates()", StringComparison.Ordinal)).IsFalse();
+    }
+
+    /// <summary>
+    /// 崩溃漂移自愈胶水守卫（组合根拆分批 1）：<c>TrackStartupAsync</c> 的 catch 必须先把启动失败
+    /// 转交给 <c>RuntimeBootstrapper.TryHealIncompatiblePluginCrashAsync</c> 尝试自愈（肇事插件事务化升级），
+    /// 自愈成功才 <c>RecordSuccess</c> 并复用 supervisor.Current 返回；自愈未命中/失败则回退
+    /// <c>OnStartupFailureAsync</c> 走原失败计数链（连续失败进自动安全模式）。这条「组合根 catch → 自愈 →
+    /// 成功 RecordSuccess / 失败 OnStartupFailureAsync」的胶水语义曾由已删的守卫
+    /// TrackStartupAsync_HealsIncompatiblePluginCrash 锁定；迁移到 Bootstrapper 后须由本守卫继续锁住，
+    /// 否则有人把自愈调用整段删掉，或把 RecordSuccess 错放到 heal 调用之前，都不会被发现。
+    /// </summary>
+    [Test]
+    public async Task TrackStartupAsync_DelegatesCrashHealThenRecordsOrFails()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        // 锚定方法**定义**（裸名字会先命中 HandleActivateDshRuntimeAsync 等调用点）。
+        const string anchor = "ValueTask<RuntimeSnapshot> TrackStartupAsync(";
+        int start = source.IndexOf(anchor, StringComparison.Ordinal);
+        await Assert.That(start >= 0).IsTrue();
+
+        // 只取方法体：截止下一个 private 方法（OnStartupFailureAsync）定义之前。
+        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
+        string body = end < 0 ? source[start..] : source[start..end];
+
+        int healCall = body.IndexOf("TryHealIncompatiblePluginCrashAsync", StringComparison.Ordinal);
+        await Assert.That(healCall >= 0).IsTrue();
+
+        // RecordSuccess 必须出现在自愈调用之后（自愈成功的回流，而非 try 内启动成功的回流）。
+        // 从 healCall 起搜，跳过 try 内那处更早的 RecordSuccess。
+        int recordSuccessAfterHeal = body.IndexOf("_failureTracker.RecordSuccess()", healCall);
+        await Assert.That(recordSuccessAfterHeal > healCall).IsTrue();
+
+        // 自愈未命中/失败必须回退原失败计数链。
+        await Assert.That(body.Contains("OnStartupFailureAsync", StringComparison.Ordinal)).IsTrue();
     }
 
     private static async Task<string> CompositionRootSourceAsync()

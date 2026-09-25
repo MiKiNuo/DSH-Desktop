@@ -74,15 +74,11 @@ public static class ProfileSeeder
             await CopyProfileAsync(sourceProfile, targetProfile, cancellationToken).ConfigureAwait(false);
         }
 
-        // 每次启动归一化清单（清除代际投影残留 + 悬空 overrides）：目标已存在时复制分支不执行，
-        // 而工作台市场的更新随时可能重新写入代际模型元数据（2026-09-17 实机：市场按代际模型
-        // 更新后 5 个投影插件实目录被删、重新启用即 cannot resolve profile bundle → ExitCode=1）。
-        ProfileManifestFixups.NormalizeToFlatModel(targetProfile);
-
         // 每次启动重写虚拟存储指向（同理不能只挂在复制分支）：数据根迁移 / 快照还原 / 更早的种子
         // 都会让目标 profile 带着**旧位置**的 virtualStoreDir，此后任何 pnpm 操作都报
         // ERR_PNPM_UNEXPECTED_VIRTUAL_STORE 并回滚（2026-09-19 v0.1.6 实机：数据根迁移把
         // 旧根 .modules.yaml 一并带入，插件安装 dshmarket@latest 失败回滚）。幂等：值已一致不写盘。
+        // （Profile 清单归一化已迁出为引导期自愈登记册条目，见 RuntimeBootstrapper。）
         RewriteVirtualStoreDir(targetProfile);
 
         await EnsureDependenciesAsync(targetProfile, installer, cancellationToken).ConfigureAwait(false);

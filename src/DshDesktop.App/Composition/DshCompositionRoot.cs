@@ -8,7 +8,7 @@ using DshDesktop.Application.Paths;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Application.Startup;
-using DshDesktop.Application.Updates;
+using DshDesktop.Application.Bootstrap;
 using DshDesktop.Domain.Diagnostics;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
@@ -71,8 +71,6 @@ public sealed partial class DshCompositionRoot
     private RuntimeProbe? _runtimeProbe;
     private readonly StartupFailureTracker _failureTracker = new();
 
-    /// <summary>本会话已尝试过版本漂移自愈的插件名（每插件只试一次，防自愈-失败循环）。</summary>
-    private readonly HashSet<string> _crashHealAttempted = new(StringComparer.Ordinal);
     private RuntimeReattacher? _reattacher;
 
     // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表；非 Windows 平台为 null）。
@@ -86,6 +84,10 @@ public sealed partial class DshCompositionRoot
     // ADR-0007：Runtime 进入 Failed 后的有界自动恢复（每个失败周期最多 1 次自动重试）。
     private static readonly TimeSpan RecoveryRetryDelay = TimeSpan.FromSeconds(3);
     private readonly BoundedRecoveryPlanner _recoveryPlanner = new();
+
+    // 引导期 Runtime 自愈登记册外壳（组合根拆分批 1）：收口三处引导期自愈 + 一处崩溃漂移自愈；
+    // 崩溃自愈的「每会话每插件只试一次」状态内置于 Bootstrapper，故此处不再持有 _crashHealAttempted。
+    private RuntimeBootstrapper? _bootstrapper;
 
     // Runtime 状态订阅与生命周期取消源：随 Shutdown 取消/释放，
     // 避免应用退出后仍有排队中的恢复意图被派发。
@@ -331,28 +333,23 @@ public sealed partial class DshCompositionRoot
         _reattacher = new RuntimeReattacher(_runtimeProbe, Log.Logger);
         WirePluginStack();
 
-        // 核心插件自愈（2026-09-18 实机：dshmarket 被外部改出 bundles 后工作台不可用，
-        // 而核心插件只读约定让 Desktop 无任何入口救回）。在任何 StartAsync 前显式修复，
-        // 覆盖自动启动不经插件页的路径；失败只记日志不中断引导（同 PnpmProvisioner 约定）。
-        try
-        {
-            await _pluginRepository.HealCoreBundlesAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            Log.Logger.Warning(
-                exception,
-                "核心插件 bundles 自愈失败（本次启动可能缺核心插件）：{Error}",
-                exception.Message);
-        }
-
         CreateRuntimeRepository();
 
-        // 借用失效自愈（2026-09-19 v0.1.3 实机回归）：借用 Electron 安装被删后
-        // HealRuntimePaths 清空 dshEntryPath，activeDshRuntime 仍为 null → BuildLaunchOptions
-        // 抱空入口在 ValidateOptions 秒抛，连续 2 次进安全模式，而磁盘上自建 Runtime 完好。
-        // 必须在 CreateRuntimeRepository 之后（自愈复用同一合法性规则枚举候选目录）。
-        await HealActiveRuntimeSelectionAsync(cancellationToken).ConfigureAwait(false);
+        // 引导期 Runtime 自愈登记册（组合根拆分批 1）：把核心 bundles 修复 / ActiveRuntime 失效回退 /
+        // Profile 清单归一化三处引导期自愈收口到 RuntimeBootstrapper，按序执行。核心 bundles 失败只告警
+        // 不中断后续（语义见 Bootstrapper）；ActiveRuntime 回退必须在 CreateRuntimeRepository 之后
+        // （复用同一合法性规则枚举候选目录）。Profile 归一化原为 ProfileSeeder 的内部调用，迁出为登记册条目。
+        RuntimeBootstrapper bootstrapper = new RuntimeBootstrapper(
+            _pluginRepository!,
+            _pluginOrchestrator!,
+            new CompositionRootConfigAdapter(_config!, _configPersistence),
+            new CompositionRootCrashProbeAdapter(),
+            new ProfileManifestNormalizer(),
+            RuntimeRootDir,
+            Path.Combine(_config!.DshHome, "profiles", "web"),
+            Log.Logger);
+        _bootstrapper = bootstrapper;
+        await bootstrapper.RunBootHealsAsync(cancellationToken).ConfigureAwait(false);
 
         // GitHub Releases 自更新适配器（Inno 安装形态；未安装形态 no-op，不依赖 config）。
         _desktopUpdater = new GitHubDesktopUpdater(Log.Logger, DesktopInfo.Version);
@@ -442,54 +439,6 @@ public sealed partial class DshCompositionRoot
             _config!.NodePath,
             _config.NpmCjsPath,
             _config.DshEntryPath);
-
-    /// <summary>
-    /// 借用失效自愈：未激活自建版本且借用入口不可用（空 / 文件已不存在）时，
-    /// 自动激活磁盘上最新的合法自建版本并落盘；其余形态（借用可用 / 已激活 / 无候选）不动。
-    /// 候选枚举与 <see cref="RuntimeRepository.ListRuntimesAsync"/> 同一合法性规则（入口包目录存在）。
-    /// 刻意不复用仓库枚举：仓库返回 package.json 版本号而激活需要**目录名**，两者可能不同；
-    /// 规则演进时此处与仓库必须同步（漂移风险已在评审中记录并 accepted——共用的代价是扩张公共接口）。
-    /// 落盘失败不阻断：内存态已生效，本次启动照常（同 TrySaveAsync 约定，配置是派生数据）。
-    /// </summary>
-    private async Task HealActiveRuntimeSelectionAsync(CancellationToken cancellationToken)
-    {
-        bool borrowedUsable = !string.IsNullOrWhiteSpace(_config!.DshEntryPath)
-            && File.Exists(_config.DshEntryPath);
-
-        List<string> selfBuilt = [];
-        if (Directory.Exists(RuntimeRootDir))
-        {
-            selfBuilt.AddRange(Directory
-                .GetDirectories(RuntimeRootDir)
-                .Where(dir => Directory.Exists(
-                    Path.Combine(dir, "node_modules", "@deepseek-ai", "dsh")))
-                .Select(dir => Path.GetFileName(dir)));
-        }
-
-        string? selected = ActiveRuntimeFallback.Select(
-            _config.ActiveDshRuntime, borrowedUsable, selfBuilt);
-        if (selected is null)
-        {
-            return;
-        }
-
-        _config.ActiveDshRuntime = selected;
-        try
-        {
-            await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            Log.Logger.Warning(
-                exception,
-                "Active Runtime 自愈已生效于本次运行，但配置落盘失败（下次启动将重新自愈）：{Error}",
-                exception.Message);
-        }
-
-        Log.Logger.Warning(
-            DiagnosticEventNames.RuntimeActiveRuntimeAutoActivated + " {Version}（借用入口不可用，自动激活磁盘自建版本）",
-            selected);
-    }
 
     /// <summary>
     /// 首启自检（每次启动都应调用）：是否存在任何可用 DSH Runtime（借用外部安装或自建 side-by-side）。
@@ -1328,28 +1277,16 @@ public sealed partial class DshCompositionRoot
         catch (Exception exception)
         {
             // 版本漂移自愈（2026-09-19 v0.1.4 实机）：旧插件静态 import 了 Runtime 已删除的
-            // 命名导出 ⇒ 启动必崩，且肇事者可能是核心插件（无 UI 更新入口）⇒ 在此自动走
-            // 编排器事务化升级（快照/停/变更/校验/启动/健康/回滚），成功即 Runtime 已被事务拉起。
+            // 命名导出 ⇒ 启动必崩，且肇事者可能是核心插件（无 UI 更新入口）⇒ 在 RuntimeBootstrapper
+            // 内自动走编排器事务化升级（快照/停/变更/校验/启动/健康/回滚），成功即 Runtime 已被事务拉起。
             // 刻意绕开 MVI 的 IsTransactionInFlight 守卫：启动失败现场 Runtime 已停，用户事务不可能在飞。
-            // 每会话每插件只试一次（_crashHealAttempted），失败回落原失败计数链，绝不循环。
-            if (IncompatiblePluginCrashProbe.TryParseOffender(exception.Message) is { } offender
-                && _crashHealAttempted.Add(offender))
+            // 「每会话每插件只试一次、失败回落原失败计数链」的状态内置于 Bootstrapper。
+            if (await _bootstrapper!
+                    .TryHealIncompatiblePluginCrashAsync(exception.Message, cancellationToken)
+                    .ConfigureAwait(false))
             {
-                Log.Logger.Warning("Runtime.Start.CrashHeal.Begin {PluginName}", offender);
-                try
-                {
-                    _ = await _pluginOrchestrator!
-                        .InstallAsync($"{offender}@latest", PluginOperationKind.Update, cancellationToken)
-                        .ConfigureAwait(false);
-                    Log.Logger.Information("Runtime.Start.CrashHeal.Success {PluginName}", offender);
-                    _failureTracker.RecordSuccess();
-                    return _supervisor!.Current;
-                }
-                catch (Exception healException)
-                {
-                    Log.Logger.Warning(
-                        "Runtime.Start.CrashHeal.Failed {PluginName} {Error}", offender, healException.Message);
-                }
+                _failureTracker.RecordSuccess();
+                return _supervisor!.Current;
             }
 
             await OnStartupFailureAsync(cancellationToken).ConfigureAwait(false);
@@ -1667,5 +1604,42 @@ public sealed partial class DshCompositionRoot
         {
             throw new InvalidOperationException("Runtime 编排尚未初始化完成，请稍候再试。");
         }
+    }
+
+    // ===== 组合根拆分批 1：RuntimeBootstrapper 的 Infrastructure 适配（App→Infrastructure 引用合法，
+    // 仅 Application 不得新增对 Infrastructure 的项目引用） =====
+
+    /// <summary>
+    /// 把 <see cref="DshDesktopConfig"/> + <see cref="ConfigPersistence"/> 适配为引导期自愈所需的
+    /// 配置读写端口：读 DshEntryPath / ActiveDshRuntime，写经 ConfigPersistence 同一把锁落盘。
+    /// </summary>
+    private sealed class CompositionRootConfigAdapter : IRuntimeBootstrapConfig
+    {
+        private readonly DshDesktopConfig _config;
+        private readonly ConfigPersistence _persistence;
+
+        public CompositionRootConfigAdapter(DshDesktopConfig config, ConfigPersistence persistence)
+        {
+            _config = config;
+            _persistence = persistence;
+        }
+
+        public string? DshEntryPath => _config.DshEntryPath;
+
+        public string? ActiveDshRuntime
+        {
+            get => _config.ActiveDshRuntime;
+            set => _config.ActiveDshRuntime = value;
+        }
+
+        public Task PersistAsync(CancellationToken cancellationToken)
+            => _persistence.SaveAsync(_config, cancellationToken);
+    }
+
+    /// <summary>把 <see cref="IncompatiblePluginCrashProbe"/> 纯函数探针适配为崩溃肇事解析端口。</summary>
+    private sealed class CompositionRootCrashProbeAdapter : IIncompatiblePluginCrashProbe
+    {
+        public string? TryParseOffender(string startFailureMessage)
+            => IncompatiblePluginCrashProbe.TryParseOffender(startFailureMessage);
     }
 }
