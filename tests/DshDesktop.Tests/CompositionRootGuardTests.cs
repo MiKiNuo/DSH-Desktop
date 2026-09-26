@@ -172,4 +172,44 @@ public sealed class CompositionRootGuardTests
             await Assert.That(source.Contains(symbol, StringComparison.Ordinal)).IsFalse();
         }
     }
+
+    /// <summary>
+    /// 候选 4「配置写管道收敛」语义守卫：8 个纯同构开关处理器必须全部经泛型辅助
+    /// <c>SetConfigFlagAsync</c> lambda 注册（不再各自独立方法体），且这些独立方法名不得残留。
+    /// 收敛后路径仍只经 SaveConfigAsync 落盘，HasNoDirectConfigStoreSave 守卫继续有效。
+    /// </summary>
+    [Test]
+    public async Task SetConfigFlags_RouteThroughSetConfigFlagHelper()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        // 8 个注册行均为 SetConfigFlagAsync(request, ...) lambda。
+        int routed = 0;
+        int index = source.IndexOf("SetConfigFlagAsync(request", StringComparison.Ordinal);
+        while (index >= 0)
+        {
+            routed++;
+            index = source.IndexOf("SetConfigFlagAsync(request", index + 1, StringComparison.Ordinal);
+        }
+
+        await Assert.That(routed).IsEqualTo(8);
+
+        // 8 个旧显式方法体必须已删除（不得残留方法定义）。
+        string[] removedHandlers =
+        [
+            "HandleSetMinimizeToTrayOnCloseAsync(",
+            "HandleSetBackgroundUpdateCheckAsync(",
+            "HandleSetAutoDownloadUpdatesAsync(",
+            "HandleSetNotificationsEnabledAsync(",
+            "HandleSetDshChannelAsync(",
+            "HandleSetKeepRuntimeOnCloseAsync(",
+            "HandleSetAutoSafeModeOnFailureAsync(",
+            "HandleSetCheckUpdatesOnStartupAsync(",
+        ];
+
+        foreach (string handler in removedHandlers)
+        {
+            await Assert.That(source.Contains(handler, StringComparison.Ordinal)).IsFalse();
+        }
+    }
 }

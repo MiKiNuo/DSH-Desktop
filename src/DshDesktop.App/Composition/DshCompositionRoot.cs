@@ -484,9 +484,15 @@ public sealed partial class DshCompositionRoot
         mediator.Register<StopRuntimeRequest, bool>(HandleStopRuntimeAsync);
         mediator.Register<RestartRuntimeRequest, RuntimeSnapshot>(HandleRestartRuntimeAsync);
         mediator.Register<SetSafeModeRequest, bool>(HandleSetSafeModeAsync);
-        mediator.Register<SetKeepRuntimeOnCloseRequest, bool>(HandleSetKeepRuntimeOnCloseAsync);
-        mediator.Register<SetAutoSafeModeOnFailureRequest, bool>(HandleSetAutoSafeModeOnFailureAsync);
-        mediator.Register<SetCheckUpdatesOnStartupRequest, bool>(HandleSetCheckUpdatesOnStartupAsync);
+        mediator.Register<SetKeepRuntimeOnCloseRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.KeepRuntimeOnClose = request.Enabled,
+                "Runtime.KeepRuntimeOnClose {Enabled}", request.Enabled));
+        mediator.Register<SetAutoSafeModeOnFailureRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.AutoSafeModeOnFailure = request.Enabled,
+                "Runtime.AutoSafeModeOnFailure {Enabled}", request.Enabled));
+        mediator.Register<SetCheckUpdatesOnStartupRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.CheckUpdatesOnStartup = request.Enabled,
+                "Runtime.CheckUpdatesOnStartup {Enabled}", request.Enabled));
         mediator.Register<GetPluginListRequest, IReadOnlyList<PluginInfo>>(HandleGetPluginListAsync);
         mediator.Register<SetPluginEnabledRequest, IReadOnlyList<PluginInfo>>(HandleSetPluginEnabledAsync);
         mediator.Register<UninstallPluginRequest, IReadOnlyList<PluginInfo>>(HandleUninstallPluginAsync);
@@ -497,13 +503,23 @@ public sealed partial class DshCompositionRoot
         mediator.Register<ActivateDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleActivateDshRuntimeAsync);
         mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
         mediator.Register<GetSettingsInfoRequest, SettingsInfo>(HandleGetSettingsInfo);
-        mediator.Register<SetDshChannelRequest, bool>(HandleSetDshChannelAsync);
-        mediator.Register<SetNotificationsEnabledRequest, bool>(HandleSetNotificationsEnabledAsync);
-        mediator.Register<SetMinimizeToTrayOnCloseRequest, bool>(HandleSetMinimizeToTrayOnCloseAsync);
+        mediator.Register<SetDshChannelRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.DshChannel = request.Channel,
+                "Settings.DshChannel {Channel}", request.Channel));
+        mediator.Register<SetNotificationsEnabledRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.NotificationsEnabled = request.Enabled,
+                "Settings.Notifications {Enabled}", request.Enabled));
+        mediator.Register<SetMinimizeToTrayOnCloseRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.MinimizeToTrayOnClose = request.Enabled,
+                "Settings.MinimizeToTrayOnClose {Enabled}", request.Enabled));
         mediator.Register<SetThemeRequest, bool>(HandleSetThemeAsync);
         mediator.Register<SetLaunchOnStartupRequest, bool>(HandleSetLaunchOnStartupAsync);
-        mediator.Register<SetBackgroundUpdateCheckRequest, bool>(HandleSetBackgroundUpdateCheckAsync);
-        mediator.Register<SetAutoDownloadUpdatesRequest, bool>(HandleSetAutoDownloadUpdatesAsync);
+        mediator.Register<SetBackgroundUpdateCheckRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.BackgroundUpdateCheck = request.Enabled,
+                "Settings.BackgroundUpdateCheck {Enabled}", request.Enabled));
+        mediator.Register<SetAutoDownloadUpdatesRequest, bool>((request, ct) =>
+            SetConfigFlagAsync(request, ct, c => c.AutoDownloadUpdates = request.Enabled,
+                "Settings.AutoDownloadUpdates {Enabled}", request.Enabled));
         mediator.Register<OpenPathRequest, bool>(HandleOpenPath);
         mediator.Register<RunDiagnosisRequest, bool>(HandleRunDiagnosisAsync);
         mediator.Register<ExportDiagnosticsBundleRequest, bool>(HandleExportDiagnosticsBundle);
@@ -593,17 +609,6 @@ public sealed partial class DshCompositionRoot
 
     // ===== Phase 8 Issue 05：桌面行为 / 更新策略开关持久化（照 SetNotificationsEnabled 链路） =====
 
-    private async ValueTask<bool> HandleSetMinimizeToTrayOnCloseAsync(
-        SetMinimizeToTrayOnCloseRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.MinimizeToTrayOnClose = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.MinimizeToTrayOnClose {Enabled}", request.Enabled);
-        return true;
-    }
-
     /// <summary>
     /// 处理修改外观主题请求（Phase 9：即时套用 + 落盘持久，重启后经 InitializeRuntimeAsync 回流）。
     /// </summary>
@@ -650,28 +655,6 @@ public sealed partial class DshCompositionRoot
         // 写失败抛错走失败回流：config 已落盘，UI 乐观状态不回滚，仅提示错误。
         _startupRegistration?.SetEnabled(request.Enabled);
         Log.Logger.Information("Settings.LaunchOnStartup {Enabled}", request.Enabled);
-        return true;
-    }
-
-    private async ValueTask<bool> HandleSetBackgroundUpdateCheckAsync(
-        SetBackgroundUpdateCheckRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.BackgroundUpdateCheck = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.BackgroundUpdateCheck {Enabled}", request.Enabled);
-        return true;
-    }
-
-    private async ValueTask<bool> HandleSetAutoDownloadUpdatesAsync(
-        SetAutoDownloadUpdatesRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.AutoDownloadUpdates = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.AutoDownloadUpdates {Enabled}", request.Enabled);
         return true;
     }
 
@@ -760,28 +743,6 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         return HandleOpenPath(new OpenPathRequest(LogDirectory), cancellationToken);
-    }
-
-    private async ValueTask<bool> HandleSetNotificationsEnabledAsync(
-        SetNotificationsEnabledRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.NotificationsEnabled = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.Notifications {Enabled}", request.Enabled);
-        return true;
-    }
-
-    private async ValueTask<bool> HandleSetDshChannelAsync(
-        SetDshChannelRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.DshChannel = request.Channel;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.DshChannel {Channel}", request.Channel);
-        return true;
     }
 
     private async ValueTask<CheckUpdatesResponse> HandleCheckUpdatesAsync(
@@ -1077,38 +1038,22 @@ public sealed partial class DshCompositionRoot
         _ = store.DispatchAsync(new RuntimeIntent.SafeModeChanged(enabled));
     }
 
-    // ===== Phase 8 Issue 04：三策略开关持久化（照 SetSafeMode 链路） =====
-
-    private async ValueTask<bool> HandleSetKeepRuntimeOnCloseAsync(
-        SetKeepRuntimeOnCloseRequest request,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// 配置写管道收敛辅助（候选 4）：四步不变量——ThrowIfNotInitialized → apply 落盘字段 →
+    /// SaveConfigAsync 持久化（唯一落盘入口）→ 统一日志；8 个开关型处理器收敛为注册 lambda，
+    /// 保证只经 SaveConfigAsync 写配置，不绕过 _configSaveLock。
+    /// </summary>
+    private async ValueTask<bool> SetConfigFlagAsync<TRequest>(
+        TRequest request,
+        CancellationToken cancellationToken,
+        Action<DshDesktopConfig> apply,
+        string logTemplate,
+        object logValue)
     {
         ThrowIfNotInitialized();
-        _config!.KeepRuntimeOnClose = request.Enabled;
+        apply(_config!);
         await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Runtime.KeepRuntimeOnClose {Enabled}", request.Enabled);
-        return true;
-    }
-
-    private async ValueTask<bool> HandleSetAutoSafeModeOnFailureAsync(
-        SetAutoSafeModeOnFailureRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.AutoSafeModeOnFailure = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Runtime.AutoSafeModeOnFailure {Enabled}", request.Enabled);
-        return true;
-    }
-
-    private async ValueTask<bool> HandleSetCheckUpdatesOnStartupAsync(
-        SetCheckUpdatesOnStartupRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.CheckUpdatesOnStartup = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Runtime.CheckUpdatesOnStartup {Enabled}", request.Enabled);
+        Log.Logger.Information(logTemplate, logValue);
         return true;
     }
 

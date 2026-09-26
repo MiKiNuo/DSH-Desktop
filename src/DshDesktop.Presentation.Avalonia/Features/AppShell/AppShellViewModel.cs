@@ -33,6 +33,26 @@ public sealed partial class AppShellViewModel
     private PluginsState? _pluginsProjection;
 
     /// <summary>
+    /// UI 调度器（候选 5：ToastRequested 事件经其编组到 UI 线程触发；null = 同步触发，兼容测试）。
+    /// </summary>
+    private readonly IMviUiDispatcher? _uiDispatcher;
+
+    // ===== 候选 5：壳 toast 边沿判定的前序值（自 MainWindow 迁入） =====
+    // 与 AppShellState.Initial 同初值；首帧投影以 armed 标志压制，确保首启不弹。
+
+    private int _lastUpdateBadge = 0;
+
+    private RuntimeLifecycle _lastLifecycle = RuntimeLifecycle.Stopped;
+
+    private PluginOperation? _notifiedPluginOperation;
+
+    /// <summary>
+    /// 壳 toast 请求事件（候选 5：边沿判定下沉 VM；命中即经 UI 调度器在 UI 线程触发）。
+    /// MainWindow 订阅后收口到 <c>ShowToast</c>，文案/时长/样式不变。
+    /// </summary>
+    public event EventHandler<string>? ToastRequested;
+
+    /// <summary>
     /// 初始化应用壳 ViewModel。
     /// </summary>
     /// <param name="store">应用壳状态存储。</param>
@@ -51,6 +71,14 @@ public sealed partial class AppShellViewModel
         ArgumentNullException.ThrowIfNull(runtimeStore);
         ArgumentNullException.ThrowIfNull(updatesStore);
         ArgumentNullException.ThrowIfNull(pluginsStore);
+
+        _uiDispatcher = uiDispatcher;
+
+        // 候选 5：首帧不弹——前序值捕获为构造期兄弟 Store 的当前投影（等价于原 WireToastScenarios 初值），
+        // 使初次投影 previous==current，不触发上升沿/迁移/去重误弹。
+        _lastUpdateBadge = updatesStore.CurrentState.AvailableCount;
+        _lastLifecycle = runtimeStore.CurrentState.Lifecycle;
+        _notifiedPluginOperation = pluginsStore.CurrentState.Operation;
 
         _ = BindSiblingState(runtimeStore, ApplyRuntimeState);
         _ = BindSiblingState(updatesStore, ApplyUpdatesState);
@@ -201,6 +229,11 @@ public sealed partial class AppShellViewModel
                 runtimeState.ProcessId,
                 runtimeState.Port));
         }
+
+        // 候选 5：Runtime 恢复 toast（Recovering→Running 上升沿）。
+        string? toast = ShellToastProjector.ProjectLifecycleRecovered(_lastLifecycle, runtimeState.Lifecycle);
+        _lastLifecycle = runtimeState.Lifecycle;
+        EmitToast(toast);
     }
 
     private void ApplyUpdatesState(UpdatesState updatesState)
@@ -224,6 +257,11 @@ public sealed partial class AppShellViewModel
             _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
         }
 
+        // 候选 5：发现可用更新 toast（徽标上升沿）。
+        string? toast = ShellToastProjector.ProjectBadgeRisingEdge(_lastUpdateBadge, count);
+        _lastUpdateBadge = count;
+        EmitToast(toast);
+
         SyncUpdateOperationTextProjection();
     }
 
@@ -246,6 +284,15 @@ public sealed partial class AppShellViewModel
             _ = DispatchAsync(new AppShellIntent.PluginOperationInProgressChanged(pluginInProgress));
         }
 
+        // 候选 5：插件事务终态 toast（引用去重，仅 Completed/Failed 命中且引用不同）。
+        // 仅当命中（去重通过后）才标记已通知，非终态新引用不污染去重前序值。
+        string? toast = ShellToastProjector.ProjectPluginOperationDone(_notifiedPluginOperation, pluginsState.Operation);
+        if (toast is not null)
+        {
+            _notifiedPluginOperation = pluginsState.Operation;
+        }
+        EmitToast(toast);
+
         // 插件事务在飞时壳副标题须回退到 Plugins.PendingOperation（候选 3：壳文案合成
         // = Updates.PendingOperation ?? Plugins.PendingOperation）。
         SyncUpdateOperationTextProjection();
@@ -264,6 +311,27 @@ public sealed partial class AppShellViewModel
             || text != Store.CurrentState.UpdateOperationText)
         {
             _ = DispatchAsync(new AppShellIntent.UpdateDownloadChanged(percent, text));
+        }
+    }
+
+    /// <summary>
+    /// 触发 <see cref="ToastRequested"/>（候选 5）。命中时经 <see cref="_uiDispatcher"/> 编组到 UI 线程触发；
+    /// 调度器为 null（测试）则同步触发，保证事件转发用例可确定性断言。沿用 VM 投影经单点 UI 调度的既有模式。
+    /// </summary>
+    private void EmitToast(string? text)
+    {
+        if (text is null)
+        {
+            return;
+        }
+
+        if (_uiDispatcher is null)
+        {
+            ToastRequested?.Invoke(this, text);
+        }
+        else
+        {
+            _uiDispatcher.Post(() => ToastRequested?.Invoke(this, text));
         }
     }
 }

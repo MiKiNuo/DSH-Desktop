@@ -465,6 +465,83 @@ public sealed class AppShellViewModelTests
         Console.WriteLine($"CurrentPage:insidePost={cp.InsidePost}@thread={cp.ThreadId} (dispatch={dispatchThreadId})");
     }
 
+    // ===== 候选 5：ToastRequested 事件转发（边沿判定下沉 VM） =====
+
+    [Test]
+    public async Task ToastRequested_NotRaisedDuringConstruction_FirstFrameSuppressed()
+    {
+        // 首帧（构造期初始投影）不弹：构造 VM 期间不得触发任何 ToastRequested。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+
+        var raised = false;
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        viewModel.ToastRequested += (_, _) => raised = true;
+
+        // 构造已结束并订阅，首帧不应漏弹。
+        await Assert.That(raised).IsFalse();
+    }
+
+    [Test]
+    public async Task ToastRequested_RaisedOnBadgeRisingEdge()
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        string? captured = null;
+        viewModel.ToastRequested += (_, text) => captured = text;
+
+        // 徽标 0 → 1（1 条插件更新）：上升沿弹一条。
+        updatesStore.Push(UpdatesState.Initial with
+        {
+            PluginUpdates = [new PluginUpdateInfo("plugin-a", "1.0.0", "1.1.0")],
+        });
+
+        await Assert.That(captured).IsEqualTo("发现 1 项可用更新");
+    }
+
+    [Test]
+    public async Task ToastRequested_RaisedOnLifecycleRecovered()
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        string? captured = null;
+        viewModel.ToastRequested += (_, text) => captured = text;
+
+        // Recovering → Running 迁移才弹（首帧 Stopped→Recovering 不弹）。
+        runtimeStore.Push(RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Recovering });
+        runtimeStore.Push(RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Running });
+
+        await Assert.That(captured).IsEqualTo("Runtime 已恢复运行");
+    }
+
+    [Test]
+    public async Task ToastRequested_RaisedOnPluginOperationCompleted()
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        string? captured = null;
+        viewModel.ToastRequested += (_, text) => captured = text;
+
+        var operation = new PluginOperation(PluginOperationStage.Completed, "demo-plugin", null);
+        pluginsStore.Push(PluginsState.Initial with { Operation = operation });
+
+        await Assert.That(captured).IsEqualTo("插件 demo-plugin 安装完成");
+    }
+
     private static MviStore<AppShellState, AppShellIntent, UnitEffect> CreateShellStore()
     {
         return new MviStore<AppShellState, AppShellIntent, UnitEffect>(

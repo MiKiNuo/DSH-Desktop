@@ -6,7 +6,6 @@ using Avalonia.Threading;
 using System.Threading.Tasks;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Common;
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Dashboard;
@@ -162,15 +161,11 @@ public sealed partial class MainWindow : Window
                 is nameof(AppShellViewModel.RuntimeIndicator)
                 or nameof(AppShellViewModel.UpdateBadge))
             {
-                ApplyIndicatorsOnUiThread(args.PropertyName);
+                ApplyIndicatorsOnUiThread();
             }
             else if (args.PropertyName == nameof(AppShellViewModel.UpdateInProgress))
             {
                 ApplyUpdateScrim();
-            }
-            else if (args.PropertyName == nameof(AppShellViewModel.PluginOperation))
-            {
-                ApplyPluginOperationToastOnUiThread();
             }
             else if (args.PropertyName
                 is nameof(AppShellViewModel.UpdateDownloadPercent)
@@ -373,56 +368,17 @@ public sealed partial class MainWindow : Window
         _setupDecline.IsVisible = true;
     }
 
-    // ===== Phase 8 评审 F7：toast 接线（只订阅壳 VM 投影，不新造事件源） =====
-    // 2026-09-15 架构审查 C3：MainWindow 直订 Plugins/Runtime/Updates 三 Store 的投影已整体下沉
-    // AppShellViewModel（BindSiblingState → Intent 回流，IMviUiDispatcher 单点编组），
-    // 壳只订阅 _shellViewModel.PropertyChanged——与全部 Feature 视图同一机制。
-
-    private int _lastUpdateBadge;
-    private RuntimeLifecycle _lastLifecycle;
-    private PluginOperation? _notifiedPluginOperation;
+    // ===== 候选 5：toast 边沿判定已下沉 AppShellViewModel（ToastRequested 事件） =====
+    // MainWindow 只订阅事件并收口到 ShowToast（UI 线程编组在 ShowToast 内保留），不持有任何判定状态；
+    // 初值前序由 VM 持有（首帧不弹，等价于原 WireToastScenarios 的初值捕获语义）。
 
     /// <summary>
-    /// 接线 toast 场景：插件安装事务完成/失败（壳 PluginOperation 投影）、
-    /// 发现可用更新（壳 UpdateBadge 上升沿，见 ApplyIndicators 调用点）、
-    /// Runtime 恢复完成（壳 RuntimeIndicator Recovering→Running 迁移）。
+    /// 接线 toast 场景：订阅壳 VM 的 <see cref="AppShellViewModel.ToastRequested"/>，收口到 <see cref="ShowToast"/>。
+    /// 判定（徽标上升沿 / Runtime 恢复 / 插件终态引用去重）全部在 VM 完成。
     /// </summary>
     private void WireToastScenarios()
     {
-        _lastUpdateBadge = _shellViewModel.UpdateBadge;
-        _lastLifecycle = _shellViewModel.RuntimeIndicator;
-    }
-
-    /// <summary>
-    /// 插件事务终态 toast：壳 PluginOperation 投影变化时按引用去重后弹出。
-    /// </summary>
-    private void ApplyPluginOperationToastOnUiThread()
-    {
-        if (!Dispatcher.UIThread.CheckAccess())
-        {
-            Dispatcher.UIThread.Post(ApplyPluginOperationToastOnUiThread);
-            return;
-        }
-
-        // Operation 引用在阶段推进时整体替换；以引用去重，避免同一终态重复弹。
-        if (_shellViewModel.PluginOperation is not { } operation || ReferenceEquals(operation, _notifiedPluginOperation))
-        {
-            return;
-        }
-
-        // 同一套事务被"安装/更新/卸载/启用/禁用"五个入口复用，文案按操作种类区分，
-        // 避免点"卸载"却报"安装"（动词映射集中单测：PluginOperationText）。
-        string verb = PluginOperationText.Verb(operation.Kind);
-        if (operation.Stage is PluginOperationStage.Completed)
-        {
-            _notifiedPluginOperation = operation;
-            ShowToast($"插件 {operation.PluginName} {verb}完成");
-        }
-        else if (operation.Stage is PluginOperationStage.Failed)
-        {
-            _notifiedPluginOperation = operation;
-            ShowToast($"插件 {operation.PluginName} {verb}失败：{operation.Error}");
-        }
+        _shellViewModel.ToastRequested += (_, text) => ShowToast(text);
     }
 
     /// <summary>
@@ -532,37 +488,16 @@ public sealed partial class MainWindow : Window
     /// 应用指示器（状态点 + 更新徽标）与可用更新 toast（壳投影可能在后台派发线程触发，
     /// 触及控件前须编组到 UI 线程，同 <see cref="ApplyUpdateScrim"/>）。调用顺序与原始分支一致。
     /// </summary>
-    private void ApplyIndicatorsOnUiThread(string? propertyName)
+    private void ApplyIndicatorsOnUiThread()
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => ApplyIndicatorsOnUiThread(propertyName));
+            Dispatcher.UIThread.Post(ApplyIndicatorsOnUiThread);
             return;
         }
 
+        // 指示器（状态点 + 更新徽标）渲染。toast 边沿判定已下沉 VM（ToastRequested 事件），此处不再判定。
         ApplyIndicators();
-        if (propertyName == nameof(AppShellViewModel.UpdateBadge))
-        {
-            // 发现可用更新：徽标上升沿弹一条 toast。
-            int badge = _shellViewModel.UpdateBadge;
-            if (badge > _lastUpdateBadge)
-            {
-                ShowToast($"发现 {badge} 项可用更新");
-            }
-
-            _lastUpdateBadge = badge;
-        }
-        else if (propertyName == nameof(AppShellViewModel.RuntimeIndicator))
-        {
-            // Runtime 恢复完成：Recovering→Running 迁移弹一条 toast。
-            RuntimeLifecycle lifecycle = _shellViewModel.RuntimeIndicator;
-            if (_lastLifecycle is RuntimeLifecycle.Recovering && lifecycle is RuntimeLifecycle.Running)
-            {
-                ShowToast("Runtime 已恢复运行");
-            }
-
-            _lastLifecycle = lifecycle;
-        }
     }
 
     /// <summary>
