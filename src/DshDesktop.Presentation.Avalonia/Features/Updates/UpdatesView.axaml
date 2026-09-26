@@ -30,7 +30,7 @@
             <TextBlock
                 Foreground="{DynamicResource DshWarnBrush}"
                 FontSize="{DynamicResource DshFontSizeSmall}"
-                Text="{Binding PendingOperation}" />
+                Text="{Binding BusyNotice}" />
             <!-- 仅在 Desktop 下载存在真实百分比时出现；其余更新操作由壳遮罩的旋转图标承载，
                  不在这里退化为来回扫的不确定进度条（2026-09-15 实机投诉）。 -->
             <ProgressBar

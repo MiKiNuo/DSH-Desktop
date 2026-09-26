@@ -1,4 +1,5 @@
 using DshDesktop.Domain.Updates;
+using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using MiKiNuo.Mvi.Application.MVI.Command;
 using MiKiNuo.Mvi.Application.MVI.Store;
 using MiKiNuo.Mvi.Application.MVI.Threading;
@@ -17,12 +18,19 @@ public sealed partial class UpdatesViewModel
     /// 初始化 Updates ViewModel。
     /// </summary>
     /// <param name="store">Updates 状态存储。</param>
+    /// <param name="pluginsStore">Plugins 状态存储（兄弟 Store，只读订阅；候选 3 后插件更新的在飞与文案改由 PluginsState.Operation 承载，页内反馈须自此处投影，§11.2）。</param>
     /// <param name="uiDispatcher">UI 调度器。</param>
     public UpdatesViewModel(
         IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> store,
+        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore,
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
+        ArgumentNullException.ThrowIfNull(pluginsStore);
+
+        _ = BindSiblingState(pluginsStore, ApplyPluginsState);
+        ApplyPluginsState(pluginsStore.CurrentState);
+
         // 派生投影跟随状态属性联动刷新（同 Runtime/Dashboard 先例）。
         PropertyChanged += (_, args) =>
         {
@@ -33,6 +41,9 @@ public sealed partial class UpdatesViewModel
                 case nameof(Runtimes):
                     OnPropertyChanged(nameof(DshStage));
                     break;
+                case nameof(PendingOperation):
+                    OnPropertyChanged(nameof(BusyNotice));
+                    break;
             }
         };
     }
@@ -41,6 +52,33 @@ public sealed partial class UpdatesViewModel
     /// 获取 DSH Runtime 更新卡的展示阶段（派生自状态，视图 badge 与主按钮的唯一判定口径）。
     /// </summary>
     public DshRuntimeStage DshStage => Store.CurrentState.DshStage;
+
+    /// <summary>
+    /// 获取插件事务在飞文本投影（兄弟 Store PluginsState.PendingOperation；候选 3 后插件更新的页内反馈唯一来源）。
+    /// </summary>
+    public string? PluginOperationText => _pluginOperationText;
+
+    /// <summary>
+    /// 获取在飞操作提示：Updates 自有操作优先（Desktop 下载 / Runtime 安装），回落到插件事务文本。
+    /// 页内警告块（UpdatesView 顶部）绑定此属性，使插件更新期间恢复页内反馈（🟡1）。
+    /// </summary>
+    public string? BusyNotice => PendingOperation ?? _pluginOperationText;
+
+    /// <summary>
+    /// 最近一次投影的 Plugins 状态在飞文本（页内反馈数据源）。
+    /// </summary>
+    private string? _pluginOperationText;
+
+    private void ApplyPluginsState(PluginsState pluginsState)
+    {
+        string? text = pluginsState.PendingOperation;
+        if (!string.Equals(text, _pluginOperationText, StringComparison.Ordinal))
+        {
+            _pluginOperationText = text;
+            OnPropertyChanged(nameof(PluginOperationText));
+            OnPropertyChanged(nameof(BusyNotice));
+        }
+    }
 
     /// <summary>
     /// 获取更新检查状态。

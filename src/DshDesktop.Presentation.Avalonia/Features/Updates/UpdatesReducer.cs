@@ -36,9 +36,10 @@ public sealed partial class UpdatesReducer
     /// 处理检查更新完成回流意图。
     /// </summary>
     /// <remarks>
-    /// 刻意不动 <c>IsPluginUpdatePending</c>：该标记表示「待办属于插件操作」，只有插件操作自己的终态
-    /// （<see cref="HandlePluginOperationFinished"/>）才能清。检查完成只说明本次检查结束，
-    /// 与插件更新是否结束无关；在此清标记会让进行中的插件更新此后无法被终态清空（遮罩永久卡死）。
+    /// 只发起检查与刷新，<b>不碰 PendingOperation</b>：本意图有两个来源（用户按钮 / 启动期后台静默检查），
+    /// 与进行中的 Desktop 下载 / Runtime 安装 / 插件更新的区间必然重叠；它过去兼任「插件更新终态」，
+    /// 使在飞检查的完成回流与终态清空互相踩踏（2026-09-21 v0.1.8 实机：遮罩永久卡死 / 遮罩被提前释放）；
+    /// 终态清空已收口到 <see cref="HandlePluginOperationFinished"/>（候选 3 后该 handler 也不再触碰 PendingOperation）。
     /// </remarks>
     [MviReduce(typeof(UpdatesIntent.CheckUpdatesCompleted))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdatesCompleted(
@@ -65,27 +66,24 @@ public sealed partial class UpdatesReducer
 
     /// <summary>
     /// 处理插件事务终态意图（组合根订阅 <c>IPluginOrchestrator.OperationChanged</c> 后在 Completed 阶段发布）：
-    /// 释放本次插件操作自己的待办（壳遮罩 + 导航锁的唯一释放点）、按名摘除该插件的可更新行
-    /// （乐观刷新，不等慢网络检查回来，§23），并回流一次检查以对账。
+    /// 按名摘除该插件的可更新行（乐观刷新，不等慢网络检查回来，§23），并回流一次检查以对账。
     /// </summary>
     /// <remarks>
-    /// 终态清空用显式来源标记判定，而不是借用「发起检查」意图：否则检查与终态互相踩踏
-    /// （2026-09-21 v0.1.8 实机：遮罩永久卡死 / 被提前释放）。
+    /// 候选 3（消除"在飞操作"双轨）：插件更新的在飞与文案改由 <c>PluginsState.Operation</c> 单一承载，
+    /// 本 handler <b>完全不触碰 <see cref="UpdatesState.PendingOperation"/></b>——它只覆盖 UpdatesStore 自有操作
+    /// （Desktop 下载 / Runtime 安装 / 激活）。任何插件事务（更新 / 卸载 / 启停）的 Completed 终态都走这里，
+    /// 按名摘行 + 回流检查对卸载/启停终态同样安全：Desktop 下载进行中抵达的插件终态仅保留其自有待办，
+    /// 不会被误清（§22）。
     /// </remarks>
     [MviReduce(typeof(UpdatesIntent.PluginOperationFinished))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandlePluginOperationFinished(
         UpdatesState state,
         UpdatesIntent.PluginOperationFinished intent)
     {
-        // 仅当待办确属插件操作时才清空：Desktop 下载 / Runtime 安装 / 激活进行中抵达的插件事务终态
-        // 不得释放遮罩与导航锁（§22）。标记非真时它本就是 false，故可无条件写 false。
-        bool ownedByPluginOperation = state.IsPluginUpdatePending;
         return WithEffect(
             state with
             {
                 Status = UpdateStatus.Checking,
-                PendingOperation = ownedByPluginOperation ? null : state.PendingOperation,
-                IsPluginUpdatePending = false,
                 PluginUpdates = RemoveByName(state.PluginUpdates, intent.PluginName),
                 LastError = null,
             },
@@ -126,7 +124,6 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}…",
                 DesktopDownloadProgress = 0,
                 LastError = null,
-                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.DownloadAndApplyDesktopUpdate());
     }
@@ -141,8 +138,9 @@ public sealed partial class UpdatesReducer
     {
         // 防"终态事件之后的进度回流"复活 PendingOperation（§22：进度回调 fire-and-forget，操作失败/成功后
         // 仍可能有一个进度回调在队列中），也防"插件更新期间抵达的迟到进度回调"劫持待办：
-        // 后者会把待办改写成下载文案并清掉来源标记，使插件终态再也不能释放遮罩（2026-09-21 复审 P1）。
-        // 正确判据是「确在 Desktop 下载期」——DesktopDownloadProgress 仅下载期间非空（其余操作与终态一律 null）。
+        // 候选 3 后插件更新不再写 UpdatesState.PendingOperation，故迟到进度回调至多凭空创建下载待办，
+        // 守卫（PendingOperation 空 ⇒ 不在 Desktop 下载期）仍须拦下。正确判据是「确在 Desktop 下载期」
+        // ——DesktopDownloadProgress 仅下载期间非空（其余操作与终态一律 null）。
         if (state.PendingOperation is null || state.DesktopDownloadProgress is null)
         {
             return Unchanged(state);
@@ -152,7 +150,6 @@ public sealed partial class UpdatesReducer
         {
             DesktopDownloadProgress = intent.Percent,
             PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}（{intent.Percent}%）…",
-            IsPluginUpdatePending = false,
         });
     }
 
@@ -175,7 +172,6 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"安装 DSH Runtime {intent.Version}…",
                 DesktopDownloadProgress = null,
                 LastError = null,
-                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.InstallDshRuntime(intent.Version));
     }
@@ -195,7 +191,6 @@ public sealed partial class UpdatesReducer
                 PendingOperation = $"切换到 {label} 并重启 Runtime…",
                 DesktopDownloadProgress = null,
                 LastError = null,
-                IsPluginUpdatePending = false,
             },
             new UpdatesEffect.ActivateDshRuntime(intent.Version));
     }
@@ -208,13 +203,13 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.UpdatePlugin intent)
     {
+        // 候选 3：消除"在飞操作"双轨。插件更新的在飞与文案改由 PluginsState.Operation 单一承载，
+        // 故此处<b>不写</b> UpdatesState.PendingOperation（只发 UpdatePlugin effect 启动事务）；其余逻辑不变。
         return WithEffect(
             state with
             {
-                PendingOperation = $"更新 {intent.Name}…",
                 DesktopDownloadProgress = null,
                 LastError = null,
-                IsPluginUpdatePending = true,
             },
             new UpdatesEffect.UpdatePlugin(intent.Name));
     }
@@ -237,7 +232,6 @@ public sealed partial class UpdatesReducer
             Status = UpdateStatus.Idle,
             PendingOperation = null,
             DesktopDownloadProgress = null,
-            IsPluginUpdatePending = false,
         });
     }
 
@@ -255,7 +249,6 @@ public sealed partial class UpdatesReducer
             PendingOperation = null,
             DesktopDownloadProgress = null,
             LastError = intent.Error,
-            IsPluginUpdatePending = false,
         });
     }
 }

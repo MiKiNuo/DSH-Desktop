@@ -218,6 +218,73 @@ public sealed class AppShellViewModelTests
         await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsFalse();
     }
 
+    [Test]
+    public async Task PluginUpdate_PreparingStage_LocksMaskFromEntry()
+    {
+        // 🟡2：组合根在调用编排器前同步预置 Preparing 阶段（非终态），使壳遮罩自入口即锁定，
+        // 消除"UpdatePlugin 意图 → 编排器首个 OperationChanged(Preparing) 回流"前的遮罩锁定窗口。
+        // 此处锁定预置阶段的值类型（Preparing 非 Completed/Failed）确实拉起遮罩。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+
+        // 入口预置的 Preparing 阶段：遮罩立即锁定（不依赖编排器回流）。
+        pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Preparing, "dsh-foo", null, PluginOperationKind.Update),
+        });
+
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
+
+        // 终态回流后释放。
+        pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Completed, "dsh-foo", null, PluginOperationKind.Update),
+        });
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsFalse();
+    }
+
+    [Test]
+    public async Task PluginUpdate_InFlight_MaskNotReleasedByCheckUpdatesReflow()
+    {
+        // 🟡4（与 🟡2 协同）：插件更新在飞（PluginsState.Operation 非终态）时，UpdatesStore 的一次检查回流
+        // （PluginOperationFinished 自带的那次 CheckUpdates 完成）不得释放壳遮罩——在飞事实只看 PluginsState.Operation，
+        // 与 UpdatesStore 的检查回流无关。落点从"UpdatesState.PendingOperation"改到"PluginsState.Operation / 壳在飞投影"。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+
+        // 插件事务在飞（Preparing，正是 🟡2 入口预置的阶段）。
+        pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(PluginOperationStage.Preparing, "dsh-foo", null, PluginOperationKind.Update),
+        });
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
+
+        // 检查回流（PluginOperationFinished 自带的那次 CheckUpdates 完成，落在 UpdatesStore）。
+        updatesStore.Push(UpdatesState.Initial with
+        {
+            Status = UpdateStatus.Checking,
+            PluginUpdates = [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")],
+        });
+
+        // 遮罩不释放：在飞事实归因 PluginsState.Operation，与 UpdatesStore 的检查回流无关。
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
+    }
+
     // ===== 2026-09-15 架构审查 C3：插件事务 / 更新下载投影收进 AppShell =====
 
     [Test]
@@ -261,6 +328,43 @@ public sealed class AppShellViewModelTests
         await Assert.That(viewModel.UpdateDownloadPercent).IsEqualTo(42);
         await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新…");
         await Assert.That(shellStore.CurrentState.UpdateDownloadPercent).IsEqualTo(42);
+    }
+
+    [Test]
+    public async Task UpdateOperationText_FallsBackToPluginsPendingOperation()
+    {
+        // 候选 3 壳文案合成：Updates.PendingOperation ?? Plugins.PendingOperation。
+        // 仅 Plugins 有在飞（插件页行内"更新"只写 PluginsStore，Updates 待办为空）时，
+        // 壳遮罩副标题须回退到 Plugins.PendingOperation（"{stage}：{name}" 兜底）。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        await Assert.That(viewModel.UpdateOperationText).IsNull();
+
+        pluginsStore.Push(PluginsState.Initial with { PendingOperation = "卸载 dsh-foo…" });
+
+        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("卸载 dsh-foo…");
+        await Assert.That(shellStore.CurrentState.UpdateOperationText).IsEqualTo("卸载 dsh-foo…");
+    }
+
+    [Test]
+    public async Task UpdateOperationText_UpdatesPriorityOverPlugins()
+    {
+        // 壳文案合成优先序：两源皆在时 Updates.PendingOperation 优先（自有操作优先于兜底）。
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+
+        pluginsStore.Push(PluginsState.Initial with { PendingOperation = "卸载 dsh-foo…" });
+        updatesStore.Push(UpdatesState.Initial with { PendingOperation = "下载 Desktop 更新 0.2.0…" });
+
+        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");
+        await Assert.That(shellStore.CurrentState.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");
     }
 
     /// <summary>

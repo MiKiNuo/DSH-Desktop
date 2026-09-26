@@ -939,6 +939,29 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
+
+        // 🟡3：入口并发守卫（与 PluginsReducer.IsTransactionInFlight 同口径）。重复点击会并发跑多个
+        // InstallAsync，故在读到非终态事务时直接忽略并记日志，不启动新事务。
+        // 注意：崩溃漂移自愈路径**不**经此 handler（它绕过 MVI 守卫直接驱动编排器），不受此处影响。
+        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore =
+            _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
+        PluginsState pluginsState = pluginsStore.CurrentState;
+        if (pluginsState.Operation is
+            { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed })
+        {
+            Log.Logger.Warning(
+                "Plugin.Update.Ignored.InFlight: 插件事务进行中，忽略重复的更新请求 {Plugin}",
+                request.Name);
+            return true;
+        }
+
+        // 🟡2：PluginsReducer.HandleUpdatePlugin 已置 PendingOperation（页内反馈），但 Operation 字段要等
+        // 编排器首个 OperationChanged(Preparing) 回流才非空——其间壳遮罩的 PluginOperationInProgress 判定
+        // （看 Operation 非终态）为假，形成"遮罩锁定窗口"。此处同步预置 Preparing 阶段，使遮罩自入口即锁定；
+        // 编排器随后重发同一阶段（幂等，AppShell 按引用去重只处理一次），不重复副作用。不回退到 UpdatesState 双轨。
+        _ = pluginsStore.DispatchAsync(new PluginsIntent.PluginOperationChanged(
+            new PluginOperation(PluginOperationStage.Preparing, request.Name, null, PluginOperationKind.Update)));
+
         _ = await _pluginOrchestrator!
             .InstallAsync($"{request.Name}@latest", PluginOperationKind.Update, cancellationToken)
             .ConfigureAwait(false);

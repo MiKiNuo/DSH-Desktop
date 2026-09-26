@@ -23,6 +23,16 @@ public sealed partial class AppShellViewModel
     : MviViewModelBase<AppShellState, AppShellIntent, UnitEffect>
 {
     /// <summary>
+    /// 最近一次投影的 Updates 状态（壳文案合成的数据源之一）。
+    /// </summary>
+    private UpdatesState? _updatesProjection;
+
+    /// <summary>
+    /// 最近一次投影的 Plugins 状态（壳文案合成的兜底数据源：Updates.PendingOperation ?? Plugins.PendingOperation）。
+    /// </summary>
+    private PluginsState? _pluginsProjection;
+
+    /// <summary>
     /// 初始化应用壳 ViewModel。
     /// </summary>
     /// <param name="store">应用壳状态存储。</param>
@@ -195,6 +205,7 @@ public sealed partial class AppShellViewModel
 
     private void ApplyUpdatesState(UpdatesState updatesState)
     {
+        _updatesProjection = updatesState;
         int count = updatesState.AvailableCount;
 
         if (count != Store.CurrentState.UpdateBadge)
@@ -213,17 +224,13 @@ public sealed partial class AppShellViewModel
             _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
         }
 
-        if (updatesState.DesktopDownloadProgress != Store.CurrentState.UpdateDownloadPercent
-            || updatesState.PendingOperation != Store.CurrentState.UpdateOperationText)
-        {
-            _ = DispatchAsync(new AppShellIntent.UpdateDownloadChanged(
-                updatesState.DesktopDownloadProgress,
-                updatesState.PendingOperation));
-        }
+        SyncUpdateOperationTextProjection();
     }
 
     private void ApplyPluginsState(PluginsState pluginsState)
     {
+        _pluginsProjection = pluginsState;
+
         // Operation 引用在阶段推进时整体替换，以引用判等（MainWindow 据此做终态 toast 去重）。
         if (!ReferenceEquals(pluginsState.Operation, Store.CurrentState.PluginOperation))
         {
@@ -237,6 +244,26 @@ public sealed partial class AppShellViewModel
         if (pluginInProgress != Store.CurrentState.PluginOperationInProgress)
         {
             _ = DispatchAsync(new AppShellIntent.PluginOperationInProgressChanged(pluginInProgress));
+        }
+
+        // 插件事务在飞时壳副标题须回退到 Plugins.PendingOperation（候选 3：壳文案合成
+        // = Updates.PendingOperation ?? Plugins.PendingOperation）。
+        SyncUpdateOperationTextProjection();
+    }
+
+    /// <summary>
+    /// 同步壳遮罩副标题文案：<c>Updates.PendingOperation ?? Plugins.PendingOperation</c>
+    /// （候选 3 消除"在飞操作"双轨后，Updates 自有操作优先，Plugins 的"{stage}：{name}"兜底）。
+    /// 进度百分比仅来自 UpdatesStore.DesktopDownloadProgress。两兄弟 Store 任一变化都会触发本合成。
+    /// </summary>
+    private void SyncUpdateOperationTextProjection()
+    {
+        int? percent = _updatesProjection?.DesktopDownloadProgress;
+        string? text = _updatesProjection?.PendingOperation ?? _pluginsProjection?.PendingOperation;
+        if (percent != Store.CurrentState.UpdateDownloadPercent
+            || text != Store.CurrentState.UpdateOperationText)
+        {
+            _ = DispatchAsync(new AppShellIntent.UpdateDownloadChanged(percent, text));
         }
     }
 }
