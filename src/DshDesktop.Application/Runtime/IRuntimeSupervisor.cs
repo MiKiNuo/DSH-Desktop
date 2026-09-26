@@ -44,4 +44,18 @@ public interface IRuntimeSupervisor
     /// Runtime 进程退出时触发（透传自编排器；自发退出与主动停止都会触发）。
     /// </summary>
     event EventHandler<RuntimeExitedEventArgs>? Exited;
+
+    /// <summary>
+    /// 重接管存活的 Runtime（ADR-0005）：不拉起新进程，直接发布 Running 快照并接管健康监管。
+    /// </summary>
+    /// <param name="processId">存活 Runtime 进程 ID。</param>
+    /// <param name="port">监听端口。</param>
+    /// <param name="host">监听地址。</param>
+    /// <returns>接管后的快照。</returns>
+    RuntimeSnapshot AdoptRunning(int processId, int port, string host);
+
+    /// <summary>
+    /// 获取最近一次启动的阶段累计计时（Dashboard 启动 timeline 数据源）。
+    /// </summary>
+    IReadOnlyList<StartupStageTiming> LastStartupStageTimings { get; }
 }

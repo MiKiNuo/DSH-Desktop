@@ -1,4 +1,4 @@
-using DshDesktop.Presentation.Avalonia.Features.AppShell;
+using DshDesktop.Application.Runtime;
 
 namespace DshDesktop.Tests;
 

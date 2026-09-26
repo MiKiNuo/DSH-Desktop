@@ -4,7 +4,7 @@ namespace DshDesktop.Application.Runtime;
 /// 表示 Runtime 进程 / HTTP 探测端口（ADR-0005 重接管与诊断编排共用；
 /// Phase 8 评审 F9：原语自组合根下沉，真实实现落 Infrastructure）。
 /// </summary>
-public interface IRuntimeProbe
+public interface IRuntimeProbe : IDisposable
 {
     /// <summary>
     /// 按 PID 判定进程存活。

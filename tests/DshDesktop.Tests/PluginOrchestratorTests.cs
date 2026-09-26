@@ -565,5 +565,9 @@ public sealed class PluginOrchestratorTests
         {
             throw new NotSupportedException("Fake 不支持 RestartAsync。");
         }
+
+        public RuntimeSnapshot AdoptRunning(int processId, int port, string host) => Current;
+
+        public IReadOnlyList<StartupStageTiming> LastStartupStageTimings => [];
     }
 }

@@ -96,6 +96,10 @@ public sealed class RuntimeReattacherTests
 
         public bool IsProcessAlive(int processId) => ProcessAlive;
 
+        public void Dispose()
+        {
+        }
+
         public Task<bool> IsHttpAliveAsync(string host, int port, CancellationToken cancellationToken)
         {
             HttpProbeCount++;

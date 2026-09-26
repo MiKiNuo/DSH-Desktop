@@ -8,6 +8,7 @@ using DshDesktop.Application.Paths;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Application.Startup;
+using DshDesktop.Application.Updates;
 using DshDesktop.Application.Bootstrap;
 using DshDesktop.Domain.Diagnostics;
 using DshDesktop.Domain.Plugins;
@@ -52,12 +53,12 @@ public sealed partial class DshCompositionRoot
     private readonly Serilog.ILogger _dshStdoutLogger;
     private readonly Serilog.ILogger _dshStderrLogger;
 
-    private RuntimeSupervisor? _supervisor;
+    private IRuntimeSupervisor? _supervisor;
     private DshDesktopConfig? _config;
-    private PluginProfileRepository? _pluginRepository;
-    private PluginOrchestrator? _pluginOrchestrator;
-    private RuntimeRepository? _runtimeRepository;
-    private GitHubDesktopUpdater? _desktopUpdater;
+    private IPluginManager? _pluginRepository;
+    private IPluginOrchestrator? _pluginOrchestrator;
+    private IRuntimeRepository? _runtimeRepository;
+    private IDesktopUpdater? _desktopUpdater;
     private BalloonNotificationService? _notificationService;
     private DiagnosticsNotificationSubscriber? _notificationSubscriber;
 
@@ -66,12 +67,19 @@ public sealed partial class DshCompositionRoot
     private TimeSpan? _lastStartupElapsedRecorded;
     private TimeSpan? _lastTimelineElapsed;
 
-    // Phase 8 Issue 04：重接管探测（ADR-0005）/ 连续启动失败计数（ADR-0004 修订注）。
+    // Phase 8 Issue 04：重接管探测（ADR-0005）/ 连续启动失败计数（ADR-0004 修订注）已迁入
+    // Application 的 RuntimeRecoveryController（批 2b）；组合根只留端口适配与订阅转发。
     // Phase 8 评审 F9：探测原语下沉 Infrastructure 端口（RuntimeProbe 持有 HttpClient 并随 Shutdown 释放）。
-    private RuntimeProbe? _runtimeProbe;
-    private readonly StartupFailureTracker _failureTracker = new();
+    private IRuntimeProbe? _runtimeProbe;
 
     private RuntimeReattacher? _reattacher;
+
+    // 批 2b：Runtime 生命周期恢复编排（恢复环 / 失败计数 / 重接管判定 / 指标判定）迁入 Application；
+    // 组合根只留一行订阅转发 + 端口适配器（mediator / ConfigPersistence 闭包）。
+    private RuntimeRecoveryController? _recoveryController;
+
+    // 批 2a：装配好的运行时栈回流持有（SetupRuntimeAsync 工具链补全后按引用比较刷新绑定件）。
+    private RuntimeStack? _stack;
 
     // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表；非 Windows 平台为 null）。
     private IPathOpener? _pathOpener;
@@ -81,10 +89,6 @@ public sealed partial class DshCompositionRoot
     // 共用 ConfigPersistence 同一把锁，并发写不丢写（守卫 CompositionRootGuardTests）。
     private readonly ConfigPersistence _configPersistence = new();
 
-    // ADR-0007：Runtime 进入 Failed 后的有界自动恢复（每个失败周期最多 1 次自动重试）。
-    private static readonly TimeSpan RecoveryRetryDelay = TimeSpan.FromSeconds(3);
-    private readonly BoundedRecoveryPlanner _recoveryPlanner = new();
-
     // 引导期 Runtime 自愈登记册外壳（组合根拆分批 1）：收口三处引导期自愈 + 一处崩溃漂移自愈；
     // 崩溃自愈的「每会话每插件只试一次」状态内置于 Bootstrapper，故此处不再持有 _crashHealAttempted。
     private RuntimeBootstrapper? _bootstrapper;
@@ -93,7 +97,6 @@ public sealed partial class DshCompositionRoot
     // 避免应用退出后仍有排队中的恢复意图被派发。
     private readonly CancellationTokenSource _lifetimeSource = new();
     private IDisposable? _runtimeLifecycleSubscription;
-    private RuntimeLifecycle _lastLifecycle = RuntimeLifecycle.Stopped;
 
     /// <summary>
     /// 获取是否处于安全模式（抑制自动启动）。
@@ -272,87 +275,36 @@ public sealed partial class DshCompositionRoot
         // 处理器内部的 ThrowIfNotInitialized 守卫负责给出语义化错误。
         RegisterRoutes();
 
-        _config = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
-        ApplyTheme(_config.Theme);
-
-        // pnpm 不可用时用宿主 npm 自举到 <dataRoot>\tools\pnpm，并回写 config。
-        // 必须早于 ProfileSeeder（其 EnsureDependenciesAsync 会直用 pnpm，路径无效即抛 → 整个
-        // InitializeRuntimeAsync 抛 → 被 App.axaml.cs 吞成 Desktop.Bootstrap.Failed → 窗口能开但
-        // Runtime 全链路不初始化）；也早于 PluginProfileRepository / ProfileSnapshotter 构造时固化路径。
-        // 无可用 node（干净机器首启）时跳过自举：PnpmProvisioner 对空 nodePath 硬抛参数校验，
-        // 缺 node 是合法首启形态（SetupRuntimeAsync 负责补装），不该炸掉整个编排初始化
-        // （2026-09-19 v0.1.2 便携版首启崩溃回归，守卫 CompositionRootGuardTests）。
-        if (NodeProvisioner.IsNodeAvailable(_config.NodePath))
-        {
-            string? provisionedPnpm = await PnpmProvisioner
-                .EnsureAvailableAsync(
-                    DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (provisionedPnpm is not null
-                && !string.Equals(provisionedPnpm, _config.PnpmCjsPath, StringComparison.Ordinal))
-            {
-                _config.PnpmCjsPath = provisionedPnpm;
-                try
-                {
-                    // 持久化失败不得中断启动：内存里的 _config.PnpmCjsPath 已更新、本运行已生效；
-                    // 落盘只为下次。SaveConfigAsync 用不可重入 SemaphoreSlim，此处不在持锁区间，安全。
-                    await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception exception)
-                {
-                    Log.Logger.Warning(
-                        exception,
-                        "pnpm 自举路径已生效于本次运行，但配置落盘失败（下次启动将重新自举）：{Error}",
-                        exception.Message);
-                }
-            }
-        }
-        else
-        {
-            Log.Logger.Warning(
-                "无可用 node（NodePath={NodePath}），跳过 pnpm 自举；插件安装/更新与 profile 重建暂不可用，"
-                + "待用户经首启弹窗安装 Runtime 时补全。",
-                string.IsNullOrWhiteSpace(_config.NodePath) ? "<空>" : _config.NodePath);
-        }
-
-        await ProfileSeeder
-            .SeedIfNeededAsync(
-                _config.DshHome,
-                _config.SeedProfileFrom,
-                _config.NodePath,
-                _config.PnpmCjsPath,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        DshProcessHost processHost = new();
-        processHost.OutputReceived += OnProcessOutputReceived;
-
-        _supervisor = new RuntimeSupervisor(processHost, Log.Logger);
-        _runtimeProbe = new RuntimeProbe();
-        _reattacher = new RuntimeReattacher(_runtimeProbe, Log.Logger);
-        WirePluginStack();
-
-        CreateRuntimeRepository();
-
-        // 引导期 Runtime 自愈登记册（组合根拆分批 1）：把核心 bundles 修复 / ActiveRuntime 失效回退 /
-        // Profile 清单归一化三处引导期自愈收口到 RuntimeBootstrapper，按序执行。核心 bundles 失败只告警
-        // 不中断后续（语义见 Bootstrapper）；ActiveRuntime 回退必须在 CreateRuntimeRepository 之后
-        // （复用同一合法性规则枚举候选目录）。Profile 归一化原为 ProfileSeeder 的内部调用，迁出为登记册条目。
-        RuntimeBootstrapper bootstrapper = new RuntimeBootstrapper(
-            _pluginRepository!,
-            _pluginOrchestrator!,
-            new CompositionRootConfigAdapter(_config!, _configPersistence),
+        // 启动编排已收口到 RuntimeBootstrapper（组合根拆分批 2a）：配置加载 → 主题套用 →
+        // pnpm 门控自举 → Profile 种子 → 栈装配 → 引导期自愈登记册，全部经端口/工厂抽象完成；
+        // 组合根只留路由注册、装配工厂（App→Infrastructure 合法引用）与事件转发。
+        var configAdapter = new CompositionRootConfigAdapter(_configPersistence);
+        RuntimeBootstrapper bootstrapper = new(
+            configAdapter,
+            new CompositionRootThemeApplier(),
+            new CompositionRootNodeProvisioner(),
+            new CompositionRootPnpmProvisioner(),
+            new CompositionRootProfileSeeder(),
+            new CompositionRootStackFactory(this),
             new CompositionRootCrashProbeAdapter(),
             new ProfileManifestNormalizer(),
-            RuntimeRootDir,
-            Path.Combine(_config!.DshHome, "profiles", "web"),
+            DshDesktopConfigStore.DataRoot,
             Log.Logger);
         _bootstrapper = bootstrapper;
-        await bootstrapper.RunBootHealsAsync(cancellationToken).ConfigureAwait(false);
 
-        // GitHub Releases 自更新适配器（Inno 安装形态；未安装形态 no-op，不依赖 config）。
-        _desktopUpdater = new GitHubDesktopUpdater(Log.Logger, DesktopInfo.Version);
+        RuntimeStack stack = await bootstrapper.RunAsync(cancellationToken).ConfigureAwait(false);
+        _stack = stack;
+        _config = configAdapter.Loaded!;
+
+        stack.ProcessHost.OutputReceived += OnProcessOutputReceived;
+        _supervisor = stack.Supervisor;
+        _runtimeProbe = stack.RuntimeProbe;
+        _reattacher = stack.Reattacher;
+        _pluginRepository = stack.PluginRepository;
+        _pluginOrchestrator = stack.PluginOrchestrator;
+        _pluginOrchestrator.OperationChanged += OnPluginOperationChanged;
+        _runtimeRepository = stack.RuntimeRepository;
+        _desktopUpdater = stack.DesktopUpdater;
 
         // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表 Run 键）；非 Windows 降级 null。
         if (OperatingSystem.IsWindows())
@@ -370,9 +322,20 @@ public sealed partial class DshCompositionRoot
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         _ = store.DispatchAsync(new RuntimeIntent.SafeModeChanged(_config.SafeMode));
 
+        // 批 2b：Runtime 生命周期恢复编排迁入 Application 的 RuntimeRecoveryController（引导 ≠ 恢复）。
+        // 组合根只留一行订阅转发 + 端口适配器：恢复环 / 失败计数 / 重接管判定 / 指标判定经控制器，
+        // Store 派发与 config 落盘经适配器闭包 mediator / ConfigPersistence。
+        _recoveryController = new RuntimeRecoveryController(
+            new RecoveryHostAdapter(this),
+            new RecoveryConfigAdapter(this),
+            _supervisor,
+            _reattacher,
+            _lifetimeSource.Token);
+
         // ADR-0007：Failed 后的有界自动恢复。只在「新进入 Failed」这一沿触发一次自动重试，
         // 成功后重置——不构成崩溃重启循环（ADR-0004 的禁令不变，本项是其最小放宽）。
-        _runtimeLifecycleSubscription = store.States.Subscribe(OnRuntimeStateChanged);
+        // 订阅对象换为控制器后语义保持：Shutdown 先 Dispose 订阅再 Cancel _lifetimeSource。
+        _runtimeLifecycleSubscription = store.States.Subscribe(s => _recoveryController.OnState(s.Lifecycle));
 
         // Phase 8 Issue 04：三策略开关与运行环境信息回流（config 为权威源，覆盖 State.Initial 默认值）。
         _ = store.DispatchAsync(new RuntimeIntent.PoliciesLoaded(
@@ -405,42 +368,6 @@ public sealed partial class DshCompositionRoot
     }
 
     /// <summary>
-    /// 构造插件栈（仓库 + 快照器 + 编排器）。node / pnpm 路径在构造期固化，
-    /// 故首启安装补全工具链后必须重建（<see cref="SetupRuntimeAsync"/> 复用本方法）。
-    /// 调用前置：_config 与 _supervisor 已就绪。
-    /// </summary>
-    private void WirePluginStack()
-    {
-        _pluginRepository = new PluginProfileRepository(
-            Path.Combine(_config!.DshHome, "profiles", "web"),
-            _config.NodePath,
-            _config.PnpmCjsPath);
-        ProfileSnapshotter snapshotter = new(
-            Path.Combine(_config.DshHome, "profiles", "web"),
-            Path.Combine(Directory.GetParent(_config.DshHome)!.FullName, "backups"),
-            _config.NodePath,
-            _config.PnpmCjsPath ?? string.Empty);
-        _pluginOrchestrator = new PluginOrchestrator(
-            _pluginRepository,
-            snapshotter,
-            _supervisor!,
-            BuildLaunchOptions,
-            Log.Logger);
-        _pluginOrchestrator.OperationChanged += OnPluginOperationChanged;
-    }
-
-    /// <summary>
-    /// 构造 Runtime 仓库。node / npm 路径在构造期固化，工具链补全后必须重建
-    /// （<see cref="SetupRuntimeAsync"/> 复用本方法）。
-    /// </summary>
-    private void CreateRuntimeRepository() =>
-        _runtimeRepository = new RuntimeRepository(
-            RuntimeRootDir,
-            _config!.NodePath,
-            _config.NpmCjsPath,
-            _config.DshEntryPath);
-
-    /// <summary>
     /// 首启自检（每次启动都应调用）：是否存在任何可用 DSH Runtime（借用外部安装或自建 side-by-side）。
     /// true = 一个都没有，应向用户弹「下载并安装」提示。
     /// </summary>
@@ -455,11 +382,9 @@ public sealed partial class DshCompositionRoot
 
     /// <summary>
     /// 首启安装编排（用户在弹窗显式点「下载并安装」后由 App 调用）：
-    /// node 自举（干净机器才下载）→ pnpm 自举 → 工具链落盘 → 重建构造期固化路径的组件 →
-    /// 安装最新 DSH Runtime → 激活并落盘。
-    /// 与「装不了 ≠ 起不来」的内部组件约定不同：本方法是用户显式发起的安装动作，
-    /// 任何失败必须原样抛出（弹窗如实展示真实原因，静默失败会让用户误以为装好了）。
-    /// 成功返回后调用方可走正常 <see cref="AutoStartRuntimeAsync"/>。
+    /// 委托 RuntimeBootstrapper.RebuildStackAsync（批 2a）：node 自举（干净机器才下载）→ pnpm 自举 →
+    /// 工具链落盘 → 重建构造期固化路径的组件 → 安装最新 DSH Runtime → 激活并落盘。
+    /// 任何失败原样抛出（弹窗如实展示真实原因）。成功返回后调用方可走正常 <see cref="AutoStartRuntimeAsync"/>。
     /// </summary>
     public async Task SetupRuntimeAsync(
         IProgress<RuntimeSetupProgress>? progress = null,
@@ -467,48 +392,20 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
 
-        if (!NodeProvisioner.IsNodeAvailable(_config!.NodePath))
-        {
-            IProgress<int>? nodePercent = progress is null
-                ? null
-                : new Progress<int>(percent =>
-                    progress.Report(new RuntimeSetupProgress(RuntimeSetupText.DownloadingNodeStage, percent)));
-            NodeToolchain toolchain = await NodeProvisioner
-                .EnsureAvailableAsync(
-                    DshDesktopConfigStore.DataRoot, nodePercent, cancellationToken)
-                .ConfigureAwait(false);
-            _config.NodePath = toolchain.NodePath;
-            _config.NpmCjsPath = toolchain.NpmCjsPath;
-
-            // pnpm 自举（插件链用；Runtime 安装本身只用 npm）。失败只记日志不阻断——
-            // 插件功能降级 ≠ Runtime 装不上，下次启动 PnpmProvisioner 会重试。
-            string? provisionedPnpm = await PnpmProvisioner
-                .EnsureAvailableAsync(
-                    DshDesktopConfigStore.DataRoot, _config.NodePath, _config.NpmCjsPath, _config.PnpmCjsPath,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (provisionedPnpm is not null)
-            {
-                _config.PnpmCjsPath = provisionedPnpm;
-            }
-
-            await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-
-            // node/npm/pnpm 在组件构造期固化：工具链补全后必须重建，否则本运行插件链仍握空路径。
-            CreateRuntimeRepository();
-            WirePluginStack();
-        }
-
-        progress?.Report(new RuntimeSetupProgress(RuntimeSetupText.ResolvingVersionStage, -1));
-        string version = await _runtimeRepository!
-            .GetLatestVersionAsync(_config.DshChannel, cancellationToken)
+        RuntimeStack stack = await _bootstrapper!
+            .RebuildStackAsync(progress, cancellationToken)
             .ConfigureAwait(false);
-        progress?.Report(new RuntimeSetupProgress(RuntimeSetupText.InstallingRuntimeStage(version), -1));
-        await _runtimeRepository.InstallAsync(version, cancellationToken).ConfigureAwait(false);
 
-        _config.ActiveDshRuntime = version;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Runtime.Setup.Installed {Version}", version);
+        // 工具链补全触发了绑定件重建（record with 换实例）时才刷新字段并重新接线；
+        // node 本来就可用时栈未变，重复订阅同一编排器会让 OperationChanged 双发。
+        if (!ReferenceEquals(stack, _stack))
+        {
+            _stack = stack;
+            _pluginRepository = stack.PluginRepository;
+            _pluginOrchestrator = stack.PluginOrchestrator;
+            _pluginOrchestrator.OperationChanged += OnPluginOperationChanged;
+            _runtimeRepository = stack.RuntimeRepository;
+        }
     }
 
     /// <summary>
@@ -518,49 +415,14 @@ public sealed partial class DshCompositionRoot
     /// <param name="cancellationToken">取消标记。</param>
     public async Task AutoStartRuntimeAsync(CancellationToken cancellationToken = default)
     {
-        if (await TryReattachRuntimeAsync(cancellationToken).ConfigureAwait(false))
+        if (await _recoveryController!
+                .TryReattachAsync(cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         await store.DispatchAsync(new RuntimeIntent.StartRuntime(), cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// ADR-0005 重接管：按上次记录的 PID + 端口探测存活 Runtime（进程存活 + HTTP 健康检查）。
-    /// </summary>
-    /// <returns>已接管返回 true；否则（未找到 / 已退化清场）返回 false，走正常启动链。</returns>
-    private async Task<bool> TryReattachRuntimeAsync(CancellationToken cancellationToken)
-    {
-        if (_config is not { KeepRuntimeOnClose: true, LastRuntimePid: { } pid, LastRuntimePort: { } port } config
-            || _reattacher is null)
-        {
-            return false;
-        }
-
-        // Session URL 结论：dsh web 的 token 一次性且禁止落盘，DSH 不支持无 token 重连
-        // （Workbench 刷新亦需重取最新 URL）→ 按 ADR-0005 恒退化重启；canRestoreSessionUrl 恒 false。
-        ReattachOutcome outcome = await _reattacher
-            .TryReattachAsync(config.Host, pid, port, canRestoreSessionUrl: false, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (outcome is ReattachOutcome.Adopted)
-        {
-            // 当前不可达（canRestoreSessionUrl: false）；DSH 若支持无 token 重连，置 true 启用接管主路径。
-            RuntimeSnapshot adopted = _supervisor!.AdoptRunning(pid, port, config.Host);
-            IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
-            await store.DispatchAsync(
-                new RuntimeIntent.RuntimeStarted(adopted.ProcessId, adopted.Port, adopted.Url ?? string.Empty),
-                cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-
-        // NotFound / DegradedToRestart：清除陈旧记录，回退正常启动链。
-        config.LastRuntimePid = null;
-        config.LastRuntimePort = null;
-        SaveConfigInBackground(cancellationToken);
-        return false;
     }
 
     /// <summary>
@@ -843,7 +705,7 @@ public sealed partial class DshCompositionRoot
         RuntimeSnapshot snapshot = _supervisor!.Current;
         string profileDir = Path.Combine(_config!.DshHome, "profiles", "web");
         string host = _config.Host;
-        PluginProfileRepository pluginRepository = _pluginRepository!;
+        IPluginManager pluginRepository = _pluginRepository!;
 
         DiagnosisRunner runner = new(_diagnosticsHub);
         await runner.RunAsync(
@@ -1267,7 +1129,7 @@ public sealed partial class DshCompositionRoot
         try
         {
             RuntimeSnapshot snapshot = await start(cancellationToken).ConfigureAwait(false);
-            _failureTracker.RecordSuccess();
+            _recoveryController!.RecordSuccess();
             return snapshot;
         }
         catch (OperationCanceledException)
@@ -1285,26 +1147,13 @@ public sealed partial class DshCompositionRoot
                     .TryHealIncompatiblePluginCrashAsync(exception.Message, cancellationToken)
                     .ConfigureAwait(false))
             {
-                _failureTracker.RecordSuccess();
+                _recoveryController!.RecordSuccess();
                 return _supervisor!.Current;
             }
 
-            await OnStartupFailureAsync(cancellationToken).ConfigureAwait(false);
+            await _recoveryController!.RecordFailureAsync(cancellationToken).ConfigureAwait(false);
             throw;
         }
-    }
-
-    private async Task OnStartupFailureAsync(CancellationToken cancellationToken)
-    {
-        if (!_failureTracker.RecordFailure(_config!.AutoSafeModeOnFailure))
-        {
-            return;
-        }
-
-        Log.Logger.Error(
-            DiagnosticEventNames.RuntimeAutoSafeModeEntered + " ConsecutiveFailures={Count}",
-            _failureTracker.ConsecutiveFailures);
-        await SetSafeModeCoreAsync(true, cancellationToken).ConfigureAwait(false);
     }
 
     private RuntimeLaunchOptions BuildLaunchOptions()
@@ -1374,32 +1223,21 @@ public sealed partial class DshCompositionRoot
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         _ = store.DispatchAsync(new RuntimeIntent.RuntimeSnapshotReceived(snapshot));
 
-        // Phase 8 Issue 03：Dashboard 数据源——采样监控开关 + 启动耗时持久化 + timeline 投影。
-        UpdateMetricsMonitor(snapshot);
-        RecordStartupMetrics(snapshot);
-
-        // Phase 8 Issue 04（ADR-0005）：Running 快照的 PID/端口写入 config，作下次启动重接管探测依据
-        // （PID/端口非 Session 数据，允许落盘；Session URL 仍禁止落盘）。
-        PersistReattachTarget(snapshot);
-
-        // 事实对账：supervisor 是真实状态源。插件链路直连 supervisor 启动且不经 MVI 启动链，
-        // 可能导致进程已 Running 但 MVI 仍停在 Stopped/Failed 等。此处把状态与事实对齐，补发 RuntimeStarted。
-        if (snapshot.Lifecycle is RuntimeLifecycle.Running
-            && store.CurrentState.Lifecycle is not RuntimeLifecycle.Running)
-        {
-            DispatchRuntimeStarted(snapshot);
-        }
+        // 批 2b：指标监控启停 / 启动耗时去重派发 / 重接管目标落盘 / Running 对账派发迁入控制器，
+        // 组合根只做纯投影转发（RuntimeSnapshotReceived）与订阅转发。
+        _recoveryController!.OnSnapshot(snapshot, store.CurrentState.Lifecycle);
     }
 
     /// <summary>
     /// 以 supervisor 快照为事实源显式回流 RuntimeStarted（激活切换链路与快照对账共用；
-    /// RuntimeSnapshotReceived 刻意不迁移 Lifecycle，故须单独派发）。
+    /// RuntimeSnapshotReceived 刻意不迁移 Lifecycle，故须单独派发）。批 2b：对账经控制器 → 端口适配器。
     /// </summary>
     private void DispatchRuntimeStarted(RuntimeSnapshot snapshot)
-    {
-        _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStarted(
-            snapshot.ProcessId, snapshot.Port, snapshot.Url ?? string.Empty));
-    }
+        => DispatchRuntimeStarted(snapshot.ProcessId, snapshot.Port, snapshot.Url ?? string.Empty);
+
+    /// <summary>以拆解后的 PID/端口/URL 显式回流 RuntimeStarted（端口适配器与激活链路共用）。</summary>
+    private void DispatchRuntimeStarted(int? processId, int? port, string url)
+        => _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStarted(processId, port, url));
 
     /// <summary>
     /// 回流 Runtime 启动失败（激活切换链路用：整条链含回退都失败时，让页面看到真实原因
@@ -1408,20 +1246,6 @@ public sealed partial class DshCompositionRoot
     private void DispatchRuntimeFailed(string error)
     {
         _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeFailed(error));
-    }
-
-    private void PersistReattachTarget(RuntimeSnapshot snapshot)
-    {
-        if (_config is null
-            || snapshot is not { Lifecycle: RuntimeLifecycle.Running, ProcessId: { } pid, Port: { } port }
-            || (_config.LastRuntimePid == pid && _config.LastRuntimePort == port))
-        {
-            return;
-        }
-
-        _config.LastRuntimePid = pid;
-        _config.LastRuntimePort = port;
-        SaveConfigInBackground();
     }
 
     /// <summary>
@@ -1450,59 +1274,6 @@ public sealed partial class DshCompositionRoot
         }
     }
 
-    /// <summary>
-    /// 按生命周期开关进程指标采样（仅 Running 且已知 PID 时采样；其余状态停止）。
-    /// </summary>
-    private void UpdateMetricsMonitor(RuntimeSnapshot snapshot)
-    {
-        if (snapshot.Lifecycle is RuntimeLifecycle.Running && snapshot.ProcessId is { } processId)
-        {
-            _metricsMonitor?.Start(processId);
-        }
-        else
-        {
-            _metricsMonitor?.Stop();
-        }
-    }
-
-    /// <summary>
-    /// Runtime Ready 时：timeline 阶段计时投影 Dashboard；启动耗时写 config（旧值先回流为"上次"基准）。
-    /// </summary>
-    private void RecordStartupMetrics(RuntimeSnapshot snapshot)
-    {
-        if (snapshot.Lifecycle is RuntimeLifecycle.Starting)
-        {
-            // 新一次启动开始：重置去重守卫。
-            _lastStartupElapsedRecorded = null;
-            _lastTimelineElapsed = null;
-            return;
-        }
-
-        if (snapshot.StartupStage is not RuntimeStartupStage.Ready
-            || snapshot.StartupElapsed is not { } elapsed
-            || _config is null
-            || _supervisor is null)
-        {
-            return;
-        }
-
-        if (_lastTimelineElapsed != elapsed)
-        {
-            _lastTimelineElapsed = elapsed;
-            _ = ResolveDashboardStore().DispatchAsync(
-                new DashboardIntent.TimelineReceived(_supervisor.LastStartupStageTimings));
-        }
-
-        if (_lastStartupElapsedRecorded != elapsed)
-        {
-            _lastStartupElapsedRecorded = elapsed;
-            _ = ResolveDashboardStore().DispatchAsync(
-                new DashboardIntent.StartupElapsedRecorded(_config.LastStartupElapsedMs));
-            _config.LastStartupElapsedMs = (long)elapsed.TotalMilliseconds;
-            SaveConfigInBackground();
-        }
-    }
-
     private void OnMetricsSampled(object? sender, ProcessMetricsSample sample)
     {
         _ = ResolveDashboardStore().DispatchAsync(
@@ -1513,64 +1284,6 @@ public sealed partial class DshCompositionRoot
     {
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
         _ = store.DispatchAsync(new RuntimeIntent.RuntimeExited(args.ExitCode));
-    }
-
-    /// <summary>
-    /// Runtime 生命周期变化回调（ADR-0007）：Running 时重置恢复计数；「新进入 Failed」这一沿
-    /// 放行一次有界自动重试。只在沿上触发，避免同一 Failed 的重复通知反复计数。
-    /// </summary>
-    private void OnRuntimeStateChanged(RuntimeState state)
-    {
-        RuntimeLifecycle previous = _lastLifecycle;
-        _lastLifecycle = state.Lifecycle;
-
-        if (state.Lifecycle is RuntimeLifecycle.Running)
-        {
-            _recoveryPlanner.Reset();
-            return;
-        }
-
-        if (state.Lifecycle is not RuntimeLifecycle.Failed || previous is RuntimeLifecycle.Failed)
-        {
-            return;
-        }
-
-        if (!_recoveryPlanner.TryBeginAttempt())
-        {
-            return;
-        }
-
-        Log.Logger.Warning(
-            DiagnosticEventNames.RuntimeAutoRecoveryAttempted + " Attempt={Attempt}",
-            BoundedRecoveryPlanner.MaxAttemptsPerFailure);
-
-        _ = RetryStartAfterDelayAsync(_lifetimeSource.Token);
-    }
-
-    /// <summary>
-    /// 延迟后派发一次启动意图（ADR-0007）。短暂延迟避开「刚失败即重试」的紧密循环，
-    /// 也留给用户界面把 Failed 渲染出来。取消（应用退出）时静默放弃。
-    /// </summary>
-    private async Task RetryStartAfterDelayAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await Task.Delay(RecoveryRetryDelay, cancellationToken).ConfigureAwait(false);
-            await ResolveRuntimeStore()
-                .DispatchAsync(new RuntimeIntent.StartRuntime(), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            // 应用退出：放弃本次自动恢复（用户可见的 Failed 面板仍在，可手动重试）。
-        }
-        catch (Exception exception)
-        {
-            // fire-and-forget：任何意外都必须自己吞掉，绝不让恢复逻辑拖垮宿主。
-            Log.Logger.Warning(
-                DiagnosticEventNames.RuntimeAutoRecoveryAttempted + " DispatchFailed {Error}",
-                exception.Message);
-        }
     }
 
     private void OnProcessOutputReceived(object? sender, ProcessOutputLineEventArgs args)
@@ -1606,34 +1319,163 @@ public sealed partial class DshCompositionRoot
         }
     }
 
-    // ===== 组合根拆分批 1：RuntimeBootstrapper 的 Infrastructure 适配（App→Infrastructure 引用合法，
+    // ===== 组合根拆分批 2a：RuntimeBootstrapper 的 Infrastructure 适配（App→Infrastructure 引用合法，
     // 仅 Application 不得新增对 Infrastructure 的项目引用） =====
 
     /// <summary>
-    /// 把 <see cref="DshDesktopConfig"/> + <see cref="ConfigPersistence"/> 适配为引导期自愈所需的
-    /// 配置读写端口：读 DshEntryPath / ActiveDshRuntime，写经 ConfigPersistence 同一把锁落盘。
+    /// 把 <see cref="DshDesktopConfig"/> 适配为启动编排配置端口：LoadAsync 内部转调
+    /// <see cref="DshDesktopConfigStore.LoadOrDetectAsync"/> 并装载到可变槽位，编排期读写字段，
+    /// 落盘经 <see cref="ConfigPersistence"/> 同一把锁。组合根在 RunAsync 返回后取回
+    /// <see cref="Loaded"/> 赋给 _config（路由处理器消费具体类型）。
     /// </summary>
-    private sealed class CompositionRootConfigAdapter : IRuntimeBootstrapConfig
+    private sealed class CompositionRootConfigAdapter : IRuntimeConfig
     {
-        private readonly DshDesktopConfig _config;
         private readonly ConfigPersistence _persistence;
 
-        public CompositionRootConfigAdapter(DshDesktopConfig config, ConfigPersistence persistence)
-        {
-            _config = config;
-            _persistence = persistence;
-        }
+        public CompositionRootConfigAdapter(ConfigPersistence persistence) => _persistence = persistence;
 
-        public string? DshEntryPath => _config.DshEntryPath;
+        /// <summary>LoadAsync 完成后的已加载配置。</summary>
+        public DshDesktopConfig? Loaded { get; private set; }
+
+        private DshDesktopConfig Current => Loaded
+            ?? throw new InvalidOperationException("配置尚未加载。");
+
+        public async Task LoadAsync(CancellationToken cancellationToken) =>
+            Loaded = await DshDesktopConfigStore.LoadOrDetectAsync(cancellationToken).ConfigureAwait(false);
+
+        public string Theme => Current.Theme;
+
+        public string? DshEntryPath => Current.DshEntryPath;
 
         public string? ActiveDshRuntime
         {
-            get => _config.ActiveDshRuntime;
-            set => _config.ActiveDshRuntime = value;
+            get => Current.ActiveDshRuntime;
+            set => Current.ActiveDshRuntime = value;
         }
 
+        public string NodePath
+        {
+            get => Current.NodePath;
+            set => Current.NodePath = value;
+        }
+
+        public string? NpmCjsPath
+        {
+            get => Current.NpmCjsPath;
+            set => Current.NpmCjsPath = value;
+        }
+
+        public string? PnpmCjsPath
+        {
+            get => Current.PnpmCjsPath;
+            set => Current.PnpmCjsPath = value;
+        }
+
+        public string DshHome => Current.DshHome;
+
+        public string? SeedProfileFrom => Current.SeedProfileFrom;
+
+        public string DshChannel => Current.DshChannel;
+
         public Task PersistAsync(CancellationToken cancellationToken)
-            => _persistence.SaveAsync(_config, cancellationToken);
+            => _persistence.SaveAsync(Current, cancellationToken);
+    }
+
+    /// <summary>把组合根的 ApplyTheme（走 UI 线程 Post）适配为主题套用端口。</summary>
+    private sealed class CompositionRootThemeApplier : IThemeApplier
+    {
+        public void ApplyTheme(string theme) => DshCompositionRoot.ApplyTheme(theme);
+    }
+
+    /// <summary>把 <see cref="NodeProvisioner"/> 静态自举适配为 node 自举端口。</summary>
+    private sealed class CompositionRootNodeProvisioner : INodeProvisioner
+    {
+        public bool IsNodeAvailable(string? nodePath) => NodeProvisioner.IsNodeAvailable(nodePath);
+
+        public async Task<NodeProvisionResult> EnsureAvailableAsync(
+            string dataRoot, IProgress<int>? progress, CancellationToken cancellationToken)
+        {
+            NodeToolchain toolchain = await NodeProvisioner
+                .EnsureAvailableAsync(dataRoot, progress, cancellationToken)
+                .ConfigureAwait(false);
+            return new NodeProvisionResult(toolchain.NodePath, toolchain.NpmCjsPath);
+        }
+    }
+
+    /// <summary>把 <see cref="PnpmProvisioner"/> 静态自举适配为 pnpm 自举端口。</summary>
+    private sealed class CompositionRootPnpmProvisioner : IPnpmProvisioner
+    {
+        public Task<string?> EnsureAvailableAsync(
+            string dataRoot,
+            string nodePath,
+            string? npmCjsPath,
+            string? currentPnpmCjsPath,
+            CancellationToken cancellationToken) =>
+            PnpmProvisioner.EnsureAvailableAsync(
+                dataRoot, nodePath, npmCjsPath, currentPnpmCjsPath, cancellationToken);
+    }
+
+    /// <summary>把 <see cref="ProfileSeeder"/> 静态种子复制适配为种子端口。</summary>
+    private sealed class CompositionRootProfileSeeder : IProfileSeeder
+    {
+        public Task SeedIfNeededAsync(
+            string dshHome,
+            string? seedProfileFrom,
+            string nodePath,
+            string? pnpmCjsPath,
+            CancellationToken cancellationToken) =>
+            ProfileSeeder.SeedIfNeededAsync(dshHome, seedProfileFrom, nodePath, pnpmCjsPath, cancellationToken);
+    }
+
+    /// <summary>
+    /// 运行时栈装配工厂（原 WirePluginStack / CreateRuntimeRepository / 进程宿主与监管器构造）：
+    /// new Infrastructure 具体件的唯一位置。事件接线（OutputReceived / OperationChanged / 快照订阅）
+    /// 留在组合根本体——转发是组合根职责，工厂只产未接线的实例。
+    /// </summary>
+    private sealed class CompositionRootStackFactory(DshCompositionRoot outer) : IRuntimeStackFactory
+    {
+        public RuntimeStack Create(IRuntimeConfig config)
+        {
+            var processHost = new DshProcessHost();
+            var supervisor = new RuntimeSupervisor(processHost, Log.Logger);
+            var probe = new RuntimeProbe();
+            var reattacher = new RuntimeReattacher(probe, Log.Logger);
+            ToolchainBoundStack bound = RebuildToolchainBound(config, supervisor);
+
+            // GitHub Releases 自更新适配器（Inno 安装形态；未安装形态 no-op，不依赖 config）。
+            var desktopUpdater = new GitHubDesktopUpdater(Log.Logger, DesktopInfo.Version);
+            return new RuntimeStack(
+                processHost,
+                supervisor,
+                probe,
+                reattacher,
+                bound.PluginRepository,
+                bound.PluginOrchestrator,
+                bound.RuntimeRepository,
+                desktopUpdater);
+        }
+
+        public ToolchainBoundStack RebuildToolchainBound(IRuntimeConfig config, RuntimeSupervisor supervisor)
+        {
+            string profileDir = Path.Combine(config.DshHome, "profiles", "web");
+            var pluginRepository = new PluginProfileRepository(profileDir, config.NodePath, config.PnpmCjsPath);
+            var snapshotter = new ProfileSnapshotter(
+                profileDir,
+                Path.Combine(Directory.GetParent(config.DshHome)!.FullName, "backups"),
+                config.NodePath,
+                config.PnpmCjsPath ?? string.Empty);
+            var orchestrator = new PluginOrchestrator(
+                pluginRepository,
+                snapshotter,
+                supervisor,
+                outer.BuildLaunchOptions,
+                Log.Logger);
+            string runtimeRootDir = Path.Combine(
+                Directory.GetParent(config.DshHome)!.FullName, "runtime", "dsh");
+            var runtimeRepository = new RuntimeRepository(
+                runtimeRootDir, config.NodePath, config.NpmCjsPath, config.DshEntryPath);
+            return new ToolchainBoundStack(pluginRepository, orchestrator, runtimeRepository);
+        }
     }
 
     /// <summary>把 <see cref="IncompatiblePluginCrashProbe"/> 纯函数探针适配为崩溃肇事解析端口。</summary>
@@ -1641,5 +1483,101 @@ public sealed partial class DshCompositionRoot
     {
         public string? TryParseOffender(string startFailureMessage)
             => IncompatiblePluginCrashProbe.TryParseOffender(startFailureMessage);
+    }
+
+    /// <summary>
+    /// 恢复/重接管/指标判定的副作用端口适配器（批 2b）：闭包 mediator Store 与 ConfigPersistence，
+    /// 落地 Application 编排描述的"何时做什么"——Store 派发与 config 写唯一收口在组合根。
+    /// </summary>
+    private sealed class RecoveryHostAdapter : IRuntimeRecoveryHost
+    {
+        private readonly DshCompositionRoot _outer;
+
+        public RecoveryHostAdapter(DshCompositionRoot outer) => _outer = outer;
+
+        public Task RedispatchStartRuntimeAsync(CancellationToken cancellationToken)
+            => _outer.ResolveRuntimeStore()
+                .DispatchAsync(new RuntimeIntent.StartRuntime(), cancellationToken)
+                .AsTask();
+
+        public Task EnterSafeModeAsync(CancellationToken cancellationToken)
+            => _outer.SetSafeModeCoreAsync(true, cancellationToken);
+
+        public void DispatchRuntimeStarted(int? processId, int? port, string url)
+            => _outer.DispatchRuntimeStarted(processId, port, url);
+
+        public void DispatchTimeline(IReadOnlyList<StartupStageTiming> timings)
+            => _ = _outer.ResolveDashboardStore()
+                .DispatchAsync(new DashboardIntent.TimelineReceived(timings));
+
+        public void DispatchStartupElapsed(long? previousMs)
+            => _ = _outer.ResolveDashboardStore()
+                .DispatchAsync(new DashboardIntent.StartupElapsedRecorded(previousMs));
+
+        public void StartMetricsMonitor(int processId) => _outer._metricsMonitor?.Start(processId);
+
+        public void StopMetricsMonitor() => _outer._metricsMonitor?.Stop();
+
+        public Task PersistReattachTargetAsync(int processId, int port, CancellationToken cancellationToken)
+        {
+            if (_outer._config is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            _outer._config.LastRuntimePid = processId;
+            _outer._config.LastRuntimePort = port;
+            _outer.SaveConfigInBackground(cancellationToken);
+            return Task.CompletedTask;
+        }
+
+        public Task ClearReattachRecordAsync(CancellationToken cancellationToken)
+        {
+            if (_outer._config is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            // NotFound / DegradedToRestart：清除陈旧记录，回退正常启动链。
+            _outer._config.LastRuntimePid = null;
+            _outer._config.LastRuntimePort = null;
+            _outer.SaveConfigInBackground(cancellationToken);
+            return Task.CompletedTask;
+        }
+
+        public Task PersistStartupElapsedAsync(long elapsedMs, CancellationToken cancellationToken)
+        {
+            if (_outer._config is null)
+            {
+                return Task.CompletedTask;
+            }
+
+            _outer._config.LastStartupElapsedMs = elapsedMs;
+            _outer.SaveConfigInBackground(cancellationToken);
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// 恢复/重接管/指标判定所需的配置读取端口适配器（批 2b，只读投影）：把 DshDesktopConfig 适配进来，
+    /// Application 不新增对 Infrastructure 的项目引用。
+    /// </summary>
+    private sealed class RecoveryConfigAdapter : IRuntimeRecoveryConfig
+    {
+        private readonly DshCompositionRoot _outer;
+
+        public RecoveryConfigAdapter(DshCompositionRoot outer) => _outer = outer;
+
+        public bool KeepRuntimeOnClose => _outer._config?.KeepRuntimeOnClose == true;
+
+        public string Host => _outer._config?.Host ?? string.Empty;
+
+        public int? LastRuntimePid => _outer._config?.LastRuntimePid;
+
+        public int? LastRuntimePort => _outer._config?.LastRuntimePort;
+
+        public bool AutoSafeModeOnFailure => _outer._config?.AutoSafeModeOnFailure == true;
+
+        public long? LastStartupElapsedMs => _outer._config?.LastStartupElapsedMs;
     }
 }

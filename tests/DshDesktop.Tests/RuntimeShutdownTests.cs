@@ -67,5 +67,9 @@ public sealed class RuntimeShutdownTests
         {
             throw new NotSupportedException();
         }
+
+        public RuntimeSnapshot AdoptRunning(int processId, int port, string host) => Current;
+
+        public IReadOnlyList<StartupStageTiming> LastStartupStageTimings => [];
     }
 }

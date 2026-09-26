@@ -278,6 +278,8 @@ public sealed class RuntimeSupervisorTests
 
         public event EventHandler<RuntimeExitedEventArgs>? Exited;
 
+        public event EventHandler<ProcessOutputLineEventArgs>? OutputReceived;
+
         public Task<RuntimeStartResult> StartAsync(RuntimeLaunchOptions options, CancellationToken cancellationToken)
         {
             StartCount++;

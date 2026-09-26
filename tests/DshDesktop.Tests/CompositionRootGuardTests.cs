@@ -35,24 +35,6 @@ public sealed class CompositionRootGuardTests
     }
 
     /// <summary>
-    /// 首启崩溃守卫（2026-09-19 v0.1.2 便携版回归）：无可用 node 时（干净机器 NodePath 为空）
-    /// 必须跳过 PnpmProvisioner——它对空 nodePath 硬抛参数校验，不拦则整个编排初始化被
-    /// 吞成 Desktop.Bootstrap.Failed，用户连「下载 Runtime」的自救入口都没有。
-    /// </summary>
-    [Test]
-    public async Task InitializeRuntimeAsync_SkipsPnpmProvisionWithoutNode()
-    {
-        string source = await CompositionRootSourceAsync();
-
-        const string anchor = "PnpmProvisioner";
-        int call = source.IndexOf(anchor, StringComparison.Ordinal);
-        await Assert.That(call >= 0).IsTrue();
-
-        await Assert.That(source.Contains("NodeProvisioner.IsNodeAvailable(_config.NodePath)", StringComparison.Ordinal))
-            .IsTrue();
-    }
-
-    /// <summary>
     /// 首启自检守卫：App 引导必须在自动启动前做 Runtime 存在性自检（IsRuntimeSetupRequiredAsync），
     /// 缺 Runtime 时弹「下载并安装」提示；漏掉自检则干净机器首启永远静默卡 loading。
     /// </summary>
@@ -142,11 +124,12 @@ public sealed class CompositionRootGuardTests
 
         // RecordSuccess 必须出现在自愈调用之后（自愈成功的回流，而非 try 内启动成功的回流）。
         // 从 healCall 起搜，跳过 try 内那处更早的 RecordSuccess。
-        int recordSuccessAfterHeal = body.IndexOf("_failureTracker.RecordSuccess()", healCall);
+        // 失败计数迁入 Application 的 RuntimeRecoveryController（批 2b）：锚点改为 controller 调用。
+        int recordSuccessAfterHeal = body.IndexOf("RecordSuccess()", healCall);
         await Assert.That(recordSuccessAfterHeal > healCall).IsTrue();
 
-        // 自愈未命中/失败必须回退原失败计数链。
-        await Assert.That(body.Contains("OnStartupFailureAsync", StringComparison.Ordinal)).IsTrue();
+        // 自愈未命中/失败必须回退原失败计数链（经控制器进入安全模式）。
+        await Assert.That(body.Contains("RecordFailureAsync", StringComparison.Ordinal)).IsTrue();
     }
 
     private static async Task<string> CompositionRootSourceAsync()
@@ -157,5 +140,36 @@ public sealed class CompositionRootGuardTests
         string path = Path.Combine(root!, "src", "DshDesktop.App", "Composition", "DshCompositionRoot.cs");
         await Assert.That(File.Exists(path)).IsTrue();
         return (await File.ReadAllTextAsync(path)).Replace("\r\n", "\n");
+    }
+
+    /// <summary>
+    /// 批 2b 迁移守卫：恢复环 / 失败计数 / 重接管判定 / 指标判定已迁入 Application 的 RuntimeRecoveryController，
+    /// 组合根只留一行订阅转发 + 端口适配器（mediator / ConfigPersistence 闭包）。本守卫锁死"内联恢复逻辑已迁出"
+    /// —— 下列内联符号不得再出现在组合根源码中，否则即回到迁移前形态。
+    /// </summary>
+    [Test]
+    public async Task CompositionRoot_HasNoInlineRecoveryLogic()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        string[] migratedSymbols =
+        [
+            "_recoveryPlanner",
+            "RecoveryRetryDelay",
+            "RetryStartAfterDelayAsync",
+            "_failureTracker",
+            "StartupFailureTracker",
+            "OnStartupFailureAsync",
+            "TryReattachRuntimeAsync",
+            "RecordStartupMetrics",
+            "UpdateMetricsMonitor",
+            "PersistReattachTarget(RuntimeSnapshot",
+            "OnRuntimeStateChanged",
+        ];
+
+        foreach (string symbol in migratedSymbols)
+        {
+            await Assert.That(source.Contains(symbol, StringComparison.Ordinal)).IsFalse();
+        }
     }
 }

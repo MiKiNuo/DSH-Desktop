@@ -1,4 +1,4 @@
-namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
+namespace DshDesktop.Application.Runtime;
 
 /// <summary>
 /// 首启「缺少 DSH Runtime」弹窗的文案集中地（与 ConfirmDialogText 同一约定：

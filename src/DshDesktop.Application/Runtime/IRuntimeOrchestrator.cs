@@ -76,4 +76,10 @@ public interface IRuntimeOrchestrator
     /// Runtime 进程退出时触发（无论正常或异常）。
     /// </summary>
     event EventHandler<RuntimeExitedEventArgs>? Exited;
+
+    /// <summary>
+    /// DSH 进程每输出一行（stdout / stderr）时触发（§24 Diagnostics 事件源）。
+    /// 组合根订阅后经诊断流回流 Live 控制台（Session URL 在组合根侧打码，规则单源）。
+    /// </summary>
+    event EventHandler<ProcessOutputLineEventArgs>? OutputReceived;
 }

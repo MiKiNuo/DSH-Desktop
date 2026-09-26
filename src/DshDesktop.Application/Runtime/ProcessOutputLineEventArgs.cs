@@ -1,4 +1,4 @@
-namespace DshDesktop.Infrastructure.Runtime;
+namespace DshDesktop.Application.Runtime;
 
 /// <summary>
 /// 表示 DSH 进程一行输出的事件参数。
