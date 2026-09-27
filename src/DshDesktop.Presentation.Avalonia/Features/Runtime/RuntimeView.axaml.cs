@@ -16,7 +16,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.Runtime;
 /// <summary>
 /// 表示 Runtime 视图（Phase 8 Issue 04）：状态机 stepper 高亮（.current/.current-ok/.off）、
 /// 生命周期图标（Path，按状态取图标与着色）、Failed 恢复面板显隐由 View 依据 State 投影计算
-/// （表现逻辑属于 View）。停止 DSH 经二次确认后再执行命令。
+/// （表现逻辑属于 View）。停止 DSH 与主操作（启动 / 重启）均经二次确认或直发后再执行命令。
 /// </summary>
 public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 {
@@ -25,6 +25,7 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     private readonly Border _lifecycleIconBorder;
     private readonly Border _recoverPanel;
     private Button? _stopButton;
+    private RuntimePrimaryActionCommand? _primaryActionCommand;
 
     /// <summary>
     /// 初始化 Runtime 视图。
@@ -62,11 +63,24 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
             _stopButton.Command = new ConfirmStopCommand(this, _stopButton.Command);
         }
 
+        // 主操作按钮（启动 / 重启）：命令在 code-behind 接线，文案与可用性走 ViewModel 投影。
+        // 只在按钮尚无包装命令时创建，保证 _primaryActionCommand 恒为按钮真正持有的那一个实例
+        // （否则可用性通知会发给没人引用的对象，按钮停在旧可用性上）。
+        if (this.FindControl<Button>("PrimaryActionButton") is { } primaryActionButton
+            && primaryActionButton.Command is not RuntimePrimaryActionCommand)
+        {
+            _primaryActionCommand = new RuntimePrimaryActionCommand(this);
+            primaryActionButton.Command = _primaryActionCommand;
+        }
+
         PropertyChangedEventHandler handler = (_, args) =>
         {
             if (args.PropertyName is nameof(RuntimeViewModel.Lifecycle))
             {
                 ApplyIndicators(viewModel);
+
+                // 可用性由生命周期推导，必须主动通知按钮重查 CanExecute。
+                _primaryActionCommand?.RaiseCanExecuteChanged();
             }
         };
 
@@ -115,9 +129,9 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
     }
 
     /// <summary>
-    /// 构造停止确认弹窗的等宽上下文：PID 与端口取自现有 ViewModel 属性，取不到则退化为端口或版本信息。
+    /// 构造确认弹窗的等宽上下文：PID 与端口取自现有 ViewModel 属性，取不到则退化为端口或版本信息。
     /// </summary>
-    private string BuildStopSubject()
+    private string BuildRuntimeSubject()
     {
         int? pid = ViewModel.ProcessId;
         string? addr = ViewModel.Url is { } u
@@ -184,7 +198,7 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
 
         public async void Execute(object? parameter)
         {
-            bool ok = await ConfirmDialog.ShowAsync(ConfirmAction.StopRuntime, _owner.BuildStopSubject());
+            bool ok = await ConfirmDialog.ShowAsync(ConfirmAction.StopRuntime, _owner.BuildRuntimeSubject());
             if (ok)
             {
                 _inner?.Execute(parameter);
@@ -208,5 +222,53 @@ public sealed partial class RuntimeView : MviAvaloniaView<RuntimeViewModel>
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Runtime 页主操作按钮（启动 / 重启）的命令。可用性跟随生命周期投影，
+    /// 非法状态（Starting / Stopping / Recovering）禁用，使 Reducer 守卫对用户可见——
+    /// 此前按钮恒可用，点击被静默丢弃，用户看到的就是"点了没反应"（2026-09-28 症状）。
+    /// Stopped 直发 StartRuntime（非破坏性，不经确认）；Running / Failed 先二次确认再发 RestartRuntime。
+    /// </summary>
+    private sealed class RuntimePrimaryActionCommand : ICommand
+    {
+        private readonly RuntimeView _owner;
+
+        public RuntimePrimaryActionCommand(RuntimeView owner)
+        {
+            _owner = owner;
+        }
+
+        public bool CanExecute(object? parameter) => _owner.ViewModel.IsPrimaryActionEnabled;
+
+        public async void Execute(object? parameter)
+        {
+            RuntimeViewModel viewModel = _owner.ViewModel;
+
+            if (viewModel.CanStartRuntime)
+            {
+                viewModel.StartRuntimeCommand.Execute(null);
+                return;
+            }
+
+            if (!viewModel.CanRestartRuntime)
+            {
+                return;
+            }
+
+            // 弹窗是阻塞式交互，期间状态可能已变（崩溃 → Stopped、插件事务停止、他处操作）：
+            // 确认后必须复检，否则会向合法集外的状态发 RestartRuntime，又被 Reducer 静默丢弃 ——
+            // 正是本次要修的症状（状态已变时按用户不再操作处理，不补提示）。
+            if (await ConfirmDialog.ShowAsync(ConfirmAction.RestartRuntime, _owner.BuildRuntimeSubject())
+                && viewModel.CanRestartRuntime)
+            {
+                viewModel.RestartRuntimeCommand.Execute(null);
+            }
+        }
+
+        public event EventHandler? CanExecuteChanged;
+
+        /// <summary>通知按钮重查 <see cref="CanExecute"/>（生命周期变化时由 View 调用）。</summary>
+        public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
     }
 }

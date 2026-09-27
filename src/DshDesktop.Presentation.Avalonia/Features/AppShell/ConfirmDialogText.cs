@@ -11,6 +11,9 @@ public enum ConfirmAction
     /// <summary>停止 DSH Runtime（工作台断连）。</summary>
     StopRuntime,
 
+    /// <summary>重启 DSH Runtime（Stop+Start 原子编排，工作台短暂断连）。</summary>
+    RestartRuntime,
+
     /// <summary>切换并重启 Runtime 到另一版本（失败自动回退）。</summary>
     ActivateRuntime,
 }
@@ -26,6 +29,7 @@ public static class ConfirmDialogText
     {
         ConfirmAction.UninstallPlugin => "卸载插件",
         ConfirmAction.StopRuntime => "停止 DSH Runtime",
+        ConfirmAction.RestartRuntime => "重启 DSH Runtime",
         ConfirmAction.ActivateRuntime => "切换 Runtime 版本",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
@@ -41,6 +45,10 @@ public static class ConfirmDialogText
         ConfirmAction.StopRuntime =>
             "工作台会与 DSH Web UI 断开，正在进行的 Agent 会话随之中断。"
             + "会话内容不会丢失——仅追加日志已落盘，重连后可继续。",
+        ConfirmAction.RestartRuntime =>
+            "会先停止当前 Runtime 进程再重新拉起，工作台在这期间断连；"
+            + "会话内容不会丢失——仅追加日志已落盘，重连后可继续。"
+            + "若新进程启动失败，会停在 Failed，可在「运行环境」页用「禁用插件后恢复」处理。",
         ConfirmAction.ActivateRuntime =>
             "激活会立即切换 Runtime 并重启，失败将自动回退到当前版本。"
             + "为旧版构建的第三方插件可能加载失败，届时可用安全模式修复。",
@@ -52,18 +60,20 @@ public static class ConfirmDialogText
     {
         ConfirmAction.UninstallPlugin => "确认卸载",
         ConfirmAction.StopRuntime => "停止 Runtime",
+        ConfirmAction.RestartRuntime => "重启 Runtime",
         ConfirmAction.ActivateRuntime => "激活并重启",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };
 
     /// <summary>
-    /// 是否用危险样式渲染确认按钮。切换 Runtime 失败会自动回退，属高影响但非破坏性，
-    /// 因此走主按钮样式，避免「处处红色」导致用户对危险色脱敏。
+    /// 是否用危险样式渲染确认按钮。切换 Runtime / 重启 Runtime 失败会停在 Failed 并可恢复，
+    /// 属高影响但非破坏性，因此走主按钮样式，避免「处处红色」导致用户对危险色脱敏。
     /// </summary>
     public static bool IsDangerous(ConfirmAction action) => action switch
     {
         ConfirmAction.UninstallPlugin => true,
         ConfirmAction.StopRuntime => true,
+        ConfirmAction.RestartRuntime => false,
         ConfirmAction.ActivateRuntime => false,
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, null),
     };

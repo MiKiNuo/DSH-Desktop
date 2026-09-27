@@ -87,8 +87,15 @@
                     </Grid>
                 </Border>
                 <Border Classes="panel-body" Grid.Row="1">
-                    <StackPanel>
-                        <Border Classes="console">
+                    <!--
+                      必须用 Grid(*,Auto) 而不能是纵向 StackPanel：StackPanel 沿堆叠轴以「无限可用高」
+                      测量子级，会让 console 内 ListBox 的视口等于内容高 ⇒ 滚动范围归零，日志满一页即
+                      无法滚动，溢出部分被 Border.panel 的 ClipToBounds 静默裁掉。本页是全仓唯一没有
+                      外层 ScrollViewer 兜底的页面，这一行星号行就是滚动能力的唯一来源。
+                      守卫：DiagnosticsConsoleScrollGuardTests。
+                    -->
+                    <Grid RowDefinitions="*,Auto">
+                        <Border Classes="console" Grid.Row="0">
                             <ListBox x:Name="EntriesList" Classes="console" SelectionMode="Multiple">
                                 <!--
                                   Multiple 多选：左键拖选 / Shift 连选 / Ctrl 点选，Ctrl+C 复制选中行
@@ -125,13 +132,13 @@
                                 </ListBox.ItemTemplate>
                             </ListBox>
                         </Border>
-                        <Border x:Name="EmptyState" Classes="empty" IsVisible="False">
+                        <Border x:Name="EmptyState" Classes="empty" Grid.Row="1" IsVisible="False">
                             <StackPanel>
                                 <TextBlock Classes="empty-title" Text="没有匹配的事件" />
                                 <TextBlock Classes="empty-sub" Text="调整级别筛选或清空关键词" />
                             </StackPanel>
                         </Border>
-                    </StackPanel>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>

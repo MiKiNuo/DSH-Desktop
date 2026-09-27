@@ -40,6 +40,12 @@ public sealed partial class RuntimeViewModel
             switch (args.PropertyName)
             {
                 case nameof(Lifecycle):
+                    OnPropertyChanged(nameof(StatusSubtitle));
+                    OnPropertyChanged(nameof(CanStartRuntime));
+                    OnPropertyChanged(nameof(CanRestartRuntime));
+                    OnPropertyChanged(nameof(IsPrimaryActionEnabled));
+                    OnPropertyChanged(nameof(PrimaryActionText));
+                    break;
                 case nameof(ProcessId):
                 case nameof(Url):
                 case nameof(LastError):
@@ -158,6 +164,27 @@ public sealed partial class RuntimeViewModel
 
     /// <summary>获取 Desktop 版本（编译期常量）。</summary>
     public string DesktopVersion => DesktopInfo.Version;
+
+    // ===== 主操作按钮契约（2026-09-28：守卫必须可见，否则点击被静默丢弃） =====
+
+    /// <summary>
+    /// 获取主操作按钮当前是否走「启动」链路。仅 Stopped：Failed 时主操作走重启
+    /// （ADR-0004 的 Failed → 重启/恢复语义），因此这里刻意比 Reducer 的 StartRuntime
+    /// 合法集（Stopped | Failed）更窄。
+    /// </summary>
+    public bool CanStartRuntime => Lifecycle is RuntimeLifecycle.Stopped;
+
+    /// <summary>
+    /// 获取主操作按钮当前是否走「重启」链路（ADR-0004：仅 Running / Failed 合法，
+    /// 与 <see cref="RuntimeReducer"/> 的 HandleRestartRuntime 守卫一字不差）。
+    /// </summary>
+    public bool CanRestartRuntime => Lifecycle is RuntimeLifecycle.Running or RuntimeLifecycle.Failed;
+
+    /// <summary>获取主操作按钮是否可用（启动或重启任一合法；其余状态禁用＝守卫可见）。</summary>
+    public bool IsPrimaryActionEnabled => CanStartRuntime || CanRestartRuntime;
+
+    /// <summary>获取主操作按钮文案（Stopped 为「启动 DSH」，其余为「重启 Runtime」）。</summary>
+    public string PrimaryActionText => CanStartRuntime ? "启动 DSH" : "重启 Runtime";
 
     /// <summary>
     /// 获取启动 Runtime 命令。

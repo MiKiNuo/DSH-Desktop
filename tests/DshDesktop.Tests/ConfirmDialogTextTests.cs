@@ -4,7 +4,8 @@ namespace DshDesktop.Tests;
 
 /// <summary>
 /// 破坏性操作二次确认的文案与风险等级映射（视觉基准 docs/DSH-Desktop-UI-Redesign.html）。
-/// 这三处操作在重设计前无任何确认：卸载插件、停止 DSH Runtime、切换 Runtime 版本。
+/// 这三处操作在重设计前无任何确认：卸载插件、停止 DSH Runtime、切换 Runtime 版本；
+/// 重启 DSH Runtime 为 2026-09-28「点击重启无反馈」症状补齐的第四处。
 /// </summary>
 public sealed class ConfirmDialogTextTests
 {
@@ -53,6 +54,19 @@ public sealed class ConfirmDialogTextTests
     {
         // 停止 Runtime 会断开工作台，但仅追加日志已落盘，会话内容不丢失。
         await Assert.That(ConfirmDialogText.Body(ConfirmAction.StopRuntime)).Contains("会话");
+    }
+
+    [Test]
+    public async Task RestartRuntime_IsHighImpactButNotDestructive()
+    {
+        // 用户症状 2026-09-28：重启 Runtime 此前无任何确认，且非法状态下点击被静默丢弃。
+        // 重启 = Stop+Start 原子编排，失败只停在 Failed（可走「禁用插件后恢复」），非破坏性 ⇒ 主按钮样式；
+        // 但用户点确认前必须看到「工作台会短暂断连」与「会话不丢」两点。
+        await Assert.That(ConfirmDialogText.IsDangerous(ConfirmAction.RestartRuntime)).IsFalse();
+        await Assert.That(ConfirmDialogText.Title(ConfirmAction.RestartRuntime)).Contains("重启");
+        await Assert.That(ConfirmDialogText.Body(ConfirmAction.RestartRuntime)).Contains("会话");
+        await Assert.That(ConfirmDialogText.Body(ConfirmAction.RestartRuntime)).Contains("断");
+        await Assert.That(ConfirmDialogText.ConfirmLabel(ConfirmAction.RestartRuntime)).IsEqualTo("重启 Runtime");
     }
 }
 

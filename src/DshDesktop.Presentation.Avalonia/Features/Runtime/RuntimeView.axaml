@@ -26,10 +26,16 @@
                                 Grid.Column="1"
                                 Orientation="Horizontal"
                                 Spacing="8">
+                                <!--
+                                  主操作按钮：文案与可用性取自 ViewModel 投影（Stopped=启动 DSH；
+                                  Running/Failed=重启 Runtime；其余状态禁用，使 Reducer 守卫可见）。
+                                  命令只在 code-behind 由 RuntimePrimaryActionCommand 接线（启动直发 / 重启先二次确认），
+                                  此处刻意不绑 Command —— 绑定会覆盖包装命令，Stopped 点击将退回"静默丢弃"。
+                                -->
                                 <Button
+                                    x:Name="PrimaryActionButton"
                                     Classes="btn secondary"
-                                    Command="{Binding RestartRuntimeCommand}"
-                                    Content="重启 Runtime" />
+                                    Content="{Binding PrimaryActionText}" />
                                 <Button
                                     x:Name="StopButton"
                                     Classes="btn danger"
