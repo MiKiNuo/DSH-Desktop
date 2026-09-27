@@ -8,6 +8,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\src\DshDesktop.App\Logging\DiagnosticsSink.cs" Link="App\DiagnosticsSink.cs" />
+    <Compile Include="..\..\src\DshDesktop.App\Composition\DesktopSettings.cs" Link="App\DesktopSettings.cs" />
+    <Compile Include="..\..\src\DshDesktop.App\Composition\DesktopDiagnosticsCommands.cs" Link="App\DesktopDiagnosticsCommands.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="TUnit" Version="1.66.8" />

@@ -1,10 +1,5 @@
-using Avalonia.Controls;
-using Avalonia.Styling;
-using Avalonia.Threading;
 using DshDesktop.App.Logging;
 using DshDesktop.Application.Diagnostics;
-using DshDesktop.Application.Notifications;
-using DshDesktop.Application.Paths;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Application.Runtime;
 using DshDesktop.Application.Startup;
@@ -15,12 +10,10 @@ using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Domain.Updates;
 using DshDesktop.Infrastructure.Config;
-using DshDesktop.Infrastructure.Diagnostics;
 using DshDesktop.Infrastructure.Paths;
 using DshDesktop.Infrastructure.Plugins;
 using DshDesktop.Infrastructure.Runtime;
 using DshDesktop.Infrastructure.Updates;
-using DshDesktop.Platform.Windows.Notifications;
 using DshDesktop.Platform.Windows.Runtime;
 using DshDesktop.Platform.Windows.Startup;
 using DshDesktop.Presentation.Avalonia;
@@ -38,7 +31,6 @@ using MiKiNuo.Mvi.Application.MVI.Threading;
 using MiKiNuo.Mvi.Domain.MVI.Effect;
 using R3;
 using Serilog;
-using Serilog.Events;
 
 namespace DshDesktop.App.Composition;
 
@@ -49,9 +41,7 @@ namespace DshDesktop.App.Composition;
 public sealed partial class DshCompositionRoot
 {
     private readonly GeneratedMviContainer _container;
-    private readonly DiagnosticsHub _diagnosticsHub = new();
-    private readonly Serilog.ILogger _dshStdoutLogger;
-    private readonly Serilog.ILogger _dshStderrLogger;
+    private readonly DesktopDiagnostics _diagnostics = new();
 
     private IRuntimeSupervisor? _supervisor;
     private DshDesktopConfig? _config;
@@ -59,8 +49,7 @@ public sealed partial class DshCompositionRoot
     private IPluginOrchestrator? _pluginOrchestrator;
     private IRuntimeRepository? _runtimeRepository;
     private IDesktopUpdater? _desktopUpdater;
-    private BalloonNotificationService? _notificationService;
-    private DiagnosticsNotificationSubscriber? _notificationSubscriber;
+    private DesktopTrayLifetime? _trayLifetime;
 
     // Phase 8 Issue 03：Dashboard 数据源（进程指标采样 / 启动耗时持久化 / timeline 投影的去重守卫）。
     private ProcessMetricsMonitor? _metricsMonitor;
@@ -82,8 +71,7 @@ public sealed partial class DshCompositionRoot
     private RuntimeStack? _stack;
 
     // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表；非 Windows 平台为 null）。
-    private IPathOpener? _pathOpener;
-    private StartupRegistrationService? _startupRegistration;
+    private readonly DesktopSettings _settings;
 
     // config 落盘唯一入口：所有写路径（设置开关 / 版本切换 / 快照驱动的后台保存）
     // 共用 ConfigPersistence 同一把锁，并发写不丢写（守卫 CompositionRootGuardTests）。
@@ -130,60 +118,22 @@ public sealed partial class DshCompositionRoot
     {
         ArgumentNullException.ThrowIfNull(uiDispatcher);
 
-        // ADR-0009 旧数据根一次性迁移：必须先于日志目录确立（迁移把旧根 logs 一并搬走，
-        // 且迁移后日志必须落在**新**根）。失败不阻断——旧根还在，启动链按新根继续。
-        // 代价注记：UI 线程同步复制（junction 实体化会放大 pnpm node_modules 体积），
-        // 一次性、升级后首启发生；日志初始化依赖迁移完成故无法后台化（评审记录，可接受）。
-        LegacyDataRootMigrationOutcome migrationOutcome = DshDesktopConfigStore.MigrateLegacyDataRootIfNeeded();
-
-        // 日志目录统一走数据根（ADR-0003：Velopack 安装后落到 <安装根>\data\logs）。
-        string logDirectory = Path.Combine(DshDesktopConfigStore.DataRoot, "logs");
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .WriteTo.File(
-                Path.Combine(logDirectory, "dsh-desktop-.log"),
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 14)
-            .WriteTo.Sink(new DiagnosticsSink(_diagnosticsHub))
-            .CreateLogger();
+        // ADR-0009 旧数据根一次性迁移 + 日志目录确立（迁移必须先于日志目录，理由见 DesktopDiagnostics）。
+        // 失败不阻断——旧根还在，启动链按新根继续（评审记录，可接受）。
+        LegacyDataRootMigrationOutcome migrationOutcome = _diagnostics.InitializeLogging();
 
         _container = new GeneratedMviContainer(uiDispatcher);
 
-        _dshStdoutLogger = Log.Logger.ForContext("Source", nameof(DiagnosticSource.DshStdout));
-        _dshStderrLogger = Log.Logger.ForContext("Source", nameof(DiagnosticSource.DshStderr));
-
-        _diagnosticsHub.Events.Subscribe(OnDiagnosticEvent);
-        Log.Logger.Information("Desktop.Startup");
-        if (migrationOutcome.Attempted)
-        {
-            if (migrationOutcome.Error is null)
-            {
-                Log.Logger.Information(
-                    "Desktop.DataRoot.Migrated {DataRoot}", DshDesktopConfigStore.DataRoot);
-            }
-            else
-            {
-                Log.Logger.Warning(
-                    "Desktop.DataRoot.MigrationFailed {Error}（迁移未完成，按新根继续初始化）",
-                    migrationOutcome.Error);
-            }
-
-            // 迁移已生效、仅旧根残留未清理：与「迁移失败」语义不同（内容已在新根），分开上报，
-            // 否则日志会把已在用新根的用户指向旧根（2026-09-19 v0.1.6 实机）。
-            if (migrationOutcome.Error is null && migrationOutcome.CleanupError is { } cleanupError)
-            {
-                Log.Logger.Warning(
-                    "Desktop.DataRoot.LegacyRootNotRemoved {Error}（内容已并入新根，旧根残留可手工删除）",
-                    cleanupError);
-            }
-
-            // 迁移继承的自动安全模式被清掉：不清会让 bootstrap 跳过自动启动，用户只看到"窗口开了、
-            // Runtime 不动"（清除本身发生在日志起效之前，故在此补记）。
-            if (migrationOutcome.SafeModeCleared)
-            {
-                Log.Logger.Information("Desktop.DataRoot.InheritedSafeModeCleared");
-            }
-        }
+        // 子 logger 与诊断回流须晚于日志初始化与容器就绪：Desktop.Startup / 迁移结果日志订阅后才写。
+        _diagnostics.InitializeSubLoggers();
+        _diagnostics.SubscribeToStore(diagnosticEvent =>
+            _ = _container.Resolve<IMviStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect>>()
+                .DispatchAsync(new DiagnosticsIntent.DiagnosticEventReceived(diagnosticEvent)));
+        _diagnostics.LogStartup(migrationOutcome);
+        _settings = new DesktopSettings(
+            () => { ThrowIfNotInitialized(); return _config!; },
+            _configPersistence,
+            enabled => _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.SafeModeChanged(enabled)));
     }
 
     /// <summary>
@@ -197,69 +147,14 @@ public sealed partial class DshCompositionRoot
         MainWindow window = new(shellViewModel, _container, () => MinimizeToTrayOnClose);
 
         // Windows 平台集成（Phase 7）：托盘单图标 + 气泡通知（Issue 03/04，图标合并见下）。
+        // 通知资源收口到 DesktopTrayLifetime（批 1 宿主侧拆分），NotificationsEnabled 延迟配置读取。
         if (OperatingSystem.IsWindows())
         {
-            ConfigureTrayIcon(window, shellViewModel);
+            _trayLifetime = new DesktopTrayLifetime(
+                window, shellViewModel, _diagnostics.Hub, () => _config?.NotificationsEnabled ?? true);
         }
 
         return window;
-    }
-
-    /// <summary>
-    /// 接线托盘图标与气泡通知（Phase 7 Issue 03/04）：托盘静态单图标 + tooltip 投影 Runtime
-    /// 生命周期（复用 AppShell RuntimeIndicator 投影链路）；菜单 = 显示主窗口 / 退出（退出走
-    /// desktop.Exit → Shutdown 现状链路）；气泡订阅诊断事件流，点击仅置前主窗口（Issue 04
-    /// 改为非常驻图标以合并双图标）。
-    /// </summary>
-    private void ConfigureTrayIcon(MainWindow window, AppShellViewModel shellViewModel)
-    {
-        TrayIcon trayIcon = new()
-        {
-            Icon = new WindowIcon(new MemoryStream(ProcessIcon.LoadIcoBytes())),
-            ToolTipText = TrayTooltipText.Format(shellViewModel.RuntimeIndicator),
-        };
-        NativeMenu trayMenu = new();
-        NativeMenuItem showItem = new("显示主窗口");
-        showItem.Click += (_, _) => ShowMainWindow(window);
-        NativeMenuItem exitItem = new("退出");
-        // Phase 8 Issue 05：托盘退出是显式真实退出意图，须绕过"最小化到托盘"关窗拦截。
-        exitItem.Click += (_, _) => window.RequestExit();
-        trayMenu.Add(showItem);
-        trayMenu.Add(exitItem);
-        trayIcon.Menu = trayMenu;
-        TrayIcon.SetIcons(global::Avalonia.Application.Current!, [trayIcon]);
-
-        shellViewModel.PropertyChanged += (_, args) =>
-        {
-            if (args.PropertyName == nameof(AppShellViewModel.RuntimeIndicator))
-            {
-                trayIcon.ToolTipText = TrayTooltipText.Format(shellViewModel.RuntimeIndicator);
-            }
-        };
-
-        _notificationService = new BalloonNotificationService(() => ShowMainWindow(window));
-        _notificationSubscriber = new DiagnosticsNotificationSubscriber(
-            _diagnosticsHub,
-            _notificationService,
-            () => _config?.NotificationsEnabled ?? true);
-    }
-
-    /// <summary>
-    /// 置前主窗口（托盘菜单 / 气泡点击共用；Q2 决策：不导航）。
-    /// </summary>
-    private static void ShowMainWindow(MainWindow window)
-    {
-        if (!window.IsVisible)
-        {
-            window.Show();
-        }
-
-        if (window.WindowState == WindowState.Minimized)
-        {
-            window.WindowState = WindowState.Normal;
-        }
-
-        window.Activate();
     }
 
     /// <summary>
@@ -296,7 +191,7 @@ public sealed partial class DshCompositionRoot
         _stack = stack;
         _config = configAdapter.Loaded!;
 
-        stack.ProcessHost.OutputReceived += OnProcessOutputReceived;
+        stack.ProcessHost.OutputReceived += _diagnostics.OnProcessOutputReceived;
         _supervisor = stack.Supervisor;
         _runtimeProbe = stack.RuntimeProbe;
         _reattacher = stack.Reattacher;
@@ -309,8 +204,8 @@ public sealed partial class DshCompositionRoot
         // Phase 8 Issue 05：Settings 页端口（打开目录 / 开机自启注册表 Run 键）；非 Windows 降级 null。
         if (OperatingSystem.IsWindows())
         {
-            _pathOpener = new ExplorerPathOpener();
-            _startupRegistration = new StartupRegistrationService(
+            _settings.PathOpener = new ExplorerPathOpener();
+            _settings.StartupRegistration = new StartupRegistrationService(
                 new RunKeyStartupRegistrar(),
                 () => Environment.ProcessPath ?? string.Empty);
         }
@@ -438,8 +333,7 @@ public sealed partial class DshCompositionRoot
         _runtimeLifecycleSubscription?.Dispose();
         _lifetimeSource.Cancel();
 
-        _notificationSubscriber?.Dispose();
-        _notificationService?.Dispose();
+        _trayLifetime?.Dispose();
         _metricsMonitor?.Dispose();
         _runtimeProbe?.Dispose();
 
@@ -486,13 +380,13 @@ public sealed partial class DshCompositionRoot
         mediator.Register<RestartRuntimeRequest, RuntimeSnapshot>(HandleRestartRuntimeAsync);
         mediator.Register<SetSafeModeRequest, bool>(HandleSetSafeModeAsync);
         mediator.Register<SetKeepRuntimeOnCloseRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.KeepRuntimeOnClose = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.KeepRuntimeOnClose = request.Enabled,
                 "Runtime.KeepRuntimeOnClose {Enabled}", request.Enabled));
         mediator.Register<SetAutoSafeModeOnFailureRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.AutoSafeModeOnFailure = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.AutoSafeModeOnFailure = request.Enabled,
                 "Runtime.AutoSafeModeOnFailure {Enabled}", request.Enabled));
         mediator.Register<SetCheckUpdatesOnStartupRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.CheckUpdatesOnStartup = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.CheckUpdatesOnStartup = request.Enabled,
                 "Runtime.CheckUpdatesOnStartup {Enabled}", request.Enabled));
         mediator.Register<GetPluginListRequest, IReadOnlyList<PluginInfo>>(HandleGetPluginListAsync);
         mediator.Register<SetPluginEnabledRequest, IReadOnlyList<PluginInfo>>(HandleSetPluginEnabledAsync);
@@ -503,28 +397,31 @@ public sealed partial class DshCompositionRoot
         mediator.Register<InstallDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleInstallDshRuntimeAsync);
         mediator.Register<ActivateDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleActivateDshRuntimeAsync);
         mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
-        mediator.Register<GetSettingsInfoRequest, SettingsInfo>(HandleGetSettingsInfo);
+        mediator.Register<GetSettingsInfoRequest, SettingsInfo>(_settings.HandleGetSettingsInfo);
         mediator.Register<SetDshChannelRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.DshChannel = request.Channel,
+            _settings.SetConfigFlagAsync(request, ct, c => c.DshChannel = request.Channel,
                 "Settings.DshChannel {Channel}", request.Channel));
         mediator.Register<SetNotificationsEnabledRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.NotificationsEnabled = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.NotificationsEnabled = request.Enabled,
                 "Settings.Notifications {Enabled}", request.Enabled));
         mediator.Register<SetMinimizeToTrayOnCloseRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.MinimizeToTrayOnClose = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.MinimizeToTrayOnClose = request.Enabled,
                 "Settings.MinimizeToTrayOnClose {Enabled}", request.Enabled));
-        mediator.Register<SetThemeRequest, bool>(HandleSetThemeAsync);
-        mediator.Register<SetLaunchOnStartupRequest, bool>(HandleSetLaunchOnStartupAsync);
+        mediator.Register<SetThemeRequest, bool>(_settings.HandleSetThemeAsync);
+        mediator.Register<SetLaunchOnStartupRequest, bool>(_settings.HandleSetLaunchOnStartupAsync);
         mediator.Register<SetBackgroundUpdateCheckRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.BackgroundUpdateCheck = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.BackgroundUpdateCheck = request.Enabled,
                 "Settings.BackgroundUpdateCheck {Enabled}", request.Enabled));
         mediator.Register<SetAutoDownloadUpdatesRequest, bool>((request, ct) =>
-            SetConfigFlagAsync(request, ct, c => c.AutoDownloadUpdates = request.Enabled,
+            _settings.SetConfigFlagAsync(request, ct, c => c.AutoDownloadUpdates = request.Enabled,
                 "Settings.AutoDownloadUpdates {Enabled}", request.Enabled));
-        mediator.Register<OpenPathRequest, bool>(HandleOpenPath);
-        mediator.Register<RunDiagnosisRequest, bool>(HandleRunDiagnosisAsync);
-        mediator.Register<ExportDiagnosticsBundleRequest, bool>(HandleExportDiagnosticsBundle);
-        mediator.Register<OpenLogsDirectoryRequest, bool>(HandleOpenLogsDirectory);
+        mediator.Register<OpenPathRequest, bool>(_settings.HandleOpenPath);
+        var diagnosticsCommands = new DesktopDiagnosticsCommands(
+            _diagnostics.Hub, () => { ThrowIfNotInitialized(); return _config!; },
+            () => _supervisor!, () => _runtimeProbe!, () => _pluginRepository!, _settings);
+        mediator.Register<RunDiagnosisRequest, bool>(diagnosticsCommands.HandleRunDiagnosisAsync);
+        mediator.Register<ExportDiagnosticsBundleRequest, bool>(diagnosticsCommands.HandleExportDiagnosticsBundle);
+        mediator.Register<OpenLogsDirectoryRequest, bool>(diagnosticsCommands.HandleOpenLogsDirectory);
         mediator.Register<DownloadAndApplyDesktopUpdateRequest, bool>(HandleDownloadAndApplyDesktopUpdateAsync);
         mediator.Register<NavigateRequest, bool>(HandleNavigate);
     }
@@ -577,173 +474,6 @@ public sealed partial class DshCompositionRoot
         // 应用并重启：进程退出，此行正常路径不返回之后的托管逻辑（§22 三套版本独立）。
         _desktopUpdater.ApplyAndRestart();
         return true;
-    }
-
-    private ValueTask<SettingsInfo> HandleGetSettingsInfo(
-        GetSettingsInfoRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-
-        // Phase 8 Issue 05：数据与安装目录卡三行路径从实际配置推导（不写死）——
-        // 插件目录 = profiles\web\node_modules；Runtime 目录含当前激活版本子目录（借用外部安装时为根）。
-        string pluginsDirectory = Path.Combine(_config!.DshHome, "profiles", "web", "node_modules");
-        string dshRuntimeDirectory = _config.ActiveDshRuntime is { Length: > 0 } active
-            ? Path.Combine(RuntimeRootDir, active)
-            : RuntimeRootDir;
-
-        return ValueTask.FromResult(new SettingsInfo(
-            _config.SafeMode,
-            _config.NotificationsEnabled,
-            _config.DshChannel,
-            _config.NodePath,
-            _config.DshHome,
-            DshDesktopConfigStore.DataRoot,
-            pluginsDirectory,
-            dshRuntimeDirectory,
-            _config.MinimizeToTrayOnClose,
-            _config.LaunchOnStartup,
-            _config.BackgroundUpdateCheck,
-            _config.AutoDownloadUpdates,
-            _config.Theme));
-    }
-
-    // ===== Phase 8 Issue 05：桌面行为 / 更新策略开关持久化（照 SetNotificationsEnabled 链路） =====
-
-    /// <summary>
-    /// 处理修改外观主题请求（Phase 9：即时套用 + 落盘持久，重启后经 InitializeRuntimeAsync 回流）。
-    /// </summary>
-    private async ValueTask<bool> HandleSetThemeAsync(
-        SetThemeRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.Theme = request.Theme;
-        ApplyTheme(request.Theme);
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Settings.Theme {Theme}", request.Theme);
-        return true;
-    }
-
-    /// <summary>
-    /// 套用外观主题到当前 Application（RequestedThemeVariant 为样式属性，须走 UI 线程；
-    /// Application.Current 未就绪时安全跳过）。
-    /// </summary>
-    private static void ApplyTheme(string theme)
-    {
-        global::Avalonia.Application? app = global::Avalonia.Application.Current;
-        if (app is null)
-        {
-            return;
-        }
-
-        ThemeVariant variant = string.Equals(theme, "Light", StringComparison.Ordinal)
-            ? ThemeVariant.Light
-            : ThemeVariant.Dark;
-
-        Dispatcher.UIThread.Post(() => app.RequestedThemeVariant = variant);
-    }
-
-    private async ValueTask<bool> HandleSetLaunchOnStartupAsync(
-        SetLaunchOnStartupRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.LaunchOnStartup = request.Enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-
-        // 注册表 Run 键写/删（仅安装形态有意义；未安装形态如实写入当前 exe 路径）。
-        // 写失败抛错走失败回流：config 已落盘，UI 乐观状态不回滚，仅提示错误。
-        _startupRegistration?.SetEnabled(request.Enabled);
-        Log.Logger.Information("Settings.LaunchOnStartup {Enabled}", request.Enabled);
-        return true;
-    }
-
-    /// <summary>
-    /// 处理打开目录请求（Phase 8 Issue 05，§4.1：经 IPathOpener 端口，Presentation 不起进程）。
-    /// </summary>
-    private ValueTask<bool> HandleOpenPath(OpenPathRequest request, CancellationToken cancellationToken)
-    {
-        if (_pathOpener is null)
-        {
-            throw new InvalidOperationException("当前平台不支持打开目录。");
-        }
-
-        _pathOpener.Open(request.Path);
-        return ValueTask.FromResult(true);
-    }
-
-    // ===== Phase 8 Issue 06：诊断中心三按钮（运行诊断 / 导出诊断包 / 打开日志目录） =====
-
-    private static string LogDirectory => Path.Combine(DshDesktopConfigStore.DataRoot, "logs");
-
-    /// <summary>
-    /// 处理运行诊断请求：编排健康检查序列（复用现有探测原语），结果经诊断事件流回流 Live 控制台。
-    /// </summary>
-    private async ValueTask<bool> HandleRunDiagnosisAsync(
-        RunDiagnosisRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-
-        RuntimeSnapshot snapshot = _supervisor!.Current;
-        string profileDir = Path.Combine(_config!.DshHome, "profiles", "web");
-        string host = _config.Host;
-        IPluginManager pluginRepository = _pluginRepository!;
-
-        DiagnosisRunner runner = new(_diagnosticsHub);
-        await runner.RunAsync(
-        [
-            new DiagnosisCheck("Runtime 进程健康",
-                _ => Task.FromResult(snapshot.Lifecycle is RuntimeLifecycle.Running)),
-            new DiagnosisCheck("HTTP 端点可达",
-                token => snapshot.Port is { } port
-                    ? _runtimeProbe!.IsHttpAliveAsync(host, port, token)
-                    : Task.FromResult(false)),
-            new DiagnosisCheck("Profile 完整性",
-                _ => Task.FromResult(File.Exists(Path.Combine(profileDir, "package.json")))),
-            new DiagnosisCheck("插件依赖检查",
-                async token =>
-                {
-                    _ = await pluginRepository.ListPluginsAsync(token).ConfigureAwait(false);
-                    return true;
-                }),
-        ], cancellationToken).ConfigureAwait(false);
-        return true;
-    }
-
-    /// <summary>
-    /// 处理导出诊断包请求：打包 data/logs 为 zip（成败均写诊断流，用户在 Live 控制台可见）。
-    /// </summary>
-    private ValueTask<bool> HandleExportDiagnosticsBundle(
-        ExportDiagnosticsBundleRequest request,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            DiagnosticsBundleExporter.Export(LogDirectory, request.DestinationPath);
-            _diagnosticsHub.Publish(new DiagnosticEvent(
-                DateTimeOffset.Now, DiagnosticSource.App, DiagnosticLevel.Success,
-                $"✓ {DiagnosticEventNames.DiagnosisExportCompleted} {request.DestinationPath}"));
-        }
-        catch (Exception exception)
-        {
-            _diagnosticsHub.Publish(new DiagnosticEvent(
-                DateTimeOffset.Now, DiagnosticSource.App, DiagnosticLevel.Error,
-                $"✗ {DiagnosticEventNames.DiagnosisExportFailed} {exception.Message}"));
-        }
-
-        return ValueTask.FromResult(true);
-    }
-
-    /// <summary>
-    /// 处理打开日志目录请求（复用 OpenPath 链路；路径由组合根推导）。
-    /// </summary>
-    private ValueTask<bool> HandleOpenLogsDirectory(
-        OpenLogsDirectoryRequest request,
-        CancellationToken cancellationToken)
-    {
-        return HandleOpenPath(new OpenPathRequest(LogDirectory), cancellationToken);
     }
 
     private async ValueTask<CheckUpdatesResponse> HandleCheckUpdatesAsync(
@@ -998,35 +728,8 @@ public sealed partial class DshCompositionRoot
     /// <summary>
     /// 安全模式落盘 + 回流共享段（用户切换与 ADR-0004 修订注的自动进入共用）。
     /// </summary>
-    private async Task SetSafeModeCoreAsync(bool enabled, CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _config!.SafeMode = enabled;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Runtime.SafeMode {Enabled}", enabled);
-
-        IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> store = ResolveRuntimeStore();
-        _ = store.DispatchAsync(new RuntimeIntent.SafeModeChanged(enabled));
-    }
-
-    /// <summary>
-    /// 配置写管道收敛辅助（候选 4）：四步不变量——ThrowIfNotInitialized → apply 落盘字段 →
-    /// SaveConfigAsync 持久化（唯一落盘入口）→ 统一日志；8 个开关型处理器收敛为注册 lambda，
-    /// 保证只经 SaveConfigAsync 写配置，不绕过 _configSaveLock。
-    /// </summary>
-    private async ValueTask<bool> SetConfigFlagAsync<TRequest>(
-        TRequest request,
-        CancellationToken cancellationToken,
-        Action<DshDesktopConfig> apply,
-        string logTemplate,
-        object logValue)
-    {
-        ThrowIfNotInitialized();
-        apply(_config!);
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information(logTemplate, logValue);
-        return true;
-    }
+    private Task SetSafeModeCoreAsync(bool enabled, CancellationToken cancellationToken)
+        => _settings.SetSafeModeCoreAsync(enabled, cancellationToken);
 
     /// <summary>
     /// 插件变更前置（Q7-A）：Running 时先停止 Runtime，变更后由用户手动重启。
@@ -1225,21 +928,6 @@ public sealed partial class DshCompositionRoot
         _ = store.DispatchAsync(new RuntimeIntent.RuntimeExited(args.ExitCode));
     }
 
-    private void OnProcessOutputReceived(object? sender, ProcessOutputLineEventArgs args)
-    {
-        // Session token 禁止落盘（CONTEXT.md: Session URL）：日志中打码，规则全仓单源（Domain）。
-        string line = SessionUrlRedactor.Redact(args.Line)!;
-        Serilog.ILogger logger = args.IsError ? _dshStderrLogger : _dshStdoutLogger;
-        logger.Write(args.IsError ? LogEventLevel.Warning : LogEventLevel.Information, "{Line}", line);
-    }
-
-    private void OnDiagnosticEvent(DiagnosticEvent diagnosticEvent)
-    {
-        IMviStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect> store =
-            _container.Resolve<IMviStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect>>();
-        _ = store.DispatchAsync(new DiagnosticsIntent.DiagnosticEventReceived(diagnosticEvent));
-    }
-
     private IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> ResolveRuntimeStore()
     {
         return _container.Resolve<IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect>>();
@@ -1327,7 +1015,7 @@ public sealed partial class DshCompositionRoot
     /// <summary>把组合根的 ApplyTheme（走 UI 线程 Post）适配为主题套用端口。</summary>
     private sealed class CompositionRootThemeApplier : IThemeApplier
     {
-        public void ApplyTheme(string theme) => DshCompositionRoot.ApplyTheme(theme);
+        public void ApplyTheme(string theme) => DesktopSettings.ApplyTheme(theme);
     }
 
     /// <summary>把 <see cref="NodeProvisioner"/> 静态自举适配为 node 自举端口。</summary>

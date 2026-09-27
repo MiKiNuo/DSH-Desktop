@@ -25,6 +25,12 @@ public sealed class CompositionRootGuardTests
         string source = await CompositionRootSourceAsync();
 
         await Assert.That(source.Contains("DshDesktopConfigStore.SaveAsync", StringComparison.Ordinal)).IsFalse();
+        string root = XamlScan.FindRepositoryRoot()!;
+        foreach (string file in Directory.EnumerateFiles(Path.Combine(root, "src", "DshDesktop.App", "Composition"), "*.cs"))
+        {
+            string module = await File.ReadAllTextAsync(file);
+            await Assert.That(module.Contains("DshDesktopConfigStore.SaveAsync", StringComparison.Ordinal)).IsFalse();
+        }
     }
 
     [Test]
