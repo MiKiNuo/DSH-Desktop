@@ -330,7 +330,8 @@ public sealed partial class DshCompositionRoot
             new RecoveryConfigAdapter(this),
             _supervisor,
             _reattacher,
-            _lifetimeSource.Token);
+            _lifetimeSource.Token,
+            logger: Log.Logger);
 
         // ADR-0007：Failed 后的有界自动恢复。只在「新进入 Failed」这一沿触发一次自动重试，
         // 成功后重置——不构成崩溃重启循环（ADR-0004 的禁令不变，本项是其最小放宽）。
@@ -838,58 +839,28 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
         string? target = request.Version.Length == 0 ? null : request.Version;
-        string? previous = _config!.ActiveDshRuntime;
         bool wasRunning = _supervisor!.Current.Lifecycle is RuntimeLifecycle.Running;
-
-        if (wasRunning)
-        {
-            // 编排停止回流（同插件链先例）：先把 MVI 生命周期对齐 Stopping，
-            // 随后的进程退出才不会被 Reducer 误判为崩溃（守卫 CompositionRootGuardTests）。
-            _ = ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated());
-        }
-
-        await StopRuntimeIfRunningAsync(cancellationToken).ConfigureAwait(false);
-        _config.ActiveDshRuntime = target;
-        await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-        Log.Logger.Information("Update.DshRuntime.Activated {Version}", target ?? "借用");
-
-        if (wasRunning)
-        {
-            try
+        using var activationSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _lifetimeSource.Token);
+        await RuntimeActivation.ActivateAsync(
+            new CompositionRootConfigAdapter(_configPersistence, _config!), target, wasRunning,
+            async ct =>
             {
-                // 复用 MVI 启动链终点（TrackStartupAsync：失败计数进自动安全模式），
-                // 成功后显式回流 RuntimeStarted，不再依赖快照对账兜底。
+                if (wasRunning)
+                {
+                    await ResolveRuntimeStore().DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated(), ct);
+                }
+                await StopRuntimeIfRunningAsync(ct).ConfigureAwait(false);
+            },
+            async ct =>
+            {
                 RuntimeSnapshot snapshot = await TrackStartupAsync(
-                    ct => _supervisor.StartAsync(BuildLaunchOptions(), ct), cancellationToken).ConfigureAwait(false);
+                    token => _supervisor.StartAsync(BuildLaunchOptions(), token), ct).ConfigureAwait(false);
                 DispatchRuntimeStarted(snapshot);
-            }
-            catch (Exception exception)
-            {
-                // 激活失败回退到之前的 Runtime（Q7-A 的兜底语义）。
-                _config.ActiveDshRuntime = previous;
-                await SaveConfigAsync(cancellationToken).ConfigureAwait(false);
-                if (previous is null || Directory.Exists(Path.Combine(RuntimeRootDir, previous)))
-                {
-                    try
-                    {
-                        RuntimeSnapshot snapshot = await TrackStartupAsync(
-                            ct => _supervisor.StartAsync(BuildLaunchOptions(), ct), cancellationToken).ConfigureAwait(false);
-                        DispatchRuntimeStarted(snapshot);
-                    }
-                    catch (Exception rollbackException)
-                    {
-                        DispatchRuntimeFailed(rollbackException.Message);
-                        throw;
-                    }
-                }
-                else
-                {
-                    DispatchRuntimeFailed(exception.Message);
-                }
-
-                throw;
-            }
-        }
+            },
+            previous => previous is null || Directory.Exists(Path.Combine(RuntimeRootDir, previous)),
+            DispatchRuntimeFailed, activationSource.Token).ConfigureAwait(false);
+        Log.Logger.Information("Update.DshRuntime.Activated {Version}", target ?? "借用");
 
         return await _runtimeRepository!.ListRuntimesAsync(_config.ActiveDshRuntime, cancellationToken)
             .ConfigureAwait(false);
@@ -1300,7 +1271,11 @@ public sealed partial class DshCompositionRoot
     {
         private readonly ConfigPersistence _persistence;
 
-        public CompositionRootConfigAdapter(ConfigPersistence persistence) => _persistence = persistence;
+        public CompositionRootConfigAdapter(ConfigPersistence persistence, DshDesktopConfig? loaded = null)
+        {
+            _persistence = persistence;
+            Loaded = loaded;
+        }
 
         /// <summary>LoadAsync 完成后的已加载配置。</summary>
         public DshDesktopConfig? Loaded { get; private set; }

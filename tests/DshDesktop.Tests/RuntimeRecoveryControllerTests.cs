@@ -1,5 +1,6 @@
 using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Runtime;
+using R3;
 
 namespace DshDesktop.Tests;
 
@@ -9,6 +10,32 @@ namespace DshDesktop.Tests;
 /// </summary>
 public sealed class RuntimeRecoveryControllerTests
 {
+    [Test]
+    public async Task RecoveryEvents_ReachDiagnosticsThroughProductionSink()
+    {
+        var hub = new DshDesktop.Application.Diagnostics.DiagnosticsHub();
+        var events = new List<DshDesktop.Domain.Diagnostics.DiagnosticEvent>();
+        using var subscription = hub.Events.Subscribe(events.Add);
+        using var logger = new Serilog.LoggerConfiguration()
+            .WriteTo.Sink(new DshDesktop.App.Logging.DiagnosticsSink(hub)).CreateLogger();
+        var controller = new RuntimeRecoveryController(
+            new FakeHost(), new FakeConfig(), new FakeSupervisor(),
+            new RuntimeReattacher(new FakeProbe(), logger), CancellationToken.None,
+            delay: (_, _) => Task.CompletedTask, logger: logger);
+
+        controller.OnState(RuntimeLifecycle.Failed);
+        await controller.RecordFailureAsync(CancellationToken.None);
+        await controller.RecordFailureAsync(CancellationToken.None);
+
+        await Assert.That(events.Count).IsEqualTo(2);
+        await Assert.That(events[0].Message.StartsWith(
+            DshDesktop.Application.Diagnostics.DiagnosticEventNames.RuntimeAutoRecoveryAttempted,
+            StringComparison.Ordinal)).IsTrue();
+        await Assert.That(events[1].Message.StartsWith(
+            DshDesktop.Application.Diagnostics.DiagnosticEventNames.RuntimeAutoSafeModeEntered,
+            StringComparison.Ordinal)).IsTrue();
+    }
+
     // ===== ① 恢复环 =====
 
     [Test]

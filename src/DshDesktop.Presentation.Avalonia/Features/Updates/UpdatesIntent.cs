@@ -19,6 +19,9 @@ public abstract partial record UpdatesIntent : IMviIntent
     /// <param name="Result">检查结果。</param>
     public sealed partial record CheckUpdatesCompleted(CheckUpdatesResponse Result) : UpdatesIntent;
 
+    /// <summary>检查失败仅结算检查，不结束正在下载或安装的操作。</summary>
+    public sealed partial record CheckUpdatesFailed(string Error) : UpdatesIntent;
+
     /// <summary>
     /// 表示安装指定版本 DSH Runtime 意图。
     /// </summary>

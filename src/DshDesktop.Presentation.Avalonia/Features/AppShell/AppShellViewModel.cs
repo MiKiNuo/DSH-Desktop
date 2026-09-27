@@ -230,9 +230,12 @@ public sealed partial class AppShellViewModel
                 runtimeState.Port));
         }
 
-        // 候选 5：Runtime 恢复 toast（Recovering→Running 上升沿）。
+        // 恢复必经 Starting：保留 Recovering 上下文至成功或失败/停止，普通启动不误报。
         string? toast = ShellToastProjector.ProjectLifecycleRecovered(_lastLifecycle, runtimeState.Lifecycle);
-        _lastLifecycle = runtimeState.Lifecycle;
+        if (_lastLifecycle is not RuntimeLifecycle.Recovering || runtimeState.Lifecycle is not RuntimeLifecycle.Starting)
+        {
+            _lastLifecycle = runtimeState.Lifecycle;
+        }
         EmitToast(toast);
     }
 
@@ -252,7 +255,7 @@ public sealed partial class AppShellViewModel
         }
 
         bool inProgress = updatesState.PendingOperation is not null;
-        if (inProgress != Store.CurrentState.UpdateInProgress)
+        if (inProgress != Store.CurrentState.UpdatesInProgress)
         {
             _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
         }

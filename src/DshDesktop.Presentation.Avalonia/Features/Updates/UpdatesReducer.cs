@@ -235,6 +235,14 @@ public sealed partial class UpdatesReducer
         });
     }
 
+    /// <summary>后台检查失败不清除下载或安装的在飞事实。</summary>
+    [MviReduce(typeof(UpdatesIntent.CheckUpdatesFailed))]
+    private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdatesFailed(
+        UpdatesState state, UpdatesIntent.CheckUpdatesFailed intent)
+    {
+        return Unchanged(state with { Status = UpdateStatus.Failed, LastError = intent.Error });
+    }
+
     /// <summary>
     /// 处理更新操作失败回流意图。
     /// </summary>

@@ -10,6 +10,16 @@ namespace DshDesktop.Tests;
 public sealed class CompositionRootGuardTests
 {
     [Test]
+    public async Task RecoveryController_UsesProductionLogger()
+    {
+        string source = await CompositionRootSourceAsync();
+        int start = source.IndexOf("_recoveryController = new RuntimeRecoveryController(", StringComparison.Ordinal);
+        await Assert.That(start >= 0).IsTrue();
+        int end = source.IndexOf(");", start, StringComparison.Ordinal);
+        await Assert.That(source[start..end].Contains("logger: Log.Logger", StringComparison.Ordinal)).IsTrue();
+    }
+
+    [Test]
     public async Task CompositionRoot_HasNoDirectConfigStoreSave()
     {
         string source = await CompositionRootSourceAsync();
@@ -32,6 +42,9 @@ public sealed class CompositionRootGuardTests
         await Assert.That(body.Contains("await _supervisor", StringComparison.Ordinal)).IsFalse();
         await Assert.That(body.Contains("TrackStartupAsync", StringComparison.Ordinal)).IsTrue();
         await Assert.That(body.Contains("RuntimeStopOrchestrated", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(body.Contains("RuntimeActivation.ActivateAsync", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(body.Contains("cancellationToken, _lifetimeSource.Token", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(body.Contains("DispatchRuntimeFailed, activationSource.Token", StringComparison.Ordinal)).IsTrue();
     }
 
     /// <summary>

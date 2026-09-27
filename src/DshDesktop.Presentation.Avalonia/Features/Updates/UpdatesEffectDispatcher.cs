@@ -41,7 +41,7 @@ public sealed partial class UpdatesEffectDispatcher
         }
         catch (Exception exception)
         {
-            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.CheckUpdatesFailed(exception.Message), cancellationToken)
                 .ConfigureAwait(false);
         }
     }

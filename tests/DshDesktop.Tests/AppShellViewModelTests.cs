@@ -164,6 +164,55 @@ public sealed class AppShellViewModelTests
     }
 
     [Test]
+    [Arguments(false, false)]
+    [Arguments(false, true)]
+    [Arguments(true, false)]
+    [Arguments(true, true)]
+    public async Task OverlappingOperations_KeepMaskUntilBothFinish(bool pluginStartsFirst, bool pluginEndsFirst)
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        void Plugin(bool active) => pluginsStore.Push(PluginsState.Initial with
+        {
+            Operation = new PluginOperation(active ? PluginOperationStage.Preparing : PluginOperationStage.Completed, "demo", null),
+        });
+        void Update(bool active) => updatesStore.Push(UpdatesState.Initial with { PendingOperation = active ? "download" : null });
+        if (pluginStartsFirst) { Plugin(true); Update(true); }
+        else { Update(true); Plugin(true); }
+        await Assert.That(shellStore.CurrentState.UpdatesInProgress).IsTrue();
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        if (pluginEndsFirst) Plugin(false); else Update(false);
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        if (pluginEndsFirst) Update(false); else Plugin(false);
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task InitialOverlappingOperations_KeepMaskUntilBothFinish(bool pluginEndsFirst)
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(
+            UpdatesState.Initial with { PendingOperation = "download" });
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(
+            PluginsState.Initial with { Operation = new PluginOperation(PluginOperationStage.Preparing, "demo", null) });
+        using var shellStore = CreateShellStore();
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        await Assert.That(shellStore.CurrentState.UpdatesInProgress).IsTrue();
+        if (pluginEndsFirst) pluginsStore.Push(PluginsState.Initial);
+        else updatesStore.Push(UpdatesState.Initial);
+        await Assert.That(viewModel.UpdateInProgress).IsTrue();
+        if (pluginEndsFirst) updatesStore.Push(UpdatesState.Initial);
+        else pluginsStore.Push(PluginsState.Initial);
+        await Assert.That(viewModel.UpdateInProgress).IsFalse();
+    }
+
+    [Test]
     public async Task UpdateInProgress_ProjectsFromPendingOperation()
     {
         // §11.2：壳经 BindSiblingState 投影 UpdatesStore.PendingOperation（非空 = 更新中），
@@ -503,6 +552,70 @@ public sealed class AppShellViewModelTests
         });
 
         await Assert.That(captured).IsEqualTo("发现 1 项可用更新");
+    }
+
+    [Test]
+    [Arguments(false)]
+    [Arguments(true)]
+    public async Task RecoveryToast_FollowsRealReducerSequence(bool fail)
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var messages = new List<string>();
+        viewModel.ToastRequested += (_, text) => messages.Add(text);
+        var reducer = new RuntimeReducer();
+        RuntimeState state = RuntimeState.Initial;
+        void Apply(RuntimeIntent intent)
+        {
+            state = reducer.Reduce(state, intent).State;
+            runtimeStore.Push(state);
+        }
+        Apply(new RuntimeIntent.RuntimeFailed("initial failure"));
+        Apply(new RuntimeIntent.RecoverRuntime());
+        Apply(new RuntimeIntent.RecoverPluginsDisabled());
+        await Assert.That(state.Lifecycle).IsEqualTo(RuntimeLifecycle.Starting);
+        await Assert.That(messages.Count).IsEqualTo(0);
+        if (fail)
+        {
+            Apply(new RuntimeIntent.RuntimeFailed("recovery failed"));
+            Apply(new RuntimeIntent.StartRuntime());
+        }
+        Apply(new RuntimeIntent.RuntimeStarted(123, 456, "http://localhost:456/"));
+        Apply(new RuntimeIntent.RuntimeStarted(123, 456, "http://localhost:456/"));
+        await Assert.That(messages.Count).IsEqualTo(fail ? 0 : 1);
+        if (!fail) await Assert.That(messages[0]).IsEqualTo("Runtime 已恢复运行");
+    }
+
+    [Test]
+    public async Task RecoveryStopped_ThenOrdinaryStart_DoesNotShowRecoveryToast()
+    {
+        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
+        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
+        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
+        using var shellStore = CreateShellStore();
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var messages = new List<string>();
+        viewModel.ToastRequested += (_, text) => messages.Add(text);
+        var reducer = new RuntimeReducer();
+        RuntimeState state = RuntimeState.Initial;
+        void Apply(RuntimeIntent intent)
+        {
+            state = reducer.Reduce(state, intent).State;
+            runtimeStore.Push(state);
+        }
+        Apply(new RuntimeIntent.RuntimeFailed("initial failure"));
+        Apply(new RuntimeIntent.RecoverRuntime());
+        Apply(new RuntimeIntent.RecoverPluginsDisabled());
+        Apply(new RuntimeIntent.RuntimeStopOrchestrated());
+        Apply(new RuntimeIntent.RuntimeExited(0));
+        await Assert.That(state.Lifecycle).IsEqualTo(RuntimeLifecycle.Stopped);
+        Apply(new RuntimeIntent.StartRuntime());
+        Apply(new RuntimeIntent.RuntimeStarted(123, 456, "http://localhost:456/"));
+        await Assert.That(state.Lifecycle).IsEqualTo(RuntimeLifecycle.Running);
+        await Assert.That(messages.Count).IsEqualTo(0);
     }
 
     [Test]
