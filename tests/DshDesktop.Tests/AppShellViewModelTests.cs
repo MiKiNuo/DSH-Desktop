@@ -179,7 +179,10 @@ public sealed class AppShellViewModelTests
         {
             Operation = new PluginOperation(active ? PluginOperationStage.Preparing : PluginOperationStage.Completed, "demo", null),
         });
-        void Update(bool active) => updatesStore.Push(UpdatesState.Initial with { PendingOperation = active ? "download" : null });
+        void Update(bool active) => updatesStore.Push(UpdatesState.Initial with
+        {
+            Operation = active ? new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0") : null,
+        });
         if (pluginStartsFirst) { Plugin(true); Update(true); }
         else { Update(true); Plugin(true); }
         await Assert.That(shellStore.CurrentState.UpdatesInProgress).IsTrue();
@@ -197,7 +200,7 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(
-            UpdatesState.Initial with { PendingOperation = "download" });
+            UpdatesState.Initial with { Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0") });
         var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(
             PluginsState.Initial with { Operation = new PluginOperation(PluginOperationStage.Preparing, "demo", null) });
         using var shellStore = CreateShellStore();
@@ -213,7 +216,7 @@ public sealed class AppShellViewModelTests
     }
 
     [Test]
-    public async Task UpdateInProgress_ProjectsFromPendingOperation()
+    public async Task UpdateInProgress_ProjectsFromOwnOperation()
     {
         // §11.2：壳经 BindSiblingState 投影 UpdatesStore.PendingOperation（非空 = 更新中），
         // 驱动全屏遮罩 + 导航锁定（NavigationBlocked 决策的单一真值源）。
@@ -225,12 +228,18 @@ public sealed class AppShellViewModelTests
 
         await Assert.That(viewModel.UpdateInProgress).IsFalse();
 
-        updatesStore.Push(UpdatesState.Initial with { PendingOperation = "安装 DSH Runtime 0.1.3…" });
+        updatesStore.Push(UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeInstall, "0.1.3"),
+        });
 
         await Assert.That(viewModel.UpdateInProgress).IsTrue();
         await Assert.That(shellStore.CurrentState.UpdateInProgress).IsTrue();
 
-        updatesStore.Push(UpdatesState.Initial with { PendingOperation = null });
+        updatesStore.Push(UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeInstall, "0.1.3", UpdatesOperationPhase.Completed),
+        });
 
         await Assert.That(viewModel.UpdateInProgress).IsFalse();
         await Assert.That(shellStore.CurrentState.UpdateInProgress).IsFalse();
@@ -370,12 +379,11 @@ public sealed class AppShellViewModelTests
 
         updatesStore.Push(UpdatesState.Initial with
         {
-            DesktopDownloadProgress = 42,
-            PendingOperation = "下载 Desktop 更新…",
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", Percent: 42),
         });
 
         await Assert.That(viewModel.UpdateDownloadPercent).IsEqualTo(42);
-        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新…");
+        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0（42%）…");
         await Assert.That(shellStore.CurrentState.UpdateDownloadPercent).IsEqualTo(42);
     }
 
@@ -410,7 +418,10 @@ public sealed class AppShellViewModelTests
         var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
 
         pluginsStore.Push(PluginsState.Initial with { PendingOperation = "卸载 dsh-foo…" });
-        updatesStore.Push(UpdatesState.Initial with { PendingOperation = "下载 Desktop 更新 0.2.0…" });
+        updatesStore.Push(UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0"),
+        });
 
         await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");
         await Assert.That(shellStore.CurrentState.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");

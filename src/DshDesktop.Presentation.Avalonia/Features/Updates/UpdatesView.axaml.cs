@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Globalization;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
@@ -19,8 +18,6 @@ namespace DshDesktop.Presentation.Avalonia.Features.Updates;
 /// </summary>
 public sealed partial class UpdatesView : MviAvaloniaView<UpdatesViewModel>
 {
-    private bool _installToActivatePending;
-
     /// <summary>
     /// 初始化 Updates 视图。
     /// </summary>
@@ -34,63 +31,46 @@ public sealed partial class UpdatesView : MviAvaloniaView<UpdatesViewModel>
     {
         base.OnBind(viewModel, bindings);
 
-        // 安装终态回流在派发线程直触发，弹确认框前须编组到 UI 线程（见 OnViewModelPropertyChanged）。
-        viewModel.PropertyChanged += OnViewModelPropertyChanged;
-        bindings.Add(() => viewModel.PropertyChanged -= OnViewModelPropertyChanged);
+        // 安装终态回流可能来自派发线程，弹确认框前须编组到 UI 线程。
+        viewModel.ActivationConfirmationRequested += OnActivationConfirmationRequested;
+        bindings.Add(() => viewModel.ActivationConfirmationRequested -= OnActivationConfirmationRequested);
     }
 
     private void OnInstallLatestClicked(object? sender, RoutedEventArgs args)
     {
-        if (ViewModel.LatestDshVersion is { Length: > 0 } latest)
-        {
-            _installToActivatePending = true;
-            ViewModel.InstallDshRuntimeCommand.Execute(latest);
-        }
+        ViewModel.InstallLatestRuntime();
     }
 
     private async void OnActivateLatestClicked(object? sender, RoutedEventArgs args)
     {
-        await PromptActivateLatestAsync();
+        if (ViewModel.LatestDshVersion is { Length: > 0 } latest)
+        {
+            await PromptActivateRuntimeAsync(latest);
+        }
     }
 
     /// <summary>
-    /// 安装终态检测：安装期间 PendingOperation 非空且壳遮罩锁导航，故「非空 → null」即安装/激活终态。
-    /// 仅当本次安装由本视图发起且最新版已落本机（ReadyToActivate）时弹激活确认；
-    /// 安装失败阶段停在 Available，只复位标志不弹窗。
+    /// ViewModel 仅在本次安装成功且本机副本待激活时请求一次确认。
     /// </summary>
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
+    private void OnActivationConfirmationRequested(object? sender, string version)
     {
         if (!Dispatcher.UIThread.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => OnViewModelPropertyChanged(sender, args));
+            Dispatcher.UIThread.Post(() => OnActivationConfirmationRequested(sender, version));
             return;
         }
 
-        if (args.PropertyName is nameof(UpdatesViewModel.PendingOperation)
-            && ViewModel.PendingOperation is null
-            && _installToActivatePending)
-        {
-            _installToActivatePending = false;
-            if (ViewModel.DshStage is DshRuntimeStage.ReadyToActivate)
-            {
-                _ = PromptActivateLatestAsync();
-            }
-        }
+        _ = PromptActivateRuntimeAsync(version);
     }
 
-    private async Task PromptActivateLatestAsync()
+    private async Task PromptActivateRuntimeAsync(string version)
     {
-        if (ViewModel.LatestDshVersion is not { Length: > 0 } latest)
-        {
-            return;
-        }
-
-        // DshStage 保证 latest 是本机非借用副本，载荷直接用版本号（借用才传空串）。
+        // 本机非借用副本的激活载荷直接用版本号（借用才传空串）。
         string current = ViewModel.CurrentDshVersion ?? "—";
-        bool ok = await ConfirmDialog.ShowAsync(ConfirmAction.ActivateRuntime, $"{current}  →  {latest}");
+        bool ok = await ConfirmDialog.ShowAsync(ConfirmAction.ActivateRuntime, $"{current}  →  {version}");
         if (ok)
         {
-            ViewModel.ActivateDshRuntimeCommand.Execute(latest);
+            ViewModel.ActivateDshRuntimeCommand.Execute(version);
         }
     }
 

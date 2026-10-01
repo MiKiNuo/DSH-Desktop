@@ -14,6 +14,21 @@ namespace DshDesktop.Presentation.Avalonia.Features.Updates;
 public sealed partial class UpdatesViewModel
     : MviViewModelBase<UpdatesState, UpdatesIntent, UpdatesEffect>
 {
+    private string? _installToActivateVersion;
+
+    /// <summary>请求确认激活本次安装成功的 Runtime。</summary>
+    public event EventHandler<string>? ActivationConfirmationRequested;
+
+    /// <summary>安装最新版 Runtime，并在安装成功后请求激活确认。</summary>
+    public void InstallLatestRuntime()
+    {
+        if (LatestDshVersion is { Length: > 0 } latest)
+        {
+            _installToActivateVersion = latest;
+            InstallDshRuntimeCommand.Execute(latest);
+        }
+    }
+
     /// <summary>
     /// 初始化 Updates ViewModel。
     /// </summary>
@@ -44,6 +59,9 @@ public sealed partial class UpdatesViewModel
                 case nameof(PendingOperation):
                     OnPropertyChanged(nameof(BusyNotice));
                     break;
+                case nameof(Operation):
+                    RequestActivationAfterInstall();
+                    break;
             }
         };
     }
@@ -52,6 +70,24 @@ public sealed partial class UpdatesViewModel
     /// 获取 DSH Runtime 更新卡的展示阶段（派生自状态，视图 badge 与主按钮的唯一判定口径）。
     /// </summary>
     public DshRuntimeStage DshStage => Store.CurrentState.DshStage;
+
+    private void RequestActivationAfterInstall()
+    {
+        if (Operation is not
+            { Kind: UpdatesOperationKind.RuntimeInstall, Phase: not UpdatesOperationPhase.Running } operation
+            || !string.Equals(operation.Version, _installToActivateVersion, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _installToActivateVersion = null;
+        if (operation.Phase is UpdatesOperationPhase.Completed
+            && Store.CurrentState.Runtimes.Any(runtime => !runtime.IsActive && !runtime.IsBorrowed
+                && string.Equals(runtime.Version, operation.Version, StringComparison.Ordinal)))
+        {
+            ActivationConfirmationRequested?.Invoke(this, operation.Version);
+        }
+    }
 
     /// <summary>
     /// 获取插件事务在飞文本投影（兄弟 Store PluginsState.PendingOperation；候选 3 后插件更新的页内反馈唯一来源）。
@@ -115,6 +151,10 @@ public sealed partial class UpdatesViewModel
     /// </summary>
     [MviBind(nameof(UpdatesState.PluginUpdates), BindingMode = MviBindingMode.OneWay)]
     public partial IReadOnlyList<PluginUpdateInfo> PluginUpdates { get; private set; }
+
+    /// <summary>获取 Updates 自有操作事实。</summary>
+    [MviBind(nameof(UpdatesState.Operation), BindingMode = MviBindingMode.OneWay)]
+    public partial UpdatesOperation? Operation { get; private set; }
 
     /// <summary>
     /// 获取进行中的操作描述。

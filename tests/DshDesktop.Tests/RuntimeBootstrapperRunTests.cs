@@ -555,6 +555,8 @@ public sealed class RuntimeBootstrapperRunTests : IDisposable
 
     private sealed class FakePluginOrchestrator : IPluginOrchestrator
     {
+        public PluginOperation? Current => null;
+
         public List<(string Source, PluginOperationKind Kind)> InstallCalls { get; } = [];
 
         public event EventHandler<PluginOperation>? OperationChanged;

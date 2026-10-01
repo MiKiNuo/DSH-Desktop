@@ -1,3 +1,4 @@
+using DshDesktop.Application.Plugins;
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Infrastructure.Plugins;
 
@@ -292,6 +293,150 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     }
 
     [Test]
+    public async Task InstallAsync_RebuildResolvesMissingBundle_Succeeds()
+    {
+        SeedProfile(
+            dependencies: ["dsh-myrules", "dsh-newplugin"],
+            bundles: ["dsh-myrules"]);
+        WriteInstalledPackage("dsh-newplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "install")
+            {
+                WriteInstalledPackage("dsh-myrules", "{}");
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+
+        string installed = await repository.InstallAsync("dsh-newplugin", CancellationToken.None);
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-newplugin");
+        await Assert.That(plugins.Single(p => p.Name == "dsh-myrules").IsResolvable).IsTrue();
+        await Assert.That(plugins.Single(p => p.Name == "dsh-newplugin").Enabled).IsTrue();
+    }
+
+    [Test]
+    public async Task InstallAsync_RebuildFailsAfterResolvingBundles_StillSucceeds()
+    {
+        SeedProfile(
+            dependencies: ["dsh-myrules", "dsh-newplugin"],
+            bundles: ["dsh-myrules"]);
+        WriteInstalledPackage("dsh-newplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "install")
+            {
+                WriteInstalledPackage("dsh-myrules", "{}");
+                return Task.FromResult((1, "simulated rebuild failure"));
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+
+        string installed = await repository.InstallAsync("dsh-newplugin", CancellationToken.None);
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-newplugin");
+        await Assert.That(plugins.Single(p => p.Name == "dsh-myrules").IsResolvable).IsTrue();
+        await Assert.That(plugins.Single(p => p.Name == "dsh-newplugin").Enabled).IsTrue();
+    }
+
+    [Test]
+    public async Task InstallAsync_PackageWithoutBundlePatch_ThrowsWithoutEnabling()
+    {
+        SeedProfile(dependencies: ["dsh-library"], bundles: []);
+        WriteInstalledPackage("dsh-library", "{\"version\":\"1.0.0\"}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, (_, _, _, _, _) => Task.FromResult((0, string.Empty)));
+
+        InvalidOperationException? caught = null;
+        try
+        {
+            await repository.InstallAsync("dsh-library", CancellationToken.None);
+        }
+        catch (InvalidOperationException exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).IsEqualTo(
+            "dsh-library 不是 DSH 插件（未声明 dsh.bundle.patch），已回滚。");
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+        await Assert.That(plugins.Single(p => p.Name == "dsh-library").Enabled).IsFalse();
+    }
+
+    [Test]
+    public async Task InstallAsync_SingleNewDependency_UsesActualNameInsteadOfArchiveName()
+    {
+        SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
+        WriteInstalledPackage("dsh-existing", "{}");
+        WriteInstalledPackage("dsh-realplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string source = Path.Combine(_root, "renamed-archive.tgz");
+        File.WriteAllText(source, "");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                SeedProfile(
+                    dependencies: ["dsh-existing", "dsh-realplugin"],
+                    bundles: ["dsh-existing"]);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+
+        string installed = await repository.InstallAsync(source, CancellationToken.None);
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-realplugin");
+        await Assert.That(plugins.Single(p => p.Name == "dsh-realplugin").Enabled).IsTrue();
+    }
+
+    [Test]
+    [Arguments("dsh-newplugin@latest", "dsh-newplugin", false)]
+    [Arguments("@scope/dsh-plugin@2.0.0", "@scope/dsh-plugin", false)]
+    [Arguments("dsh-local.tgz", "dsh-local", true)]
+    public async Task InstallAsync_Reinstall_ResolvesNameFromSource(
+        string sourceName,
+        string pluginName,
+        bool localSource)
+    {
+        SeedProfile(dependencies: [pluginName], bundles: []);
+        WriteInstalledPackage(pluginName, "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string source = sourceName;
+        if (localSource)
+        {
+            source = Path.Combine(_root, sourceName);
+            File.WriteAllText(source, "");
+        }
+
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, (_, _, _, _, _) => Task.FromResult((0, string.Empty)));
+
+        string installed = await repository.InstallAsync(source, CancellationToken.None);
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo(pluginName);
+        await Assert.That(plugins.Single(p => p.Name == pluginName).Enabled).IsTrue();
+    }
+
+    [Test]
     public async Task ListPluginsAsync_ReadsDescriptionFromInstalledManifest()
     {
         // Phase 8 评审 F3（Spec a.1）：description 读自 node_modules/<pkg>/package.json，缺失为空串。
@@ -309,6 +454,13 @@ public sealed class PluginProfileRepositoryTests : IDisposable
 
         await Assert.That(plugins.Single(p => p.Name == "dsh-foo").Description).IsEqualTo("侧栏增强");
         await Assert.That(plugins.Single(p => p.Name == "dsh-bar").Description).IsEqualTo("");
+    }
+
+    private void WriteInstalledPackage(string name, string manifest)
+    {
+        string packageDir = Path.Combine(ProfileDir, "node_modules", name);
+        Directory.CreateDirectory(packageDir);
+        File.WriteAllText(Path.Combine(packageDir, "package.json"), manifest);
     }
 
     /// <summary>

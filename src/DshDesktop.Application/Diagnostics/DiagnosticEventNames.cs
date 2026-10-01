@@ -27,6 +27,14 @@ public static class DiagnosticEventNames
     public const string RuntimeStartFailed = "Runtime.Start.Failed";
 
     /// <summary>
+    /// Runtime 启动成功但有插件未激活的事件名（Supervisor 发，Message 附带插件包名列表）。
+    /// 与 <see cref="RuntimeStartFailed"/> 分列：这类降级不抛异常、进程存活、HTTP 也通，
+    /// 但宿主此前对它零信号——实机后果是 dsh 工作台整页空白而日志只有一条 WARN
+    /// （2026-09-28：dsh 0.1.7-rc.2 的 typert 契约冲突使 strict 描述符被连带回滚）。
+    /// </summary>
+    public const string RuntimeStartDegraded = "Runtime.Start.Degraded";
+
+    /// <summary>
     /// 借用失效自动激活自建 Runtime 事件名（组合根发，Message 附带激活的版本目录名）：
     /// 借用安装被删且未激活自建版本时，磁盘上完好的自建版本被自动激活（ActiveRuntimeFallback）。
     /// </summary>

@@ -481,75 +481,14 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-
-        string? latestDsh = null;
-        try
-        {
-            latestDsh = await _runtimeRepository!.GetLatestVersionAsync(_config!.DshChannel, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            Log.Logger.Warning("Update.Check.DshFailed {Error}", exception.Message);
-        }
-
-        // Desktop 自更新检查（ADR-0003：失败不阻塞 DSH/插件检查）。
-        string? latestDesktop = null;
-        try
-        {
-            latestDesktop = (await _desktopUpdater!.CheckForUpdatesAsync(cancellationToken)
-                .ConfigureAwait(false))?.Version;
-        }
-        catch (Exception exception)
-        {
-            Log.Logger.Debug("Update.Check.DesktopSkipped {Error}", exception.Message);
-        }
-
-        IReadOnlyList<PluginInfo> plugins = await _pluginRepository!.ListPluginsAsync(cancellationToken)
-            .ConfigureAwait(false);
-        List<PluginUpdateInfo> pluginUpdates = [];
-        // 核心插件（dshmarket 等）也查更新——2026-09-19 v0.1.4 实机：旧核心插件 × 新 Runtime
-        // 版本漂移导致启动硬崩且无任何更新入口。IsResolvable 自然排除 in-box bundle 与
-        // 声明-未物化插件（它们的 Version 是占位符，查 npm 必出假更新）。
-        foreach (PluginInfo plugin in plugins.Where(p => p is { Enabled: true, IsResolvable: true }))
-        {
-            string? latest = await _runtimeRepository!.GetLatestPluginVersionAsync(plugin.Name, cancellationToken)
-                .ConfigureAwait(false);
-            if (latest is not null && latest != plugin.Version)
-            {
-                pluginUpdates.Add(new PluginUpdateInfo(plugin.Name, plugin.Version, latest));
-            }
-        }
-
-        IReadOnlyList<DshRuntimeInfo> runtimes = await _runtimeRepository!
-            .ListRuntimesAsync(_config!.ActiveDshRuntime, cancellationToken).ConfigureAwait(false);
-        string? currentDsh = runtimes.FirstOrDefault(r => r.IsActive)?.Version;
-
-        // Phase 8 Issue 05：自动下载安装开关（默认关）——开 = 发现 Desktop 更新后后台预下载更新包，
-        // 应用与重启仍需用户在更新中心确认（复用现有 DownloadAndApply 链路；DownloadAsync 已单飞 +
-        // "已下载即复用"，与手动点击交叠只会等待/复用，不再抢同一文件）。
-        if (latestDesktop is not null && _config.AutoDownloadUpdates)
-        {
-            _ = AutoDownloadDesktopUpdateAsync();
-        }
-
-        return new CheckUpdatesResponse(latestDsh, currentDsh, runtimes, pluginUpdates, latestDesktop);
-    }
-
-    /// <summary>
-    /// 后台预下载已发现的 Desktop 更新包（不应用不重启；失败仅留痕，下次检查重试）。
-    /// </summary>
-    private async Task AutoDownloadDesktopUpdateAsync()
-    {
-        try
-        {
-            await _desktopUpdater!.DownloadAsync(null, CancellationToken.None).ConfigureAwait(false);
-            Log.Logger.Information("Update.Desktop.AutoDownloaded");
-        }
-        catch (Exception exception)
-        {
-            Log.Logger.Debug("Update.Desktop.AutoDownloadSkipped {Error}", exception.Message);
-        }
+        var checker = new UpdateChecker(_runtimeRepository!, _pluginRepository!, _desktopUpdater!, Log.Logger);
+        UpdateCheckResult result = await checker.CheckAsync(
+            _config!.DshChannel,
+            () => _config.ActiveDshRuntime,
+            () => _config.AutoDownloadUpdates,
+            cancellationToken).ConfigureAwait(false);
+        return new CheckUpdatesResponse(result.LatestDshVersion, result.CurrentDshVersion,
+            result.Runtimes, result.PluginUpdates, result.LatestDesktopVersion);
     }
 
     private async ValueTask<IReadOnlyList<DshRuntimeInfo>> HandleInstallDshRuntimeAsync(
@@ -602,27 +541,14 @@ public sealed partial class DshCompositionRoot
     {
         ThrowIfNotInitialized();
 
-        // 🟡3：入口并发守卫（与 PluginsReducer.IsTransactionInFlight 同口径）。重复点击会并发跑多个
-        // InstallAsync，故在读到非终态事务时直接忽略并记日志，不启动新事务。
-        // 注意：崩溃漂移自愈路径**不**经此 handler（它绕过 MVI 守卫直接驱动编排器），不受此处影响。
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore =
-            _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
-        PluginsState pluginsState = pluginsStore.CurrentState;
-        if (pluginsState.Operation is
-            { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed })
+        // 重复更新点击按 Application 的真实事务快照忽略；其它调用者由编排器的 Profile 门串行处理。
+        if (_pluginOrchestrator!.Current?.IsInProgress == true)
         {
             Log.Logger.Warning(
                 "Plugin.Update.Ignored.InFlight: 插件事务进行中，忽略重复的更新请求 {Plugin}",
                 request.Name);
             return true;
         }
-
-        // 🟡2：PluginsReducer.HandleUpdatePlugin 已置 PendingOperation（页内反馈），但 Operation 字段要等
-        // 编排器首个 OperationChanged(Preparing) 回流才非空——其间壳遮罩的 PluginOperationInProgress 判定
-        // （看 Operation 非终态）为假，形成"遮罩锁定窗口"。此处同步预置 Preparing 阶段，使遮罩自入口即锁定；
-        // 编排器随后重发同一阶段（幂等，AppShell 按引用去重只处理一次），不重复副作用。不回退到 UpdatesState 双轨。
-        _ = pluginsStore.DispatchAsync(new PluginsIntent.PluginOperationChanged(
-            new PluginOperation(PluginOperationStage.Preparing, request.Name, null, PluginOperationKind.Update)));
 
         _ = await _pluginOrchestrator!
             .InstallAsync($"{request.Name}@latest", PluginOperationKind.Update, cancellationToken)
@@ -646,7 +572,6 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        await StopRuntimeIfRunningAsync(cancellationToken).ConfigureAwait(false);
         await _pluginOrchestrator!.DisableAllThirdPartyAsync(cancellationToken).ConfigureAwait(false);
         Log.Logger.Information("Plugin.DisableAll.Completed");
 
@@ -783,7 +708,7 @@ public sealed partial class DshCompositionRoot
             // 版本漂移自愈（2026-09-19 v0.1.4 实机）：旧插件静态 import 了 Runtime 已删除的
             // 命名导出 ⇒ 启动必崩，且肇事者可能是核心插件（无 UI 更新入口）⇒ 在 RuntimeBootstrapper
             // 内自动走编排器事务化升级（快照/停/变更/校验/启动/健康/回滚），成功即 Runtime 已被事务拉起。
-            // 刻意绕开 MVI 的 IsTransactionInFlight 守卫：启动失败现场 Runtime 已停，用户事务不可能在飞。
+            // 自愈直接进入 Application 编排器，与用户事务共用 Profile 串行门。
             // 「每会话每插件只试一次、失败回落原失败计数链」的状态内置于 Bootstrapper。
             if (await _bootstrapper!
                     .TryHealIncompatiblePluginCrashAsync(exception.Message, cancellationToken)

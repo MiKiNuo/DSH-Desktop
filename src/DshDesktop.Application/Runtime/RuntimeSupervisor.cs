@@ -131,6 +131,17 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
             "Runtime.Start.Ready ElapsedMs={ElapsedMs} Port={Port}",
             (long)stopwatch.ElapsedMilliseconds,
             result.Port);
+
+        // 启动成功 ≠ 可用：有插件未激活时 dsh 只打 WARN，HTTP 与进程一切正常，
+        // 但 typert 注册表可能已被连带回滚 ⇒ 工作台整页空白（2026-09-28 实机）。
+        // 单独一条事件而不是复用 Start.Failed：它不是失败，跑不起来自愈，也不会进 Failed 状态机。
+        if (result.DegradedPlugins is { } degraded)
+        {
+            _logger.Warning(
+                DiagnosticEventNames.RuntimeStartDegraded + " Plugins={Plugins}",
+                degraded.Count == 0 ? "(未能定位插件名)" : string.Join(", ", degraded));
+        }
+
         lock (_sync)
         {
             _stageTimings.Add(new StartupStageTiming(RuntimeStartupSignal.Ready, stopwatch.Elapsed));
@@ -144,6 +155,7 @@ public sealed class RuntimeSupervisor : IRuntimeSupervisor
             ProcessId = result.ProcessId,
             Port = result.Port,
             Url = result.Url,
+            DegradedPlugins = result.DegradedPlugins,
         };
         Publish(ready);
 

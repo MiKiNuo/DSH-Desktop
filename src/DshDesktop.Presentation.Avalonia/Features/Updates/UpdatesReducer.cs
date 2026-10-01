@@ -47,20 +47,18 @@ public sealed partial class UpdatesReducer
         UpdatesIntent.CheckUpdatesCompleted intent)
     {
         CheckUpdatesResponse result = intent.Result;
-        bool available = result.PluginUpdates.Count > 0
-            || (result.LatestDshVersion is not null
-                && result.CurrentDshVersion is not null
-                && result.LatestDshVersion != result.CurrentDshVersion);
-
-        return Unchanged(state with
+        UpdatesState refreshed = state with
         {
-            Status = available ? UpdateStatus.Available : UpdateStatus.Idle,
             LatestDshVersion = result.LatestDshVersion,
             CurrentDshVersion = result.CurrentDshVersion,
             Runtimes = result.Runtimes,
             PluginUpdates = result.PluginUpdates,
             LatestDesktopVersion = result.LatestDesktopVersion,
             LastError = null,
+        };
+        return Unchanged(refreshed with
+        {
+            Status = refreshed.AvailableCount > 0 ? UpdateStatus.Available : UpdateStatus.Idle,
         });
     }
 
@@ -121,11 +119,10 @@ public sealed partial class UpdatesReducer
         return WithEffect(
             state with
             {
-                PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}…",
-                DesktopDownloadProgress = 0,
+                Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, state.LatestDesktopVersion),
                 LastError = null,
             },
-            new UpdatesEffect.DownloadAndApplyDesktopUpdate());
+            new UpdatesEffect.DownloadAndApplyDesktopUpdate(state.LatestDesktopVersion));
     }
 
     /// <summary>
@@ -136,30 +133,22 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.DesktopDownloadProgress intent)
     {
-        // 防"终态事件之后的进度回流"复活 PendingOperation（§22：进度回调 fire-and-forget，操作失败/成功后
-        // 仍可能有一个进度回调在队列中），也防"插件更新期间抵达的迟到进度回调"劫持待办：
-        // 候选 3 后插件更新不再写 UpdatesState.PendingOperation，故迟到进度回调至多凭空创建下载待办，
-        // 守卫（PendingOperation 空 ⇒ 不在 Desktop 下载期）仍须拦下。正确判据是「确在 Desktop 下载期」
-        // ——DesktopDownloadProgress 仅下载期间非空（其余操作与终态一律 null）。
-        if (state.PendingOperation is null || state.DesktopDownloadProgress is null)
+        // 迟到的进度只能更新仍在运行的 Desktop 下载，不能复活终态或污染 Runtime 操作。
+        if (state.Operation is not
+            { Kind: UpdatesOperationKind.DesktopDownload, Phase: UpdatesOperationPhase.Running } operation)
         {
             return Unchanged(state);
         }
 
         return Unchanged(state with
         {
-            DesktopDownloadProgress = intent.Percent,
-            PendingOperation = $"下载 Desktop 更新 {state.LatestDesktopVersion}（{intent.Percent}%）…",
+            Operation = operation with { Percent = intent.Percent },
         });
     }
 
     /// <summary>
     /// 处理安装 DSH Runtime 意图。
     /// </summary>
-    /// <remarks>
-    /// 非下载操作一律把 <c>DesktopDownloadProgress</c> 复位为 null：遮罩的「旋转图标 ↔ 确定进度条」
-    /// 互斥切换依赖「进度字段仅在 Desktop 下载期间有值」，残留的旧百分比会让遮罩显示一个卡住的进度条。
-    /// </remarks>
     [MviReduce(typeof(UpdatesIntent.InstallDshRuntime))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleInstallDshRuntime(
         UpdatesState state,
@@ -169,8 +158,7 @@ public sealed partial class UpdatesReducer
             state with
             {
                 Status = UpdateStatus.Installing,
-                PendingOperation = $"安装 DSH Runtime {intent.Version}…",
-                DesktopDownloadProgress = null,
+                Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeInstall, intent.Version),
                 LastError = null,
             },
             new UpdatesEffect.InstallDshRuntime(intent.Version));
@@ -184,12 +172,10 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.ActivateDshRuntime intent)
     {
-        string label = intent.Version.Length == 0 ? "借用安装" : intent.Version;
         return WithEffect(
             state with
             {
-                PendingOperation = $"切换到 {label} 并重启 Runtime…",
-                DesktopDownloadProgress = null,
+                Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeActivation, intent.Version),
                 LastError = null,
             },
             new UpdatesEffect.ActivateDshRuntime(intent.Version));
@@ -208,7 +194,6 @@ public sealed partial class UpdatesReducer
         return WithEffect(
             state with
             {
-                DesktopDownloadProgress = null,
                 LastError = null,
             },
             new UpdatesEffect.UpdatePlugin(intent.Name));
@@ -223,15 +208,22 @@ public sealed partial class UpdatesReducer
         UpdatesIntent.RuntimeListChanged intent)
     {
         DshRuntimeInfo? active = intent.Runtimes.FirstOrDefault(r => r.IsActive);
-        // 终态一并清 DownloadProgress：否则中途失败/中止的下载会把百分比留在状态里，
-        // 遮罩与页面进度条下次操作时会停在旧值上不动（假死观感）。
+        UpdatesOperation? operation = state.Operation;
+        UpdateStatus status = state.Status;
+        if (operation is
+            { Phase: UpdatesOperationPhase.Running, Kind: UpdatesOperationKind.RuntimeInstall or UpdatesOperationKind.RuntimeActivation }
+            && operation.Kind == intent.CompletedKind
+            && string.Equals(operation.Version, intent.CompletedVersion, StringComparison.Ordinal))
+        {
+            operation = operation with { Phase = UpdatesOperationPhase.Completed };
+            status = UpdateStatus.Idle;
+        }
         return Unchanged(state with
         {
             Runtimes = intent.Runtimes,
             CurrentDshVersion = active?.Version ?? state.CurrentDshVersion,
-            Status = UpdateStatus.Idle,
-            PendingOperation = null,
-            DesktopDownloadProgress = null,
+            Status = status,
+            Operation = operation,
         });
     }
 
@@ -251,12 +243,18 @@ public sealed partial class UpdatesReducer
         UpdatesState state,
         UpdatesIntent.UpdatesOperationFailed intent)
     {
-        return Unchanged(state with
+        if (state.Operation is { Phase: UpdatesOperationPhase.Running } operation
+            && operation.Kind == intent.OperationKind
+            && string.Equals(operation.Version, intent.OperationVersion, StringComparison.Ordinal))
         {
-            Status = UpdateStatus.Failed,
-            PendingOperation = null,
-            DesktopDownloadProgress = null,
-            LastError = intent.Error,
-        });
+            return Unchanged(state with
+            {
+                Status = UpdateStatus.Failed,
+                Operation = operation with { Phase = UpdatesOperationPhase.Failed },
+                LastError = intent.Error,
+            });
+        }
+
+        return Unchanged(state with { LastError = intent.Error });
     }
 }

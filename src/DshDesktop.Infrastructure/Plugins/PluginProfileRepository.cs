@@ -37,8 +37,7 @@ public sealed class PluginProfileRepository(
             foreach ((string name, JsonNode? _) in dependencies)
             {
                 (string version, string description) = ReadInstalledInfo(name);
-                bool resolvable = File.Exists(
-                    Path.Combine(profileDir, "node_modules", name, "package.json"));
+                bool resolvable = ProfileBundleProbe.IsBundleResolved(profileDir, name);
                 plugins.Add(new PluginInfo(
                     name,
                     version,
@@ -75,7 +74,7 @@ public sealed class PluginProfileRepository(
         {
             if (!IsCore(name)
                 || bundles.Contains(name)
-                || !File.Exists(Path.Combine(profileDir, "node_modules", name, "package.json")))
+                || !ProfileBundleProbe.IsBundleResolved(profileDir, name))
             {
                 continue;
             }
@@ -194,9 +193,16 @@ public sealed class PluginProfileRepository(
             ? dependenciesAfter.First()
             : ResolveNameFromSource(source);
 
+        ValidateAndReconcileInstalledBundle(pluginName);
+        await EnsureDeclaredBundlesResolvableAsync(cancellationToken).ConfigureAwait(false);
+        return pluginName;
+    }
+
+    private void ValidateAndReconcileInstalledBundle(string pluginName)
+    {
         // 校验是 DSH 插件（声明 dsh.bundle.patch），不是则抛错交给事务回滚。
         string installedManifestPath = Path.Combine(profileDir, "node_modules", pluginName, "package.json");
-        JsonNode? installedManifest = File.Exists(installedManifestPath)
+        JsonNode? installedManifest = ProfileBundleProbe.IsBundleResolved(profileDir, pluginName)
             ? JsonNode.Parse(File.ReadAllText(installedManifestPath))
             : null;
         if (installedManifest?["dsh"]?["bundle"]?["patch"] is null)
@@ -215,7 +221,10 @@ public sealed class PluginProfileRepository(
             ((System.Collections.Generic.ICollection<JsonNode?>)bundles).Add(JsonValue.Create(pluginName));
             WriteManifest(manifest);
         }
+    }
 
+    private async Task EnsureDeclaredBundlesResolvableAsync(CancellationToken cancellationToken)
+    {
         // 安装后磁盘校验（2026-09-14 实机：pnpm add 退出码 0 不代表 bundle 可解析——
         // 悬空 junction / 中断安装残留会让 DSH 启动期 resolveBundleDir 抛
         // "cannot resolve profile bundle" → Runtime ExitCode=1，而错误只在重启时才暴露）。
@@ -250,8 +259,6 @@ public sealed class PluginProfileRepository(
                     "请检查 Profile 依赖树或重新种子 Profile。");
             }
         }
-
-        return pluginName;
     }
 
     private HashSet<string> ReadDependencyNames()
@@ -357,7 +364,7 @@ public sealed class PluginProfileRepository(
     private (string Version, string Description) ReadInstalledInfo(string name)
     {
         string packageJsonPath = Path.Combine(profileDir, "node_modules", name, "package.json");
-        if (!File.Exists(packageJsonPath))
+        if (!ProfileBundleProbe.IsBundleResolved(profileDir, name))
         {
             return ("未安装", string.Empty);
         }

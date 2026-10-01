@@ -57,6 +57,10 @@ public sealed partial class RuntimeViewModel
                     OnPropertyChanged(nameof(DshHomeText));
                     OnPropertyChanged(nameof(ProfileNameText));
                     break;
+                case nameof(DegradedPlugins):
+                    OnPropertyChanged(nameof(HasDegradedPlugins));
+                    OnPropertyChanged(nameof(DegradedPluginsText));
+                    break;
             }
         };
     }
@@ -121,6 +125,13 @@ public sealed partial class RuntimeViewModel
     [MviBind(nameof(RuntimeState.CheckUpdatesOnStartup), BindingMode = MviBindingMode.OneWay)]
     public partial bool CheckUpdatesOnStartup { get; private set; }
 
+    /// <summary>
+    /// 获取本次启动中被发现「未激活」的插件包名（无此类降级为 null）。
+    /// 该降级不改生命周期（Runtime 照常 Running），却会让 dsh 工作台整页空白，故单独常驻提示。
+    /// </summary>
+    [MviBind(nameof(RuntimeState.DegradedPlugins), BindingMode = MviBindingMode.OneWay)]
+    public partial IReadOnlyList<string>? DegradedPlugins { get; private set; }
+
     // ===== 派生投影（纯函数推导） =====
 
     /// <summary>获取状态行副文案（原型：PID 16428 · http://127.0.0.1:3080；不含 token）。</summary>
@@ -164,6 +175,23 @@ public sealed partial class RuntimeViewModel
 
     /// <summary>获取 Desktop 版本（编译期常量）。</summary>
     public string DesktopVersion => DesktopInfo.Version;
+
+    /// <summary>
+    /// 获取是否存在「未激活插件」降级。判据是**非 null**而非"有名字"：
+    /// 空集合的语义是"命中了降级特征但解析不出肇事插件名"（dsh 改了输出格式就是这一态），
+    /// 恰恰最需要提示——若按 Count 判定，这一态会退回本次要修的静默。
+    /// </summary>
+    public bool HasDegradedPlugins => DegradedPlugins is not null;
+
+    /// <summary>
+    /// 获取降级提示正文。已知肇事插件名时逐个列出（引导去「插件」页禁用），
+    /// 命中降级却未能定位名字时退化为指向诊断页——两者都不能不言不语。
+    /// </summary>
+    public string DegradedPluginsText => DegradedPlugins switch
+    {
+        { Count: > 0 } names => $"以下插件未能激活，工作台可能无法显示：{string.Join("、", names)}。请到「插件」页禁用后重试。",
+        _ => "有插件未能激活，工作台可能无法显示，详情见「诊断」页。",
+    };
 
     // ===== 主操作按钮契约（2026-09-28：守卫必须可见，否则点击被静默丢弃） =====
 

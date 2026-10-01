@@ -21,6 +21,13 @@ public sealed class PluginOrchestrator(
 
     private readonly ILogger _logger = logger.ForContext("Source", "Supervisor");
 
+    // ponytail: 单 Profile 共用事务门；支持多 Profile 时按 Profile 隔离。
+    private readonly SemaphoreSlim _profileOperationGate = new(1, 1);
+    private PluginOperation? _current;
+
+    /// <inheritdoc />
+    public PluginOperation? Current => Volatile.Read(ref _current);
+
     /// <inheritdoc />
     public event EventHandler<PluginOperation>? OperationChanged;
 
@@ -93,12 +100,25 @@ public sealed class PluginOrchestrator(
     /// <inheritdoc />
     public async Task DisableAllThirdPartyAsync(CancellationToken cancellationToken)
     {
-        IReadOnlyList<PluginInfo> plugins = await pluginManager
-            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-        foreach (PluginInfo plugin in plugins.Where(p => p is { IsCore: false, Enabled: true }))
+        await _profileOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await pluginManager.SetEnabledAsync(plugin.Name, false, cancellationToken).ConfigureAwait(false);
-            _logger.Information("Plugin.DisableAll.Disabled {PluginName}", plugin.Name);
+            if (supervisor.Current.Lifecycle is RuntimeLifecycle.Running)
+            {
+                await supervisor.StopAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            IReadOnlyList<PluginInfo> plugins = await pluginManager
+                .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
+            foreach (PluginInfo plugin in plugins.Where(p => p is { IsCore: false, Enabled: true }))
+            {
+                await pluginManager.SetEnabledAsync(plugin.Name, false, cancellationToken).ConfigureAwait(false);
+                _logger.Information("Plugin.DisableAll.Disabled {PluginName}", plugin.Name);
+            }
+        }
+        finally
+        {
+            _profileOperationGate.Release();
         }
     }
 
@@ -123,12 +143,13 @@ public sealed class PluginOrchestrator(
         Func<string, CancellationToken, Task> validate,
         CancellationToken cancellationToken)
     {
-        Publish(PluginOperationStage.Preparing, pluginName, null, kind);
+        await _profileOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         string? snapshotId = null;
         string? resolvedName = pluginName;
 
         try
         {
+            Publish(PluginOperationStage.Preparing, pluginName, null, kind);
             Publish(PluginOperationStage.CreatingSnapshot, resolvedName, null, kind);
             snapshotId = await snapshotter.CreateSnapshotAsync(cancellationToken).ConfigureAwait(false);
 
@@ -158,6 +179,10 @@ public sealed class PluginOrchestrator(
             await RollbackAsync(snapshotId, resolvedName ?? displayName, exception.Message, kind, cancellationToken)
                 .ConfigureAwait(false);
             throw;
+        }
+        finally
+        {
+            _profileOperationGate.Release();
         }
     }
 
@@ -295,6 +320,8 @@ public sealed class PluginOrchestrator(
         string? error,
         PluginOperationKind kind)
     {
-        OperationChanged?.Invoke(this, new PluginOperation(stage, pluginName, error, kind));
+        var operation = new PluginOperation(stage, pluginName, error, kind);
+        Volatile.Write(ref _current, operation);
+        OperationChanged?.Invoke(this, operation);
     }
 }

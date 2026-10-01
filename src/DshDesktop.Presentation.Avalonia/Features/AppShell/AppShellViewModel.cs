@@ -134,7 +134,7 @@ public sealed partial class AppShellViewModel
     public partial string? DshVersion { get; private set; }
 
     /// <summary>
-    /// 获取更新操作进行中投影（壳全屏遮罩 + 导航锁定；自 UpdatesStore.PendingOperation，§11.2）。
+    /// 获取更新操作进行中投影（壳全屏遮罩 + 导航锁定；自 UpdatesStore.Operation，§11.2）。
     /// </summary>
     [MviBind(nameof(AppShellState.UpdateInProgress), BindingMode = MviBindingMode.OneWay)]
     public partial bool UpdateInProgress { get; private set; }
@@ -254,7 +254,7 @@ public sealed partial class AppShellViewModel
             _ = DispatchAsync(new AppShellIntent.DshVersionChanged(updatesState.CurrentDshVersion));
         }
 
-        bool inProgress = updatesState.PendingOperation is not null;
+        bool inProgress = updatesState.Operation?.IsInProgress == true;
         if (inProgress != Store.CurrentState.UpdatesInProgress)
         {
             _ = DispatchAsync(new AppShellIntent.UpdateInProgressChanged(inProgress));
@@ -280,8 +280,7 @@ public sealed partial class AppShellViewModel
 
         // 插件页行内"更新"只写 PluginsStore，遮罩必须据此分量独立判定，
         // 否则该入口的更新全程没有任何进度反馈（2026-09-17 定位）。
-        bool pluginInProgress = pluginsState.Operation
-            is { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed };
+        bool pluginInProgress = pluginsState.Operation?.IsInProgress == true;
         if (pluginInProgress != Store.CurrentState.PluginOperationInProgress)
         {
             _ = DispatchAsync(new AppShellIntent.PluginOperationInProgressChanged(pluginInProgress));

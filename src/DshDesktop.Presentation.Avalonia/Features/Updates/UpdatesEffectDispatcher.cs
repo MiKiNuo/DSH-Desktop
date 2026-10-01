@@ -60,12 +60,14 @@ public sealed partial class UpdatesEffectDispatcher
                 await _mediator
                     .SendAsync(new InstallDshRuntimeRequest(effect.Version), cancellationToken)
                     .ConfigureAwait(false);
-            await DispatchIntentAsync(new UpdatesIntent.RuntimeListChanged(runtimes), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.RuntimeListChanged(
+                runtimes, UpdatesOperationKind.RuntimeInstall, effect.Version), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(
+                exception.Message, UpdatesOperationKind.RuntimeInstall, effect.Version), cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -83,12 +85,14 @@ public sealed partial class UpdatesEffectDispatcher
             System.Collections.Generic.IReadOnlyList<DshRuntimeInfo> runtimes = await _mediator
                 .SendAsync(new ActivateDshRuntimeRequest(effect.Version), cancellationToken)
                 .ConfigureAwait(false);
-            await DispatchIntentAsync(new UpdatesIntent.RuntimeListChanged(runtimes), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.RuntimeListChanged(
+                runtimes, UpdatesOperationKind.RuntimeActivation, effect.Version), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(
+                exception.Message, UpdatesOperationKind.RuntimeActivation, effect.Version), cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -131,7 +135,8 @@ public sealed partial class UpdatesEffectDispatcher
         }
         catch (Exception exception)
         {
-            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
+            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(
+                exception.Message, UpdatesOperationKind.DesktopDownload, effect.Version), cancellationToken)
                 .ConfigureAwait(false);
         }
     }

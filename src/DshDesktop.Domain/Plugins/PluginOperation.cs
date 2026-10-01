@@ -78,4 +78,8 @@ public sealed record PluginOperation(
     PluginOperationStage Stage,
     string? PluginName,
     string? Error,
-    PluginOperationKind Kind = PluginOperationKind.Install);
+    PluginOperationKind Kind = PluginOperationKind.Install)
+{
+    /// <summary>非终态表示事务仍在进行（含回滚阶段）。</summary>
+    public bool IsInProgress => Stage is not PluginOperationStage.Completed and not PluginOperationStage.Failed;
+}

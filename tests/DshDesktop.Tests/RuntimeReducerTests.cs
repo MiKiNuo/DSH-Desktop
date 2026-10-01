@@ -474,4 +474,39 @@ public sealed class RuntimeReducerTests
         await Assert.That(result.State.DshVersion).IsEqualTo("0.1.0-rc.12");
         await Assert.That(result.Effects.Count).IsEqualTo(0);
     }
+
+    /// <summary>
+    /// 启动快照携带「未激活插件」⇒ 落到状态供 Runtime 页常驻提示。
+    /// 此类降级不改变生命周期（Runtime 仍是 Running），故只能随快照投影，不能靠 Failed 表达。
+    /// </summary>
+    [Test]
+    public async Task RuntimeSnapshotReceived_CarriesDegradedPlugins()
+    {
+        var snapshot = new RuntimeSnapshot(
+            RuntimeLifecycle.Running, RuntimeHealth.Healthy, RuntimeStartupStage.Ready,
+            TimeSpan.FromSeconds(4), 25908, 54036, "http://127.0.0.1:54036/?token=x",
+            ["dsh-myrules"]);
+
+        var result = _reducer.Reduce(RuntimeState.Initial, new RuntimeIntent.RuntimeSnapshotReceived(snapshot));
+
+        await Assert.That(result.State.DegradedPlugins).IsNotNull();
+        await Assert.That(result.State.DegradedPlugins!.Count).IsEqualTo(1);
+        await Assert.That(result.State.DegradedPlugins[0]).IsEqualTo("dsh-myrules");
+    }
+
+    /// <summary>
+    /// 停止/退出快照不带降级信息（null）⇒ 必须清空：降级属于「本次运行代」，Runtime 停了就不该再挂着提示。
+    /// </summary>
+    [Test]
+    public async Task RuntimeSnapshotReceived_WithoutDegradedPlugins_ClearsPrevious()
+    {
+        RuntimeState degraded = RuntimeState.Initial with { DegradedPlugins = ["dsh-myrules"] };
+        var stopped = new RuntimeSnapshot(
+            RuntimeLifecycle.Stopped, RuntimeHealth.Unknown, RuntimeStartupStage.None,
+            null, null, null, null);
+
+        var result = _reducer.Reduce(degraded, new RuntimeIntent.RuntimeSnapshotReceived(stopped));
+
+        await Assert.That(result.State.DegradedPlugins).IsNull();
+    }
 }

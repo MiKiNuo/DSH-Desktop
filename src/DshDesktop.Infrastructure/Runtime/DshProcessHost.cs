@@ -22,8 +22,15 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
     private const int ReadyStableSuccesses = 2;
     private const int StopWaitMs = 10_000;
 
+    /// <summary>
+    /// stdout 尾部缓冲上限。比 <see cref="AppendStderr"/> 的 4096 大一档：typert 告警块带着
+    /// AggregateError 堆栈、实机约 3KB，4096 会把锚点行（告警首行）从头部裁掉，只剩下游子句。
+    /// </summary>
+    private const int StdoutTailLimit = 16_384;
+
     private readonly HttpClient _httpClient = new();
     private readonly StringBuilder _stderrTail = new();
+    private readonly StringBuilder _stdoutTail = new();
     private readonly object _sync = new();
 
     private Launch? _launch;
@@ -72,12 +79,14 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
         lock (_sync)
         {
             _stderrTail.Clear();
+            _stdoutTail.Clear();
             _launch = launch;
         }
 
         process.Exited += OnProcessExited;
         process.OutputDataReceived += (_, args) =>
         {
+            AppendStdout(args.Data);
             TryCaptureReadyUrl(args.Data, launch);
             if (args.Data is { } stdoutLine)
             {
@@ -126,7 +135,12 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
             options.Progress?.Report(RuntimeStartupSignal.HttpProbing);
 
             await WaitHttpReadyAsync(url, timeoutSource.Token).ConfigureAwait(false);
-            return new RuntimeStartResult(process.Id, port, url);
+
+            // 「有 entry 未激活」是**启动成功**路径上的降级（2026-09-28 实机：typert 契约冲突 ⇒
+            // 工作台整页空白），不抛异常、HTTP 也通，故只能在这里随结果带出。
+            // 告警块出现在 `dsh web:` 就绪行**之前**（实机 07:14:01.987 vs 07:14:02.002），
+            // 故此处尾部缓冲已完整。
+            return new RuntimeStartResult(process.Id, port, url, PluginActivationWarningProbe.TryParse(ReadStdoutTail()));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -306,6 +320,35 @@ public sealed partial class DshProcessHost : IRuntimeOrchestrator
             // 已知崩溃特征附排查提示（BOM / 命名导出缺失），未知特征不附（不误导）。
             string? hint = RuntimeStderrHints.Describe(tail);
             return hint is null ? $"stderr 末尾：{tail}" : $"stderr 末尾：{tail}\n{hint}";
+        }
+    }
+
+    /// <summary>
+    /// 收集 stdout 尾部（超限时从头部裁剪，与 stderr 同策略），供启动完成时扫描「未激活」降级。
+    /// </summary>
+    private void AppendStdout(string? line)
+    {
+        if (line is null)
+        {
+            return;
+        }
+
+        lock (_sync)
+        {
+            if (_stdoutTail.Length > StdoutTailLimit)
+            {
+                _stdoutTail.Remove(0, _stdoutTail.Length - StdoutTailLimit);
+            }
+
+            _stdoutTail.AppendLine(line);
+        }
+    }
+
+    private string ReadStdoutTail()
+    {
+        lock (_sync)
+        {
+            return _stdoutTail.ToString();
         }
     }
 

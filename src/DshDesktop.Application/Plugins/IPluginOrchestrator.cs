@@ -10,6 +10,9 @@ namespace DshDesktop.Application.Plugins;
 /// </summary>
 public interface IPluginOrchestrator
 {
+    /// <summary>当前或最近一次已准入事务的快照；排队请求尚不发布阶段。</summary>
+    PluginOperation? Current { get; }
+
     /// <summary>
     /// 插件操作阶段变化时触发。
     /// </summary>
@@ -45,7 +48,8 @@ public interface IPluginOrchestrator
     Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 禁用全部第三方插件（Q6 恢复动作；调用方负责随后启动 Runtime）。
+    /// 取得 Profile 准入后停止正在运行的 Runtime，再禁用全部第三方插件
+    /// （Q6 恢复动作；不创建快照，调用方负责随后启动 Runtime）。
     /// </summary>
     /// <param name="cancellationToken">取消标记。</param>
     Task DisableAllThirdPartyAsync(CancellationToken cancellationToken);

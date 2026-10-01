@@ -150,13 +150,12 @@ public sealed partial class PluginsReducer
         PluginsState state,
         PluginsIntent.PluginOperationChanged intent)
     {
-        PluginOperationStage stage = intent.Operation.Stage;
         return Unchanged(state with
         {
             Operation = intent.Operation,
-            PendingOperation = stage is PluginOperationStage.Completed or PluginOperationStage.Failed
-                ? null
-                : $"{stage}：{intent.Operation.PluginName ?? "…"}",
+            PendingOperation = intent.Operation.IsInProgress
+                ? $"{intent.Operation.Stage}：{intent.Operation.PluginName ?? "…"}"
+                : null,
             LastError = intent.Operation.Error ?? state.LastError,
         });
     }
@@ -182,7 +181,6 @@ public sealed partial class PluginsReducer
     /// </summary>
     private static bool IsTransactionInFlight(PluginsState state)
     {
-        return state.Operation is
-        { Stage: not PluginOperationStage.Completed and not PluginOperationStage.Failed };
+        return state.Operation?.IsInProgress == true;
     }
 }

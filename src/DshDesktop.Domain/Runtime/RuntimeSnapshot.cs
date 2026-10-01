@@ -46,6 +46,13 @@ public enum RuntimeHealth
 /// <param name="ProcessId">DSH 进程 ID；未运行为 null。</param>
 /// <param name="Port">实际监听端口；未运行为 null。</param>
 /// <param name="Url">Session URL（含 token）；未运行为 null。</param>
+/// <param name="DegradedPlugins">
+/// 本次启动发现「未激活」的插件包名（去重、保序）。三态语义：
+/// <c>null</c> = 未发现该警告（也用于 Stopped / 退出 / 重接管快照）；
+/// 空集合 = 发现该警告但未定位插件名；非空 = 已定位未激活插件，界面应常驻提示。
+/// 之所以随快照走而不是走 Failed：该故障不改变生命周期（Runtime 仍是 Running），
+/// 但会让工作台整页空白，必须有一条与生命周期正交的可见通道。
+/// </param>
 public sealed record RuntimeSnapshot(
     RuntimeLifecycle Lifecycle,
     RuntimeHealth Health,
@@ -53,4 +60,5 @@ public sealed record RuntimeSnapshot(
     TimeSpan? StartupElapsed,
     int? ProcessId,
     int? Port,
-    string? Url);
+    string? Url,
+    IReadOnlyList<string>? DegradedPlugins = null);

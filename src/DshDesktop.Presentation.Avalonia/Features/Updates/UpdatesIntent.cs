@@ -50,13 +50,23 @@ public abstract partial record UpdatesIntent : IMviIntent
     /// 表示 Runtime 列表变化的回流意图。
     /// </summary>
     /// <param name="Runtimes">最新 Runtime 列表。</param>
-    public sealed partial record RuntimeListChanged(IReadOnlyList<DshRuntimeInfo> Runtimes) : UpdatesIntent;
+    /// <param name="CompletedKind">完成的自有操作种类；null 表示仅刷新列表。</param>
+    /// <param name="CompletedVersion">完成操作的目标版本。</param>
+    public sealed partial record RuntimeListChanged(
+        IReadOnlyList<DshRuntimeInfo> Runtimes,
+        UpdatesOperationKind? CompletedKind = null,
+        string? CompletedVersion = null) : UpdatesIntent;
 
     /// <summary>
     /// 表示更新操作失败的回流意图。
     /// </summary>
     /// <param name="Error">错误信息。</param>
-    public sealed partial record UpdatesOperationFailed(string Error) : UpdatesIntent;
+    /// <param name="OperationKind">失败的自有操作种类；null 表示插件请求失败。</param>
+    /// <param name="OperationVersion">失败操作的目标版本。</param>
+    public sealed partial record UpdatesOperationFailed(
+        string Error,
+        UpdatesOperationKind? OperationKind = null,
+        string? OperationVersion = null) : UpdatesIntent;
 
     /// <summary>
     /// 表示下载并应用 Desktop 更新意图（ADR-0003：用户确认后下载并重启）。

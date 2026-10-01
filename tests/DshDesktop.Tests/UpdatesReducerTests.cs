@@ -103,7 +103,7 @@ public sealed class UpdatesReducerTests
         UpdatesState busy = UpdatesState.Initial with
         {
             Status = UpdateStatus.Installing,
-            PendingOperation = "安装中…",
+            Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeInstall, "0.1.3"),
             CurrentDshVersion = "0.1.2",
         };
         IReadOnlyList<DshRuntimeInfo> runtimes =
@@ -112,7 +112,8 @@ public sealed class UpdatesReducerTests
             new DshRuntimeInfo("0.1.3", true, false),
         ];
 
-        var result = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes));
+        var result = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(
+            runtimes, UpdatesOperationKind.RuntimeInstall, "0.1.3"));
 
         await Assert.That(result.State.Runtimes.Count).IsEqualTo(2);
         await Assert.That(result.State.CurrentDshVersion).IsEqualTo("0.1.3");
@@ -123,7 +124,10 @@ public sealed class UpdatesReducerTests
     [Test]
     public async Task UpdatesOperationFailed_TransitionsToFailedWithError()
     {
-        var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.UpdatesOperationFailed("npm 查询失败"));
+        UpdatesState installing = _reducer.Reduce(
+            UpdatesState.Initial, new UpdatesIntent.InstallDshRuntime("0.1.3")).State;
+        var result = _reducer.Reduce(installing, new UpdatesIntent.UpdatesOperationFailed(
+            "npm 查询失败", UpdatesOperationKind.RuntimeInstall, "0.1.3"));
 
         await Assert.That(result.State.Status).IsEqualTo(UpdateStatus.Failed);
         await Assert.That(result.State.PendingOperation).IsNull();
@@ -131,7 +135,39 @@ public sealed class UpdatesReducerTests
     }
 
     [Test]
-    public async Task CheckUpdatesCompleted_DesktopUpdateAvailable_WritesLatestDesktopVersion()
+    [Arguments(UpdatesOperationKind.RuntimeActivation, "0.1.4")]
+    [Arguments(UpdatesOperationKind.RuntimeInstall, "0.1.3")]
+    public async Task RuntimeListChanged_ForDifferentOperation_DoesNotFinishCurrentInstall(
+        UpdatesOperationKind kind, string version)
+    {
+        UpdatesState installing = _reducer.Reduce(
+            UpdatesState.Initial, new UpdatesIntent.InstallDshRuntime("0.1.4")).State;
+
+        var result = _reducer.Reduce(installing,
+            new UpdatesIntent.RuntimeListChanged([new DshRuntimeInfo(version, false, false)], kind, version));
+
+        await Assert.That(result.State.Operation?.IsInProgress == true).IsTrue();
+        await Assert.That(result.State.PendingOperation).IsEqualTo("安装 DSH Runtime 0.1.4…");
+    }
+
+    [Test]
+    [Arguments(UpdatesOperationKind.RuntimeActivation, "0.1.4")]
+    [Arguments(UpdatesOperationKind.RuntimeInstall, "0.1.3")]
+    public async Task UpdatesOperationFailed_ForDifferentOperation_DoesNotFinishCurrentInstall(
+        UpdatesOperationKind kind, string version)
+    {
+        UpdatesState installing = _reducer.Reduce(
+            UpdatesState.Initial, new UpdatesIntent.InstallDshRuntime("0.1.4")).State;
+
+        var result = _reducer.Reduce(installing,
+            new UpdatesIntent.UpdatesOperationFailed("旧操作失败", kind, version));
+
+        await Assert.That(result.State.Operation?.IsInProgress == true).IsTrue();
+        await Assert.That(result.State.LastError).IsEqualTo("旧操作失败");
+    }
+
+    [Test]
+    public async Task CheckUpdatesCompleted_OnlyDesktopUpdateAvailable_ReturnsAvailable()
     {
         var response = new CheckUpdatesResponse(
             "0.1.2", "0.1.2",
@@ -141,6 +177,8 @@ public sealed class UpdatesReducerTests
         var result = _reducer.Reduce(CheckingState(), new UpdatesIntent.CheckUpdatesCompleted(response));
 
         await Assert.That(result.State.LatestDesktopVersion).IsEqualTo("0.2.0");
+        await Assert.That(result.State.AvailableCount).IsEqualTo(1);
+        await Assert.That(result.State.Status).IsEqualTo(UpdateStatus.Available);
     }
 
     [Test]
@@ -198,7 +236,8 @@ public sealed class UpdatesReducerTests
         UpdatesState downloading = _reducer.Reduce(
             UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" },
             new UpdatesIntent.DownloadAndApplyDesktopUpdate()).State;
-        UpdatesState failed = _reducer.Reduce(downloading, new UpdatesIntent.UpdatesOperationFailed("下载失败")).State;
+        UpdatesState failed = _reducer.Reduce(downloading, new UpdatesIntent.UpdatesOperationFailed(
+            "下载失败", UpdatesOperationKind.DesktopDownload, "0.2.0")).State;
         await Assert.That(failed.PendingOperation).IsNull();
 
         UpdatesState resurrected = _reducer.Reduce(failed, new UpdatesIntent.DesktopDownloadProgress(80)).State;
@@ -218,6 +257,23 @@ public sealed class UpdatesReducerTests
 
         await Assert.That(result.State.PendingOperation).IsNull();
         await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+    }
+
+    [Test]
+    public async Task DesktopDownloadProgress_AfterFailureAndRuntimeInstall_DoesNotPolluteNewOperation()
+    {
+        UpdatesState downloading = _reducer.Reduce(
+            UpdatesState.Initial with { LatestDesktopVersion = "0.2.0" },
+            new UpdatesIntent.DownloadAndApplyDesktopUpdate()).State;
+        UpdatesState failed = _reducer.Reduce(downloading, new UpdatesIntent.UpdatesOperationFailed(
+            "下载失败", UpdatesOperationKind.DesktopDownload, "0.2.0")).State;
+        UpdatesState installing = _reducer.Reduce(failed, new UpdatesIntent.InstallDshRuntime("0.1.4")).State;
+
+        var result = _reducer.Reduce(installing, new UpdatesIntent.DesktopDownloadProgress(80));
+
+        await Assert.That(result.State.Operation?.Percent).IsNull();
+        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+        await Assert.That(result.State.PendingOperation).IsEqualTo("安装 DSH Runtime 0.1.4…");
     }
 
     [Test]
@@ -249,7 +305,7 @@ public sealed class UpdatesReducerTests
         UpdatesState installing = UpdatesState.Initial with
         {
             Status = UpdateStatus.Installing,
-            PendingOperation = "安装 DSH Runtime 0.1.3…",
+            Operation = new UpdatesOperation(UpdatesOperationKind.RuntimeInstall, "0.1.3"),
         };
 
         var result = _reducer.Reduce(installing, new UpdatesIntent.CheckUpdates());
@@ -355,8 +411,7 @@ public sealed class UpdatesReducerTests
         // 不得释放遮罩（§22），但仍可按名摘除插件的可更新行并回流一次检查。
         UpdatesState downloading = UpdatesState.Initial with
         {
-            PendingOperation = "下载 Desktop 更新 0.2.0…",
-            DesktopDownloadProgress = 42,
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", Percent: 42),
             LatestDesktopVersion = "0.2.0",
             PluginUpdates = [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")],
         };
@@ -376,7 +431,8 @@ public sealed class UpdatesReducerTests
         await Assert.That(busy.PendingOperation).IsNotNull();
 
         IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
-        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes)).State;
+        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(
+            runtimes, UpdatesOperationKind.RuntimeInstall, "0.1.3")).State;
         await Assert.That(done.PendingOperation).IsNull();
     }
 
@@ -388,7 +444,8 @@ public sealed class UpdatesReducerTests
         await Assert.That(busy.PendingOperation).IsNotNull();
 
         IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
-        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(runtimes)).State;
+        UpdatesState done = _reducer.Reduce(busy, new UpdatesIntent.RuntimeListChanged(
+            runtimes, UpdatesOperationKind.RuntimeActivation, "0.1.3")).State;
         await Assert.That(done.PendingOperation).IsNull();
     }
 
@@ -397,31 +454,43 @@ public sealed class UpdatesReducerTests
     {
         // 遮罩「spinner ↔ 确定进度条」互斥依赖"进度字段仅在 Desktop 下载期间有值"：
         // 非下载操作必须清掉上一次 Desktop 下载残留的百分比，否则遮罩会显示一个卡住的进度条。
-        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+        UpdatesState stale = UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", UpdatesOperationPhase.Failed, 42),
+        };
 
         var result = _reducer.Reduce(stale, new UpdatesIntent.InstallDshRuntime("0.1.3"));
 
         await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+        await Assert.That(result.State.PendingOperation).IsEqualTo("安装 DSH Runtime 0.1.3…");
     }
 
     [Test]
     public async Task ActivateDshRuntime_ResetsStaleDownloadProgress()
     {
-        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+        UpdatesState stale = UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", UpdatesOperationPhase.Failed, 42),
+        };
 
         var result = _reducer.Reduce(stale, new UpdatesIntent.ActivateDshRuntime("0.1.3"));
 
         await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+        await Assert.That(result.State.PendingOperation).IsEqualTo("切换到 0.1.3 并重启 Runtime…");
     }
 
     [Test]
-    public async Task UpdatePlugin_ResetsStaleDownloadProgress()
+    public async Task UpdatePlugin_DuringDesktopDownload_KeepsOwnProgress()
     {
-        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+        UpdatesState downloading = UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", Percent: 42),
+        };
 
-        var result = _reducer.Reduce(stale, new UpdatesIntent.UpdatePlugin("dsh-foo"));
+        var result = _reducer.Reduce(downloading, new UpdatesIntent.UpdatePlugin("dsh-foo"));
 
-        await Assert.That(result.State.DesktopDownloadProgress).IsNull();
+        await Assert.That(result.State.DesktopDownloadProgress).IsEqualTo(42);
+        await Assert.That(result.State.Operation).IsSameReferenceAs(downloading.Operation);
     }
 
     [Test]
@@ -434,7 +503,8 @@ public sealed class UpdatesReducerTests
         UpdatesState progressed = _reducer.Reduce(downloading, new UpdatesIntent.DesktopDownloadProgress(42)).State;
         await Assert.That(progressed.DesktopDownloadProgress).IsEqualTo(42);
 
-        var result = _reducer.Reduce(progressed, new UpdatesIntent.UpdatesOperationFailed("下载失败"));
+        var result = _reducer.Reduce(progressed, new UpdatesIntent.UpdatesOperationFailed(
+            "下载失败", UpdatesOperationKind.DesktopDownload, "0.2.0"));
 
         await Assert.That(result.State.DesktopDownloadProgress).IsNull();
     }
@@ -442,7 +512,10 @@ public sealed class UpdatesReducerTests
     [Test]
     public async Task RuntimeListChanged_ClearsDownloadProgress()
     {
-        UpdatesState stale = UpdatesState.Initial with { DesktopDownloadProgress = 42 };
+        UpdatesState stale = UpdatesState.Initial with
+        {
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", UpdatesOperationPhase.Failed, 42),
+        };
         IReadOnlyList<DshRuntimeInfo> runtimes = [new DshRuntimeInfo("0.1.3", true, false)];
 
         var result = _reducer.Reduce(stale, new UpdatesIntent.RuntimeListChanged(runtimes));
@@ -470,15 +543,14 @@ public sealed class UpdatesReducerTests
         // （否则遮罩/导航锁被提前释放）。PendingOperation 在该 handler 中完全不再触碰。
         UpdatesState downloading = UpdatesState.Initial with
         {
-            PendingOperation = "下载 Desktop 更新 0.2.0…",
-            DesktopDownloadProgress = 42,
+            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0", Percent: 42),
             LatestDesktopVersion = "0.2.0",
             PluginUpdates = [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")],
         };
 
         var result = _reducer.Reduce(downloading, new UpdatesIntent.PluginOperationFinished("dsh-foo"));
 
-        await Assert.That(result.State.PendingOperation).IsEqualTo("下载 Desktop 更新 0.2.0…"); // 不被卸载终态清掉
+        await Assert.That(result.State.PendingOperation).IsEqualTo("下载 Desktop 更新 0.2.0（42%）…"); // 不被卸载终态清掉
         await Assert.That(result.State.DesktopDownloadProgress).IsEqualTo(42);
         await Assert.That(result.State.PluginUpdates.Count).IsEqualTo(0); // 按名摘行安全
         await Assert.That(result.Effects[0] is UpdatesEffect.CheckUpdates).IsTrue();

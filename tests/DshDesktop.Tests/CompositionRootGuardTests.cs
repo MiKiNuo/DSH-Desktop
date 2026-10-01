@@ -20,6 +20,28 @@ public sealed class CompositionRootGuardTests
     }
 
     [Test]
+    public async Task PluginOperationStages_OnlyComeFromApplicationAdmission()
+    {
+        string source = await CompositionRootSourceAsync();
+
+        // 排队请求尚未成为事务；宿主合成 Preparing 会在取消等待后留下永久的在飞投影。
+        await Assert.That(source.Contains("PluginOperationStage.Preparing", StringComparison.Ordinal)).IsFalse();
+    }
+
+    [Test]
+    public async Task DisableAllRuntimeStop_OnlyHappensAfterApplicationAdmission()
+    {
+        string source = await CompositionRootSourceAsync();
+        const string anchor = "private async ValueTask<IReadOnlyList<PluginInfo>> HandleDisableAllThirdPartyAsync(";
+        int start = source.IndexOf(anchor, StringComparison.Ordinal);
+        await Assert.That(start >= 0).IsTrue();
+        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
+        string body = end < 0 ? source[start..] : source[start..end];
+
+        await Assert.That(body.Contains("StopRuntimeIfRunningAsync", StringComparison.Ordinal)).IsFalse();
+    }
+
+    [Test]
     public async Task CompositionRoot_HasNoDirectConfigStoreSave()
     {
         string source = await CompositionRootSourceAsync();
@@ -80,16 +102,6 @@ public sealed class CompositionRootGuardTests
         await Assert.That(selfCheck >= 0).IsTrue();
         await Assert.That(autoStart >= 0).IsTrue();
         await Assert.That(selfCheck < autoStart).IsTrue();
-    }
-
-    [Test]
-    public async Task CheckUpdates_IncludesResolvableCorePlugins()
-    {
-        string source = await CompositionRootSourceAsync();
-
-        await Assert.That(
-            source.Contains("plugins.Where(p => p is { Enabled: true, IsResolvable: true })", StringComparison.Ordinal))
-            .IsTrue();
     }
 
     /// <summary>

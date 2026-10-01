@@ -86,6 +86,15 @@ public sealed class GitHubDesktopUpdaterTests
     }
 
     [Test]
+    public async Task IsInstalled_ProductionProbe_MatchesRunningInstallation()
+    {
+        bool runningInstalledCopy = InnoSetupInstallProbe.ProbeRunningInstallRoot() is not null;
+        var updater = new GitHubDesktopUpdater(Serilog.Core.Logger.None, "0.1.2");
+
+        await Assert.That(updater.IsInstalled).IsEqualTo(runningInstalledCopy);
+    }
+
+    [Test]
     public async Task CheckForUpdates_NotInstalled_ReturnsNullWithoutHttp()
     {
         int httpCalls = 0;

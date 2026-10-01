@@ -228,7 +228,7 @@ public sealed partial class RuntimeReducer
     }
 
     /// <summary>
-    /// 处理 Supervisor 快照推送：只应用阶段 / 健康 / 耗时。
+    /// 处理 Supervisor 快照推送：只应用阶段 / 健康 / 耗时 / 未激活插件。
     /// 生命周期迁移由专用 Intent（Started / Failed / Exited）表达，
     /// 防止退出快照的 Stopped 覆盖崩溃语义（Q7）。
     /// </summary>
@@ -242,6 +242,10 @@ public sealed partial class RuntimeReducer
             StartupStage = intent.Snapshot.StartupStage,
             Health = intent.Snapshot.Health,
             StartupElapsed = intent.Snapshot.StartupElapsed ?? state.StartupElapsed,
+
+            // 直接赋值（不做 `?? state.` 保留）：快照的 null 表示"这份快照不代表一次启动完成"，
+            // 到位即清空——降级属于「本次运行代」，Runtime 停了就不该继续挂着提示。
+            DegradedPlugins = intent.Snapshot.DegradedPlugins,
         });
     }
 

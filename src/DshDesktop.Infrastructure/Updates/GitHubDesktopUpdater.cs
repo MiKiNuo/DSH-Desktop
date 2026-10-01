@@ -3,7 +3,6 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using DshDesktop.Application.Updates;
-using Microsoft.Win32;
 using Serilog;
 
 namespace DshDesktop.Infrastructure.Updates;
@@ -121,24 +120,7 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
     }
 
     private static bool ProbeInstalled()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return false;
-        }
-
-        try
-        {
-            using RegistryKey? key = RegistryKey
-                .OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64)
-                .OpenSubKey(UninstallSubKey);
-            return key is not null;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
+        => InnoSetupInstallProbe.ProbeRunningInstallRoot() is not null;
 
 
     /// <summary>
@@ -390,4 +372,3 @@ internal sealed class GitHubReleaseAsset
 /// </summary>
 [JsonSerializable(typeof(GitHubReleaseResponse))]
 internal sealed partial class GitHubReleaseJsonContext : JsonSerializerContext;
-

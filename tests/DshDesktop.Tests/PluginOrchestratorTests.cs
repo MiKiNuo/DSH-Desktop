@@ -20,6 +20,112 @@ public sealed class PluginOrchestratorTests
     }
 
     [Test]
+    public async Task InstallAsync_OverlappingRequests_RunOneTransactionAtATime()
+    {
+        var snapshotter = new GatedProfileSnapshotter();
+        IPluginOrchestrator orchestrator = new PluginOrchestrator(
+            new SucceedingPluginManager(), snapshotter, new FakeRuntimeSupervisor(),
+            OptionsFactory, Serilog.Core.Logger.None);
+        var stages = new List<PluginOperationStage>();
+        orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
+
+        Task<string> first = orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Install, CancellationToken.None);
+        await snapshotter.FirstSnapshotStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task<string> second = orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Update, CancellationToken.None);
+        try
+        {
+            await Assert.That(second.IsCompleted).IsFalse();
+            await Assert.That(stages.Count(stage => stage == PluginOperationStage.Preparing)).IsEqualTo(1);
+        }
+        finally
+        {
+            snapshotter.ReleaseFirstSnapshot.TrySetResult();
+            await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        await Assert.That(stages.Count(stage => stage == PluginOperationStage.Completed)).IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task InstallAsync_CancelledQueuedRequest_DoesNotChangeActiveTransaction()
+    {
+        var snapshotter = new GatedProfileSnapshotter();
+        IPluginOrchestrator orchestrator = new PluginOrchestrator(
+            new SucceedingPluginManager(), snapshotter, new FakeRuntimeSupervisor(),
+            OptionsFactory, Serilog.Core.Logger.None);
+        var stages = new List<PluginOperationStage>();
+        orchestrator.OperationChanged += (_, operation) => stages.Add(operation.Stage);
+        Task<string> first = orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Install, CancellationToken.None);
+        await snapshotter.FirstSnapshotStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+        Task<string> queued = orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Update, cancellation.Token);
+        cancellation.Cancel();
+        try
+        {
+            await Assert.That(async () => await queued.WaitAsync(TimeSpan.FromSeconds(5)))
+                .Throws<OperationCanceledException>();
+            await Assert.That(orchestrator.Current!.Stage).IsEqualTo(PluginOperationStage.CreatingSnapshot);
+            await Assert.That(stages.Count(stage => stage == PluginOperationStage.Preparing)).IsEqualTo(1);
+        }
+        finally
+        {
+            snapshotter.ReleaseFirstSnapshot.TrySetResult();
+            await first.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        await orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Update, CancellationToken.None);
+        await Assert.That(orchestrator.Current!.Stage).IsEqualTo(PluginOperationStage.Completed);
+        await Assert.That(orchestrator.Current.Kind).IsEqualTo(PluginOperationKind.Update);
+    }
+
+    [Test]
+    public async Task DisableAllThirdPartyAsync_WaitsForActiveTransaction()
+    {
+        var snapshotter = new GatedProfileSnapshotter();
+        var supervisor = new FakeRuntimeSupervisor();
+        IPluginOrchestrator orchestrator = new PluginOrchestrator(
+            new SucceedingPluginManager(), snapshotter, supervisor,
+            OptionsFactory, Serilog.Core.Logger.None);
+        Task<string> first = orchestrator.InstallAsync("dsh-foo", PluginOperationKind.Install, CancellationToken.None);
+        await snapshotter.FirstSnapshotStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Task recovery = orchestrator.DisableAllThirdPartyAsync(CancellationToken.None);
+        try
+        {
+            await Assert.That(recovery.IsCompleted).IsFalse();
+            await Assert.That(supervisor.StopCount).IsEqualTo(0);
+        }
+        finally
+        {
+            snapshotter.ReleaseFirstSnapshot.TrySetResult();
+            await Task.WhenAll(first, recovery).WaitAsync(TimeSpan.FromSeconds(5));
+        }
+
+        // 前一事务已重新拉起 Runtime；恢复必须在获门后重新判断并停止它。
+        await Assert.That(supervisor.StopCount).IsEqualTo(2);
+    }
+
+    private sealed class GatedProfileSnapshotter : IProfileSnapshotter
+    {
+        private int _snapshotCount;
+        public TaskCompletionSource FirstSnapshotStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseFirstSnapshot { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string> CreateSnapshotAsync(CancellationToken cancellationToken)
+        {
+            int count = Interlocked.Increment(ref _snapshotCount);
+            if (count == 1)
+            {
+                FirstSnapshotStarted.TrySetResult();
+                await ReleaseFirstSnapshot.Task.WaitAsync(cancellationToken);
+            }
+
+            return $"snap-{count}";
+        }
+
+        public Task RestoreAsync(string snapshotId, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    [Test]
     public async Task InstallAsync_WhenInstallFails_RollsBackRestartsAndRethrows()
     {
         var pluginManager = new FailingPluginManager();

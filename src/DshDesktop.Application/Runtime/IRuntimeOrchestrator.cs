@@ -40,7 +40,16 @@ public sealed record RuntimeLaunchOptions(
 /// <param name="ProcessId">DSH 进程 ID。</param>
 /// <param name="Port">实际监听端口。</param>
 /// <param name="Url">DSH Web UI 完整地址（含会话 token，仅存内存，禁止落盘）。</param>
-public sealed record RuntimeStartResult(int ProcessId, int Port, string Url);
+/// <param name="DegradedPlugins">
+/// 启动输出里被发现「未激活」的插件包名（去重、保序）。null = 未命中该特征（正常启动）；
+/// 空集合 = 命中特征但解析不出包名。此类降级不影响进程存活与 HTTP 就绪，故只能随结果上报
+/// （2026-09-28 实机：typert 契约冲突会让工作台整页空白，而宿主此前无任何信号）。
+/// </param>
+public sealed record RuntimeStartResult(
+    int ProcessId,
+    int Port,
+    string Url,
+    IReadOnlyList<string>? DegradedPlugins = null);
 
 /// <summary>
 /// 表示 Runtime 进程退出事件参数。

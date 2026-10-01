@@ -98,6 +98,65 @@ public sealed class RuntimeViewModelTests
         await Assert.That(string.Join("；", violations)).IsEmpty();
     }
 
+    /// <summary>
+    /// 「插件未激活」提示的可见性契约（2026-09-28：dsh 0.1.7-rc.2 × dsh-myrules 使工作台整页空白而宿主无感）。
+    /// 三态语义必须逐态落到 UI，**尤其空集合**：它是「命中了降级特征但解析不出肇事插件名」，
+    /// 属于必须提示的情形（故障格式变了就是这一态），一旦被当成"无降级"就会退回本次要修的静默。
+    /// </summary>
+    [Test]
+    [Arguments(null, false)]
+    [Arguments(0, true)]
+    [Arguments(1, true)]
+    [Arguments(2, true)]
+    public async Task DegradedNotice_VisibilityFollowsThreeStateSemantics(int? pluginCount, bool expectedVisible)
+    {
+        IReadOnlyList<string>? degraded = pluginCount switch
+        {
+            null => null,
+            0 => [],
+            _ => Enumerable.Range(1, pluginCount.Value).Select(static i => $"dsh-p{i}").ToList(),
+        };
+
+        using var harness = CreateViewModel(RuntimeLifecycle.Running);
+        harness.RuntimeStore.Push(State(RuntimeLifecycle.Running) with { DegradedPlugins = degraded });
+
+        await Assert.That(harness.ViewModel.HasDegradedPlugins).IsEqualTo(expectedVisible);
+    }
+
+    /// <summary>
+    /// 提示正文必须覆盖两种降级：能定位插件名时逐个列出（用户才知道去禁用谁），
+    /// 定位不到时退化为指向诊断页——两种文案都要非空，不得出现"提示条在、正文空白"。
+    /// </summary>
+    [Test]
+    public async Task DegradedNotice_TextNamesPluginsOrFallsBackToDiagnostics()
+    {
+        using var harness = CreateViewModel(RuntimeLifecycle.Running);
+
+        harness.RuntimeStore.Push(State(RuntimeLifecycle.Running) with { DegradedPlugins = ["dsh-myrules", "dsh-other"] });
+        await Assert.That(harness.ViewModel.DegradedPluginsText).Contains("dsh-myrules", StringComparison.Ordinal);
+        await Assert.That(harness.ViewModel.DegradedPluginsText).Contains("dsh-other", StringComparison.Ordinal);
+
+        harness.RuntimeStore.Push(State(RuntimeLifecycle.Running) with { DegradedPlugins = [] });
+        await Assert.That(harness.ViewModel.DegradedPluginsText).Contains("诊断", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 派生投影必须随降级字段联动刷新：否则提示条会停在旧文案（与主操作按钮同一失效模式）。
+    /// </summary>
+    [Test]
+    public async Task DegradedNotice_NotifiesDerivedProjections()
+    {
+        using var harness = CreateViewModel(RuntimeLifecycle.Running);
+        var changed = new List<string>();
+        harness.ViewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+
+        harness.RuntimeStore.Push(State(RuntimeLifecycle.Running) with { DegradedPlugins = ["dsh-myrules"] });
+
+        await Assert.That(changed).Contains(nameof(RuntimeViewModel.HasDegradedPlugins));
+        await Assert.That(changed).Contains(nameof(RuntimeViewModel.DegradedPluginsText));
+        await Assert.That(harness.ViewModel.HasDegradedPlugins).IsTrue();
+    }
+
     private static RuntimeState State(RuntimeLifecycle lifecycle)
         => RuntimeState.Initial with { Lifecycle = lifecycle };
 

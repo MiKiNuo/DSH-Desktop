@@ -33,6 +33,11 @@ public sealed record RuntimeEnvironmentInfo(
 /// <param name="KeepRuntimeOnClose">关闭窗口后保持 DSH Runtime（ADR-0005，默认关）。</param>
 /// <param name="AutoSafeModeOnFailure">异常启动自动进入安全模式（ADR-0004 修订注，默认开）。</param>
 /// <param name="CheckUpdatesOnStartup">启动时检查网络更新（§34 修订注，默认关）。</param>
+/// <param name="DegradedPlugins">
+/// 本次启动中被发现「未激活」的插件包名（去重、保序）；null = 无此类降级。
+/// 该降级不改生命周期（Runtime 照常 Running），但会让 dsh 工作台整页空白，
+/// 故需要在 Runtime 页常驻提示（2026-09-28 实机：typert 契约冲突）。
+/// </param>
 public sealed record RuntimeState(
     RuntimeLifecycle Lifecycle,
     RuntimeHealth Health,
@@ -47,7 +52,8 @@ public sealed record RuntimeState(
     string? DshVersion,
     bool KeepRuntimeOnClose,
     bool AutoSafeModeOnFailure,
-    bool CheckUpdatesOnStartup) : IMviState
+    bool CheckUpdatesOnStartup,
+    IReadOnlyList<string>? DegradedPlugins = null) : IMviState
 {
     /// <summary>
     /// 获取初始状态。

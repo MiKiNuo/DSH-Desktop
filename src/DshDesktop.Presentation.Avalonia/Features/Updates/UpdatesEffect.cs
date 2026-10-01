@@ -33,5 +33,6 @@ public abstract partial record UpdatesEffect : IMviEffect
     /// <summary>
     /// 表示下载并应用 Desktop 更新副作用。
     /// </summary>
-    public sealed partial record DownloadAndApplyDesktopUpdate : UpdatesEffect;
+    /// <param name="Version">下载操作的目标版本。</param>
+    public sealed partial record DownloadAndApplyDesktopUpdate(string Version) : UpdatesEffect;
 }

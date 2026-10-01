@@ -14,9 +14,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.Updates;
 /// <param name="Runtimes">可用 Runtime 列表（借用 + 自建）。</param>
 /// <param name="PluginUpdates">可更新的插件列表。</param>
 /// <param name="LatestDesktopVersion">最新 Desktop 版本；无更新或未安装形态为 null（当前版本是编译期常量，见 ViewModel.DesktopVersion）。</param>
-/// <param name="DesktopDownloadProgress">Desktop 更新下载进度（0-100）；<b>仅 Desktop 下载期间有值</b>——其余操作与终态一律 null，遮罩据此在「旋转图标 ↔ 确定进度条」间互斥切换。</param>
-/// <param name="PendingOperation">进行中的操作描述；null 表示空闲。仅覆盖 UpdatesStore 自有操作
-/// （Desktop 下载、Runtime 安装/激活）；插件更新的在飞与文案由 PluginsState.Operation 单一承载（候选 3：消除"在飞操作"双轨）。</param>
+/// <param name="Operation">Desktop 下载、Runtime 安装/激活的操作事实；插件事务由 PluginsState.Operation 承载。</param>
 /// <param name="LastError">最近一次错误信息。</param>
 public sealed record UpdatesState(
     UpdateStatus Status,
@@ -26,8 +24,7 @@ public sealed record UpdatesState(
     IReadOnlyList<DshRuntimeInfo> Runtimes,
     IReadOnlyList<PluginUpdateInfo> PluginUpdates,
     string? LatestDesktopVersion,
-    int? DesktopDownloadProgress,
-    string? PendingOperation,
+    UpdatesOperation? Operation,
     string? LastError) : IMviState
 {
     /// <summary>
@@ -39,7 +36,13 @@ public sealed record UpdatesState(
         null, null,
         System.Array.Empty<DshRuntimeInfo>(),
         System.Array.Empty<PluginUpdateInfo>(),
-        null, null, null, null);
+        null, null, null);
+
+    /// <summary>进行中的自有操作文案；终态与空闲为 null。</summary>
+    public string? PendingOperation => Operation?.PendingOperation;
+
+    /// <summary>Desktop 下载进度；其他操作、终态与空闲为 null。</summary>
+    public int? DesktopDownloadProgress => Operation?.DesktopDownloadProgress;
 
     /// <summary>
     /// 获取可用更新总数（AppShell UpdateBadge 投影口径，§22 三来源独立计数）：

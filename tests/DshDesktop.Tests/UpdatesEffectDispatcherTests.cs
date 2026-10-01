@@ -10,6 +10,28 @@ namespace DshDesktop.Tests;
 public sealed class UpdatesEffectDispatcherTests
 {
     [Test]
+    public async Task PluginFailure_DoesNotFinishDesktopDownload()
+    {
+        var mediator = new ControlledMediator();
+        using var store = new MviStore<UpdatesState, UpdatesIntent, UpdatesEffect>(
+            UpdatesState.Initial with { LatestDesktopVersion = "2.0.0" },
+            new UpdatesReducer(), new UpdatesEffectDispatcher(mediator), []);
+        Task download = store.DispatchAsync(new UpdatesIntent.DownloadAndApplyDesktopUpdate()).AsTask();
+        await mediator.OperationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await store.DispatchAsync(new UpdatesIntent.DesktopDownloadProgress(42));
+
+        await store.DispatchAsync(new UpdatesIntent.UpdatePlugin("dsh-foo"));
+        UpdatesState afterPluginFailure = store.CurrentState;
+
+        mediator.Operation.SetException(new InvalidOperationException("operation failed"));
+        await download.WaitAsync(TimeSpan.FromSeconds(5));
+
+        await Assert.That(afterPluginFailure.Operation?.IsInProgress == true).IsTrue();
+        await Assert.That(afterPluginFailure.DesktopDownloadProgress).IsEqualTo(42);
+        await Assert.That(afterPluginFailure.LastError).IsEqualTo("plugin update failed");
+    }
+
+    [Test]
     [Arguments(false)]
     [Arguments(true)]
     public async Task CheckFailure_DoesNotFinishPendingOperation(bool install)
@@ -70,6 +92,10 @@ public sealed class UpdatesEffectDispatcherTests
             {
                 CheckStarted.TrySetResult();
                 return (TResponse)(object)await Check.Task.WaitAsync(cancellationToken);
+            }
+            if (request is UpdatePluginRequest)
+            {
+                throw new InvalidOperationException("plugin update failed");
             }
             OperationStarted.TrySetResult();
             return (TResponse)await Operation.Task.WaitAsync(cancellationToken);

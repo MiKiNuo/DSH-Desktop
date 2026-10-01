@@ -165,6 +165,25 @@
                                     Content="退出安全模式" />
                             </Grid>
                         </Border>
+
+                        <!-- 插件未激活提示（2026-09-28）。
+                             dsh 的 typert-loader 因插件 manifest 不合规而激活失败时，宿主侧
+                             HTTP 探测仍判 Ready，但 api-gateway 会拒绝全部端点 → 工作台整页空白。
+                             该降级不改生命周期，故单独常驻提示，引导用户到「插件」页禁用肇事插件。
+                             布局同 SafeMode 块，走全局 .notice 契约。 -->
+                        <Border Classes="notice err" IsVisible="{Binding HasDegradedPlugins}">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <Path
+                                    Classes="icon"
+                                    Grid.Column="0"
+                                    Data="{DynamicResource IconAlert}"
+                                    VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Classes="notice-title" Text="插件未激活 · 工作台可能无法显示" />
+                                    <TextBlock Text="{Binding DegradedPluginsText}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                     </StackPanel>
                 </Border>
 
