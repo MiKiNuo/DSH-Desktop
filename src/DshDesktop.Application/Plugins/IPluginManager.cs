@@ -33,7 +33,7 @@ public interface IPluginManager
     /// <summary>
     /// 安装插件（pnpm add + reconcile bundles）。
     /// </summary>
-    /// <param name="source">npm 包名（可带版本）或本地 .tgz 文件路径。</param>
+    /// <param name="source">npm 包名（可带版本）、GitHub 源（owner/repo 简写或 URL；git 协议需系统 PATH 上的 git）或本地 .tgz/目录路径。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>实际安装的插件包名。</returns>
     Task<string> InstallAsync(string source, CancellationToken cancellationToken);

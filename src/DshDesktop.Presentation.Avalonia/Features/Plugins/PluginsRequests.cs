@@ -27,7 +27,7 @@ public sealed record UninstallPluginRequest(string Name)
 /// <summary>
 /// 表示安装插件的跨层请求（§19 事务，经 PluginOrchestrator 执行）；响应为提交后的最新清单。
 /// </summary>
-/// <param name="Source">npm 包名（可带版本）或本地 .tgz 文件路径。</param>
+/// <param name="Source">npm 包名（可带版本）、GitHub 源（owner/repo 简写或 URL）或本地 .tgz/目录路径。</param>
 public sealed record InstallPluginRequest(string Source)
     : IMviRequest<IReadOnlyList<PluginInfo>>;
 

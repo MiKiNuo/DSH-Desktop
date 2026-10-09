@@ -229,16 +229,17 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     }
 
     [Test]
-    public async Task InstallAsync_DeclaredBundleUnresolvable_Throws()
+    public async Task InstallAsync_StaleBundleDeclaration_IsPrunedAndInstallSucceeds()
     {
-        // 回归（2026-09-14 实机）：清单声明了 bundle "dsh-myrules"，但磁盘上无法解析
-        // （悬空 junction / 缺失）。pnpm add 退出码 0 不代表 bundle 可解析——
-        // 旧实现直接返回成功，错误只在 Runtime 重启时才暴露。
+        // 2026-10-10 实机：bundles 残留「既不在 dependencies、磁盘也不存在」的声明
+        // （历史安装/卸载不完整留下，如 @deepseek-ai/dsh-experimental-agent-team-profile），
+        // pnpm 只物化 dependencies，重建 lockfile 永不可能修复它 → 旧实现每次安装都抛错回滚，
+        // 所有插件安装被同一残留永久卡死。约定：此类不可恢复声明自动摘除并 WARN，不再阻塞安装。
+        // （2026-09-14「本次安装打坏既有 bundle 仍须抛错」的保护改由
+        //   InstallAsync_InstallBreaksPreviouslyResolvedBundle_Throws 承载。）
         SeedProfile(
             dependencies: ["dsh-foo"],
-            bundles: ["dsh-myrules"]);
-        // 模拟 pnpm add 成功装入了 dsh-newplugin（含 dsh.bundle.patch），
-        // 但 dsh-myrules 仍不可解析。
+            bundles: ["dsh-ghost"]); // dsh-ghost：不在 dependencies、磁盘也不存在
         Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-newplugin"));
         File.WriteAllText(
             Path.Combine(ProfileDir, "node_modules", "dsh-newplugin", "package.json"),
@@ -247,9 +248,83 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         // 需要一个存在的 pnpm 路径以通过前置检查（真实执行被 runOnce 桩拦截）。
         string pnpm = Path.Combine(_root, "pnpm.cjs");
         File.WriteAllText(pnpm, "");
+        List<string[]> pnpmCalls = [];
+        List<string> warnings = [];
         Func<string, string, string, string[], CancellationToken, Task<(int, string)>> runOnce =
-            (_, _, _, _, _) => Task.FromResult((0, string.Empty));
-        var repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
+            (_, _, _, args, _) =>
+            {
+                pnpmCalls.Add(args);
+                return Task.FromResult((0, string.Empty));
+            };
+        var repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, runOnce, onWarning: warnings.Add);
+
+        string installed = await repository.InstallAsync("dsh-newplugin", CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-newplugin");
+        // 摘除后清单只剩安装 reconcile 写回的 dsh-newplugin，dsh-ghost 不再出现。
+        string manifest = File.ReadAllText(Path.Combine(ProfileDir, "package.json"));
+        await Assert.That(manifest.Contains("dsh-ghost", StringComparison.Ordinal)).IsFalse();
+        // 摘除即干净：无需触发 lockfile 重建（pnpm install）。
+        await Assert.That(pnpmCalls.All(args => args[0] == "add")).IsTrue();
+        // 摘除动作有 WARN 痕迹可查（通知/诊断链路）。
+        await Assert.That(warnings.Count).IsEqualTo(1);
+        await Assert.That(warnings[0]).Contains("dsh-ghost");
+    }
+
+    [Test]
+    public async Task InstallAsync_PreExistingDamagedDependency_WarnsButSucceeds()
+    {
+        // 既有损坏（声明在 dependencies 里、安装前就不可解析，重建也修不好，如离线缺包）属历史问题：
+        // WARN 放行而非抛错回滚——本次无辜安装不应为既有损坏陪葬；
+        // Runtime 启动期仍会精确报 cannot resolve profile bundle，不会因放行而掩盖。
+        SeedProfile(
+            dependencies: ["dsh-myrules", "dsh-newplugin"],
+            bundles: ["dsh-myrules"]); // dsh-myrules 在 dependencies 但磁盘缺失（既有损坏）
+        WriteInstalledPackage("dsh-newplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        List<string> warnings = [];
+        // 桩：pnpm add / install 都成功但都不恢复 dsh-myrules（修不好的既有损坏）。
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm,
+            (_, _, _, _, _) => Task.FromResult((0, string.Empty)),
+            onWarning: warnings.Add);
+
+        string installed = await repository.InstallAsync("dsh-newplugin@latest", CancellationToken.None);
+        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-newplugin");
+        await Assert.That(plugins.Single(p => p.Name == "dsh-newplugin").Enabled).IsTrue();
+        // 在 dependencies 里的声明不属「不可恢复残留」，不得被摘除。
+        await Assert.That(plugins.Single(p => p.Name == "dsh-myrules").Enabled).IsTrue();
+        await Assert.That(warnings.Any(w => w.Contains("dsh-myrules", StringComparison.Ordinal))).IsTrue();
+    }
+
+    [Test]
+    public async Task InstallAsync_InstallBreaksPreviouslyResolvedBundle_Throws()
+    {
+        // 回归（2026-09-14 实机）：pnpm add 退出码 0 不代表 bundle 可解析——它可能把原本
+        // 已物化的真实依赖重建为悬空 junction。「本次安装打坏的 bundle」属新增损坏，
+        // 必须抛错回滚，不得被「既有损坏降级 WARN」放行。
+        SeedProfile(
+            dependencies: ["dsh-myrules"],
+            bundles: ["dsh-myrules"]);
+        WriteInstalledPackage("dsh-myrules", "{}"); // 安装前可解析
+        WriteInstalledPackage("dsh-newplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                // 模拟 pnpm add 把已物化的 dsh-myrules 打成悬空 junction（且重建修不回来）。
+                Directory.Delete(Path.Combine(ProfileDir, "node_modules", "dsh-myrules"), recursive: true);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
 
         InvalidOperationException? caught = null;
         try
@@ -434,6 +509,144 @@ public sealed class PluginProfileRepositoryTests : IDisposable
 
         await Assert.That(installed).IsEqualTo(pluginName);
         await Assert.That(plugins.Single(p => p.Name == pluginName).Enabled).IsTrue();
+    }
+
+    [Test]
+    public async Task InstallAsync_GitSourceWithoutGitOnPath_ThrowsBeforeCallingPnpm()
+    {
+        // git 协议源（GitHub 仓库地址）依赖系统 PATH 上的 git 拉取；缺失时必须前置失败，
+        // 给出可操作的替代方案（tarball URL），且不得调用 pnpm。
+        SeedProfile(dependencies: ["dsh-foo"], bundles: ["dsh-foo"]);
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        int pnpmCalls = 0;
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm,
+            (_, _, _, _, _) => { pnpmCalls++; return Task.FromResult((0, string.Empty)); },
+            gitAvailable: _ => Task.FromResult(false));
+
+        InvalidOperationException? caught = null;
+        try
+        {
+            await repository.InstallAsync("https://github.com/owner/dsh-plugin", CancellationToken.None);
+        }
+        catch (InvalidOperationException exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).Contains("git");
+        await Assert.That(caught.Message).Contains(".tar.gz");
+        await Assert.That(pnpmCalls).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task InstallAsync_GitShorthandWithoutGitOnPath_Throws()
+    {
+        // owner/repo 简写同样是 GitHub 源（pnpm 语义），需要 git。
+        SeedProfile(dependencies: ["dsh-foo"], bundles: ["dsh-foo"]);
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm,
+            (_, _, _, _, _) => Task.FromResult((0, string.Empty)),
+            gitAvailable: _ => Task.FromResult(false));
+
+        await Assert.That(async () => await repository.InstallAsync("owner/dsh-plugin", CancellationToken.None))
+            .Throws<InvalidOperationException>();
+    }
+
+    [Test]
+    public async Task InstallAsync_TarballUrlWithoutGitOnPath_StillInstalls()
+    {
+        // tarball URL 由 pnpm 直接下载解压，不需要 git。
+        SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
+        WriteInstalledPackage("dsh-existing", "{}");
+        WriteInstalledPackage("dsh-realplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        string[]? addArgs = null;
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                addArgs = args;
+                SeedProfile(dependencies: ["dsh-existing", "dsh-realplugin"], bundles: ["dsh-existing"]);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, runOnce, gitAvailable: _ => Task.FromResult(false));
+
+        string installed = await repository.InstallAsync(
+            "https://github.com/owner/dsh-realplugin/archive/refs/heads/main.tar.gz", CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-realplugin");
+        await Assert.That(addArgs).IsNotNull();
+        await Assert.That(addArgs!.Contains("--offline")).IsFalse(); // URL 源不挂 --offline
+    }
+
+    [Test]
+    public async Task InstallAsync_GitSourceWithGitOnPath_CallsPnpmAdd()
+    {
+        SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
+        WriteInstalledPackage("dsh-existing", "{}");
+        WriteInstalledPackage("dsh-realplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        string[]? addArgs = null;
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                addArgs = args;
+                SeedProfile(dependencies: ["dsh-existing", "dsh-realplugin"], bundles: ["dsh-existing"]);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, runOnce, gitAvailable: _ => Task.FromResult(true));
+
+        string installed = await repository.InstallAsync(
+            "https://github.com/owner/dsh-realplugin", CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-realplugin");
+        await Assert.That(addArgs).IsNotNull();
+        await Assert.That(addArgs!).IsEquivalentTo(new[] { "add", "https://github.com/owner/dsh-realplugin" });
+    }
+
+    [Test]
+    [Arguments("owner/dsh-plugin", "github:owner/dsh-plugin")]
+    [Arguments("https://github.com/owner/dsh-plugin", "git+https://github.com/owner/dsh-plugin.git")]
+    [Arguments("git@github.com:owner/dsh-plugin.git", "https://github.com/owner/dsh-plugin")]
+    [Arguments(
+        "https://github.com/owner/dsh-plugin/archive/refs/heads/main.tar.gz",
+        "https://github.com/owner/dsh-plugin/archive/refs/heads/main.tar.gz")]
+    public async Task InstallAsync_ReinstallRemoteSource_ResolvesNameFromManifestValue(
+        string source,
+        string manifestValue)
+    {
+        // 重装同规格远端源时 dependencies 差集为空，须按清单 dependencies 值反查键名——
+        // repo 名 ≠ package 名（如 @scope/dsh-plugin），从 URL 末段猜名必错。
+        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules"));
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "package.json"),
+            "{\"dependencies\":{\"@scope/dsh-plugin\":\"" + manifestValue
+                + "\"},\"dsh\":{\"profile\":{\"bundles\":[\"@scope/dsh-plugin\"]}}}");
+        WriteInstalledPackage("@scope/dsh-plugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm,
+            (_, _, _, _, _) => Task.FromResult((0, string.Empty)), // 重装：pnpm 不改清单，差集为空
+            gitAvailable: _ => Task.FromResult(true));
+
+        string installed = await repository.InstallAsync(source, CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("@scope/dsh-plugin");
     }
 
     [Test]

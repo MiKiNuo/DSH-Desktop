@@ -89,7 +89,7 @@ public sealed partial class PluginsViewModel
     public partial IMviAsyncCommand UninstallPluginCommand { get; private set; }
 
     /// <summary>
-    /// 获取安装插件命令（载荷：包名或 .tgz 路径）。
+    /// 获取安装插件命令（载荷：包名、GitHub 源或 .tgz/目录路径）。
     /// </summary>
     [MviCommand(typeof(PluginsIntent.InstallPlugin), PayloadType = typeof(string))]
     public partial IMviAsyncCommand InstallPluginCommand { get; private set; }

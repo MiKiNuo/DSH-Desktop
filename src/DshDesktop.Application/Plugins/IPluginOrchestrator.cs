@@ -22,7 +22,7 @@ public interface IPluginOrchestrator
     /// 执行插件安装事务（§19）：快照 → 停 Runtime → 安装 → 校验 → 启动 → 健康检查 → 提交；
     /// 任何失败 → 回滚（恢复快照 + 重建）→ 尽力重启 Runtime → Failed。
     /// </summary>
-    /// <param name="source">npm 包名（可带版本）或本地 .tgz 文件路径。</param>
+    /// <param name="source">npm 包名（可带版本）、GitHub 源（owner/repo 简写或 URL；git 协议需系统 PATH 上的 git）或本地 .tgz/目录路径。</param>
     /// <param name="kind">操作种类（安装 / 更新），供下游反馈文案区分。</param>
     /// <param name="cancellationToken">取消标记。</param>
     /// <returns>安装的插件包名。</returns>

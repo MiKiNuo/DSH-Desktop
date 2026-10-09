@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Nodes;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Domain.Plugins;
@@ -13,13 +14,19 @@ public sealed class PluginProfileRepository(
     string profileDir,
     string nodePath,
     string? pnpmCjsPath,
-    Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runOnce = null)
+    Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? runOnce = null,
+    Action<string>? onWarning = null,
+    Func<CancellationToken, Task<bool>>? gitAvailable = null)
     : IPluginManager
 {
     private const string CoreScope = "@deepseek-ai/";
     private const string CoreMarketName = "dshmarket";
 
     private readonly Func<string, string, string, string[], CancellationToken, Task<(int ExitCode, string OutputTail)>>? _runOnce = runOnce;
+    private readonly Action<string>? _onWarning = onWarning;
+
+    // git 可用性探针（git 协议源前置检查用；测试注入桩，生产探测 PATH 上的 git）。
+    private readonly Func<CancellationToken, Task<bool>> _gitAvailable = gitAvailable ?? ProbeGitOnPathAsync;
 
     private string ManifestPath => Path.Combine(profileDir, "package.json");
     private string PatchPath => Path.Combine(profileDir, "cordis.patch.yml");
@@ -168,9 +175,24 @@ public sealed class PluginProfileRepository(
         }
 
         HashSet<string> dependenciesBefore = ReadDependencyNames();
+        // 安装前快照不可解析集合：事后只对「本次安装新增」的不可解析条目抛错回滚，
+        // 既有损坏降级 WARN（不为历史问题回滚无辜的本次安装）。
+        string[] unresolvedBefore = ProfileBundleProbe.UnresolvedBundles(profileDir);
 
-        // 本地文件（.tgz / 目录）走 --offline；registry 包名允许联网。
+        // 本地文件（.tgz / 目录）走 --offline；registry 包名与远端源（GitHub 等）允许联网。
         bool isLocalSource = File.Exists(source) || Directory.Exists(source);
+
+        // git 协议源前置检查：PATH 上没有 git 时 pnpm 拉取必然失败，提前给出可操作报错
+        // （tarball URL 直接下载解压，不在此列）。
+        if (!isLocalSource && GitInstallSource.RequiresGit(source)
+            && !await _gitAvailable(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException(
+                $"检测到 Git 仓库源（{source}），但系统 PATH 上找不到 git，pnpm 无法拉取。" +
+                "请安装 git 后重试，或改用 tarball 地址（无需 git）：" +
+                "https://github.com/<owner>/<repo>/archive/refs/heads/<branch>.tar.gz");
+        }
+
         string[] arguments = isLocalSource
             ? ["add", source, "--offline"]
             : ["add", source];
@@ -194,7 +216,7 @@ public sealed class PluginProfileRepository(
             : ResolveNameFromSource(source);
 
         ValidateAndReconcileInstalledBundle(pluginName);
-        await EnsureDeclaredBundlesResolvableAsync(cancellationToken).ConfigureAwait(false);
+        await EnsureDeclaredBundlesResolvableAsync(unresolvedBefore, cancellationToken).ConfigureAwait(false);
         return pluginName;
     }
 
@@ -223,7 +245,7 @@ public sealed class PluginProfileRepository(
         }
     }
 
-    private async Task EnsureDeclaredBundlesResolvableAsync(CancellationToken cancellationToken)
+    private async Task EnsureDeclaredBundlesResolvableAsync(string[] unresolvedBefore, CancellationToken cancellationToken)
     {
         // 安装后磁盘校验（2026-09-14 实机：pnpm add 退出码 0 不代表 bundle 可解析——
         // 悬空 junction / 中断安装残留会让 DSH 启动期 resolveBundleDir 抛
@@ -234,31 +256,78 @@ public sealed class PluginProfileRepository(
         string[] unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
         if (unresolved.Length > 0)
         {
+            // 先摘除「不在 dependencies」的不可恢复声明（历史安装/卸载残留）：pnpm 只物化
+            // dependencies，重建 lockfile 永不可能修复它，留着会让每次安装都被同一残留卡死
+            // （2026-10-10 实机：bundles 残留实验插件声明，装 dshmarket 反复回滚）。
+            HashSet<string> dependencies = ReadDependencyNames();
+            string[] stale = [.. unresolved.Where(bundle => !dependencies.Contains(bundle))];
+            if (stale.Length > 0)
+            {
+                PruneStaleBundleDeclarations(stale);
+                unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
+            }
+        }
+
+        if (unresolved.Length > 0)
+        {
             // 修复路径：重建 lockfile（pnpm install --no-frozen-lockfile）让依赖树重新物化。
             // 修复失败也要落到「命名不可解析 bundle」的精确报错，而非被 lockfile 错误掩盖。
+            Exception? rebuildFailure = null;
             try
             {
                 await RebuildLockfileAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception repairEx)
             {
-                unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
-                if (unresolved.Length > 0)
-                {
-                    throw new InvalidOperationException(
-                        $"插件安装后仍有不可解析的 bundle：{string.Join(", ", unresolved)}。" +
-                        $"依赖树重建也失败（{repairEx.Message}）。请检查 Profile 依赖树或重新种子 Profile。");
-                }
+                rebuildFailure = repairEx;
             }
 
-            unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
-            if (unresolved.Length > 0)
+            ReportOrThrowUnresolved(unresolvedBefore, rebuildFailure);
+        }
+    }
+
+    private void ReportOrThrowUnresolved(string[] unresolvedBefore, Exception? rebuildFailure)
+    {
+        string[] unresolved = ProfileBundleProbe.UnresolvedBundles(profileDir);
+        if (unresolved.Length == 0)
+        {
+            return;
+        }
+
+        // 只对「本次安装新增」的不可解析条目抛错回滚；既有损坏（安装前已存在）降级 WARN——
+        // 不为历史问题回滚无辜的本次安装，Runtime 启动期仍会精确报 cannot resolve profile bundle。
+        HashSet<string> before = new(unresolvedBefore, StringComparer.Ordinal);
+        string[] fresh = [.. unresolved.Where(bundle => !before.Contains(bundle))];
+        if (fresh.Length > 0)
+        {
+            throw new InvalidOperationException(
+                $"插件安装后仍有不可解析的 bundle：{string.Join(", ", fresh)}。" +
+                (rebuildFailure is not null ? $"依赖树重建也失败（{rebuildFailure.Message}）。" : "") +
+                "请检查 Profile 依赖树或重新种子 Profile。");
+        }
+
+        _onWarning?.Invoke(
+            $"既有 bundle 损坏未修复：{string.Join(", ", unresolved)}。" +
+            "本次安装未受影响；Runtime 启动仍会报 cannot resolve profile bundle，请修复依赖或重新种子 Profile。");
+    }
+
+    private void PruneStaleBundleDeclarations(string[] stale)
+    {
+        JsonObject manifest = ReadManifest();
+        JsonArray bundles = GetOrCreateBundlesArray(manifest);
+        foreach (string name in stale)
+        {
+            JsonNode? entry = bundles.FirstOrDefault(
+                node => node is JsonValue value && value.TryGetValue(out string? text) && text == name);
+            if (entry is not null)
             {
-                throw new InvalidOperationException(
-                    $"插件安装后仍有不可解析的 bundle：{string.Join(", ", unresolved)}。" +
-                    "请检查 Profile 依赖树或重新种子 Profile。");
+                bundles.Remove(entry);
             }
         }
+
+        WriteManifest(manifest);
+        _onWarning?.Invoke(
+            $"Profile 清单残留不可恢复的 bundle 声明（不在 dependencies 且磁盘缺失），已自动摘除：{string.Join(", ", stale)}。");
     }
 
     private HashSet<string> ReadDependencyNames()
@@ -276,14 +345,63 @@ public sealed class PluginProfileRepository(
         return names;
     }
 
-    private static string ResolveNameFromSource(string source)
+    private string ResolveNameFromSource(string source)
     {
-        // "name@version" / "@scope/name@version" / 本地路径的文件名。
-        string candidate = File.Exists(source) || Directory.Exists(source)
-            ? Path.GetFileNameWithoutExtension(source.TrimEnd(Path.DirectorySeparatorChar))
-            : source;
-        int atIndex = candidate.LastIndexOf('@');
-        return atIndex > 0 ? candidate[..atIndex] : candidate;
+        // 本地路径：文件名。
+        if (File.Exists(source) || Directory.Exists(source))
+        {
+            return Path.GetFileNameWithoutExtension(source.TrimEnd(Path.DirectorySeparatorChar));
+        }
+
+        // 远端源（git/URL/tarball）：repo 名 ≠ package 名（如 @scope/pkg），
+        // 按清单 dependencies 值反查键名；未命中再以 URL 末段兜底。
+        if (GitInstallSource.IsRemoteSource(source))
+        {
+            if (ReadManifest()["dependencies"] is JsonObject dependencies)
+            {
+                string wanted = GitInstallSource.NormalizeSpec(source);
+                foreach ((string name, JsonNode? value) in dependencies)
+                {
+                    if (value is JsonValue jsonValue
+                        && jsonValue.TryGetValue(out string? spec)
+                        && string.Equals(GitInstallSource.NormalizeSpec(spec), wanted, StringComparison.Ordinal))
+                    {
+                        return name;
+                    }
+                }
+            }
+
+            return GitInstallSource.LeafName(source);
+        }
+
+        // registry："name@version" / "@scope/name@version"。
+        int atIndex = source.LastIndexOf('@');
+        return atIndex > 0 ? source[..atIndex] : source;
+    }
+
+    /// <summary>探测系统 PATH 上的 git（git --version）；找不到/启动失败一律视为不可用。</summary>
+    private static async Task<bool> ProbeGitOnPathAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using Process process = Process.Start(new ProcessStartInfo("git", "--version")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            })!;
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+            return process.ExitCode == 0;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsCore(string name)

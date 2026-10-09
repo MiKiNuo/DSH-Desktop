@@ -1014,7 +1014,9 @@ public sealed partial class DshCompositionRoot
         public ToolchainBoundStack RebuildToolchainBound(IRuntimeConfig config, RuntimeSupervisor supervisor)
         {
             string profileDir = Path.Combine(config.DshHome, "profiles", "web");
-            var pluginRepository = new PluginProfileRepository(profileDir, config.NodePath, config.PnpmCjsPath);
+            var pluginRepository = new PluginProfileRepository(
+                profileDir, config.NodePath, config.PnpmCjsPath,
+                onWarning: message => Log.Logger.Warning("Profile.Bundle.Warning {Detail}", message));
             var snapshotter = new ProfileSnapshotter(
                 profileDir,
                 Path.Combine(Directory.GetParent(config.DshHome)!.FullName, "backups"),

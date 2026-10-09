@@ -78,7 +78,7 @@
                             Classes="field"
                             HorizontalAlignment="Stretch"
                             MinWidth="340"
-                            PlaceholderText="npm 包名（可带版本）或本地 .tgz 绝对路径" />
+                            PlaceholderText="npm 包名（可带版本）、GitHub 仓库地址或本地 .tgz 绝对路径" />
                         <Button Classes="btn primary" Click="OnInstallStartClicked">
                             <StackPanel Orientation="Horizontal" Spacing="6">
                                 <Path Classes="icon icon-sm" Data="{DynamicResource IconDownload}" Stroke="{Binding $parent[Button].Foreground}" />

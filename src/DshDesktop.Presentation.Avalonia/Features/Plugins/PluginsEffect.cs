@@ -28,7 +28,7 @@ public abstract partial record PluginsEffect : IMviEffect
     /// <summary>
     /// 表示安装插件副作用（§19 事务）。
     /// </summary>
-    /// <param name="Source">npm 包名（可带版本）或本地 .tgz 文件路径。</param>
+    /// <param name="Source">npm 包名（可带版本）、GitHub 源（owner/repo 简写或 URL）或本地 .tgz/目录路径。</param>
     public sealed partial record InstallPlugin(string Source) : PluginsEffect;
 
     /// <summary>
