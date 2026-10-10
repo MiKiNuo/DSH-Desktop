@@ -563,7 +563,7 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         // tarball URL 由 pnpm 直接下载解压，不需要 git。
         SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
         WriteInstalledPackage("dsh-existing", "{}");
-        WriteInstalledPackage("dsh-realplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        WriteBuiltGitPackage("dsh-realplugin");
         string pnpm = Path.Combine(_root, "pnpm.cjs");
         File.WriteAllText(pnpm, "");
         string[]? addArgs = null;
@@ -593,7 +593,7 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     {
         SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
         WriteInstalledPackage("dsh-existing", "{}");
-        WriteInstalledPackage("dsh-realplugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        WriteBuiltGitPackage("dsh-realplugin");
         string pnpm = Path.Combine(_root, "pnpm.cjs");
         File.WriteAllText(pnpm, "");
         string[]? addArgs = null;
@@ -636,7 +636,7 @@ public sealed class PluginProfileRepositoryTests : IDisposable
             Path.Combine(ProfileDir, "package.json"),
             "{\"dependencies\":{\"@scope/dsh-plugin\":\"" + manifestValue
                 + "\"},\"dsh\":{\"profile\":{\"bundles\":[\"@scope/dsh-plugin\"]}}}");
-        WriteInstalledPackage("@scope/dsh-plugin", "{\"dsh\":{\"bundle\":{\"patch\":{}}}}");
+        WriteBuiltGitPackage("@scope/dsh-plugin");
         string pnpm = Path.Combine(_root, "pnpm.cjs");
         File.WriteAllText(pnpm, "");
         IPluginManager repository = new PluginProfileRepository(
@@ -647,6 +647,79 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         string installed = await repository.InstallAsync(source, CancellationToken.None);
 
         await Assert.That(installed).IsEqualTo("@scope/dsh-plugin");
+    }
+
+    [Test]
+    public async Task InstallAsync_GitSourceWithoutBuildArtifactsOrPrepare_ThrowsWithGuidance()
+    {
+        // git 源码仓未提供构建：patch 声明指向 ./cordis.patch.yml 但文件不存在、
+        // main 入口缺失、manifest 也没有 prepare/prepack —— 是插件作者的责任，
+        // 宿主不代为猜测工具链；给出可操作指引后走事务回滚。
+        SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
+        WriteInstalledPackage("dsh-existing", "{}");
+        // 新插件：只写 package.json（声明 bundle.patch 但磁盘无该文件、无 main、无 scripts）。
+        WriteInstalledPackage("dsh-srcplugin", "{\"main\":\"dist/index.js\",\"dsh\":{\"bundle\":{\"patch\":\"./cordis.patch.yml\"}}}");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                SeedProfile(dependencies: ["dsh-existing", "dsh-srcplugin"], bundles: ["dsh-existing"]);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, runOnce, gitAvailable: _ => Task.FromResult(true));
+
+        InvalidOperationException? caught = null;
+        try
+        {
+            await repository.InstallAsync("https://github.com/owner/dsh-srcplugin", CancellationToken.None);
+        }
+        catch (InvalidOperationException exception)
+        {
+            caught = exception;
+        }
+
+        await Assert.That(caught).IsNotNull();
+        await Assert.That(caught!.Message).Contains("prepare");
+        await Assert.That(caught.Message).Contains("dsh-srcplugin");
+        await Assert.That(caught.Message).Contains("构建");
+    }
+
+    [Test]
+    public async Task InstallAsync_GitSourceWithPrepareScriptButNoArtifacts_StillSucceeds()
+    {
+        // 仓库写了 prepare：构建责任在 pnpm/作者侧，宿主信任该声明，不因产物暂缺而误伤
+        // （pnpm 对 git 依赖会自动执行 prepare；此处桩无法真跑脚本，以脚本存在即放行）。
+        SeedProfile(dependencies: ["dsh-existing"], bundles: ["dsh-existing"]);
+        WriteInstalledPackage("dsh-existing", "{}");
+        WriteInstalledPackage(
+            "dsh-prepareplugin",
+            "{\"scripts\":{\"prepare\":\"tsc -b\"},\"dsh\":{\"bundle\":{\"patch\":\"./cordis.patch.yml\"}}}");
+        // prepare 场景：patch 文件由脚本产出——桩里模拟 pnpm 已执行过 prepare 的效果。
+        File.WriteAllText(
+            Path.Combine(ProfileDir, "node_modules", "dsh-prepareplugin", "cordis.patch.yml"), "");
+        string pnpm = Path.Combine(_root, "pnpm.cjs");
+        File.WriteAllText(pnpm, "");
+        var runOnce = (string np, string tc, string wd, string[] args, CancellationToken ct) =>
+        {
+            if (args[0] == "add")
+            {
+                SeedProfile(dependencies: ["dsh-existing", "dsh-prepareplugin"], bundles: ["dsh-existing"]);
+            }
+
+            return Task.FromResult((0, string.Empty));
+        };
+        IPluginManager repository = new PluginProfileRepository(
+            ProfileDir, "node", pnpm, runOnce, gitAvailable: _ => Task.FromResult(true));
+
+        string installed = await repository.InstallAsync(
+            "https://github.com/owner/dsh-prepareplugin", CancellationToken.None);
+
+        await Assert.That(installed).IsEqualTo("dsh-prepareplugin");
     }
 
     [Test]
@@ -674,6 +747,16 @@ public sealed class PluginProfileRepositoryTests : IDisposable
         string packageDir = Path.Combine(ProfileDir, "node_modules", name);
         Directory.CreateDirectory(packageDir);
         File.WriteAllText(Path.Combine(packageDir, "package.json"), manifest);
+    }
+
+    /// <summary>造「已构建」的 git 安装包：main 入口文件 + cordis.patch.yml 都在磁盘。</summary>
+    private void WriteBuiltGitPackage(string name)
+    {
+        WriteInstalledPackage(
+            name, "{\"main\":\"index.js\",\"dsh\":{\"bundle\":{\"patch\":\"./cordis.patch.yml\"}}}");
+        string packageDir = Path.Combine(ProfileDir, "node_modules", name);
+        File.WriteAllText(Path.Combine(packageDir, "index.js"), "");
+        File.WriteAllText(Path.Combine(packageDir, "cordis.patch.yml"), "");
     }
 
     /// <summary>

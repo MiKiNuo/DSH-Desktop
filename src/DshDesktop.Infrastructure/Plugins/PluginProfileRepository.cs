@@ -216,8 +216,53 @@ public sealed class PluginProfileRepository(
             : ResolveNameFromSource(source);
 
         ValidateAndReconcileInstalledBundle(pluginName);
+        ThrowIfUnbuiltGitSource(source, pluginName);
         await EnsureDeclaredBundlesResolvableAsync(unresolvedBefore, cancellationToken).ConfigureAwait(false);
         return pluginName;
+    }
+
+    /// <summary>
+    /// git 源码仓未提供构建的判定与报错：patch 声明指向的 cordis.patch.yml 不存在、
+    /// main 入口缺失、manifest 也无 prepare/prepack 脚本 —— pnpm 不会代为构建，
+    /// 责任在插件作者；宿主不猜工具链，只给出可操作指引并交给事务回滚。
+    /// </summary>
+    private void ThrowIfUnbuiltGitSource(string source, string pluginName)
+    {
+        // 本地/registry 源由发布方保证产物完整，不参与此判定。
+        if (File.Exists(source) || Directory.Exists(source) || !GitInstallSource.IsRemoteSource(source))
+        {
+            return;
+        }
+
+        string packageDir = Path.Combine(profileDir, "node_modules", pluginName);
+        string manifestPath = Path.Combine(packageDir, "package.json");
+        if (!File.Exists(manifestPath))
+        {
+            return; // 由后续 bundle 可解析性校验命名缺失。
+        }
+
+        JsonNode? manifest = JsonNode.Parse(File.ReadAllText(manifestPath));
+        // patch 声明可能是字符串路径（"./cordis.patch.yml"）也可能是对象（{} 占位种子），
+        // 非 JsonValue 一律按「无法定位产物文件」处理。
+        string? patch = manifest?["dsh"]?["bundle"]?["patch"] is JsonValue patchValue
+            && patchValue.TryGetValue(out string? patchText) ? patchText : null;
+        bool patchMissing = patch is null
+            || !File.Exists(Path.Combine(packageDir, patch));
+        string? main = manifest?["main"] is JsonValue mainValue
+            && mainValue.TryGetValue(out string? mainText) ? mainText : null;
+        bool mainMissing = main is null
+            || !File.Exists(Path.Combine(packageDir, main));
+        bool hasBuildScript = manifest?["scripts"] is JsonObject scripts
+            && (scripts.ContainsKey("prepare") || scripts.ContainsKey("prepack"));
+
+        if (patchMissing && mainMissing && !hasBuildScript)
+        {
+            throw new InvalidOperationException(
+                $"{pluginName} 是未构建的 GitHub 源码仓：既无构建产物（cordis.patch.yml / {main ?? "main 入口"}），" +
+                "package.json 也没有 prepare/prepack 脚本，pnpm 无法自动构建。" +
+                "这是插件仓库未提供发布构建（插件作者侧问题），请改用其发布的 npm 包 / tarball，" +
+                "或联系作者补充 prepare 构建脚本。已回滚。");
+        }
     }
 
     private void ValidateAndReconcileInstalledBundle(string pluginName)
