@@ -14,7 +14,7 @@ namespace DshDesktop.Tests;
 /// </summary>
 public sealed partial class ShellTopNavTests
 {
-    /// <summary>顶栏单行需容纳：品牌 + 7 项导航 + 右侧动作，约 980px。</summary>
+    /// <summary>顶栏单行需容纳：品牌 + 6 项导航 + 右侧动作，约 980px。</summary>
     private const int MinimumFittingWidth = 1100;
 
     /// <summary>导航行高度，同时作为扩展标题栏的高度提示。</summary>
@@ -24,7 +24,6 @@ public sealed partial class ShellTopNavTests
     [
         "NavDashboard",
         "NavWorkbench",
-        "NavPlugins",
         "NavRuntime",
         "NavUpdates",
         "NavDiagnostics",
@@ -50,7 +49,7 @@ public sealed partial class ShellTopNavTests
     }
 
     /// <summary>
-    /// 全部 7 个导航按钮都必须位于顶部导航容器（<c>Classes="topnav"</c>）之内：
+    /// 全部 6 个导航按钮都必须位于顶部导航容器（<c>Classes="topnav"</c>）之内：
     /// 各自 <c>x:Name</c> 的出现位置晚于容器开标签。
     /// </summary>
     [Test]

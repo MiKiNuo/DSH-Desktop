@@ -18,9 +18,7 @@ public sealed partial class UpdatesReducer
     /// <remarks>
     /// 只发起检查与刷新，<b>不碰 PendingOperation</b>：本意图有两个来源（用户按钮 / 启动期后台静默检查，
     /// App.axaml.cs → BackgroundCheckUpdatesAsync），而检查是 N 次 npm 查询 + GitHub 的慢网络调用，
-    /// 与进行中的 Desktop 下载 / Runtime 安装 / 插件更新的区间必然重叠。它过去兼任「插件更新终态」，
-    /// 使在飞检查的完成回流与终态清空互相踩踏（2026-09-21 v0.1.8 实机：遮罩永久卡死 / 遮罩被提前释放）；
-    /// 终态清空已收口到 <see cref="HandlePluginOperationFinished"/>。
+    /// 与进行中的 Desktop 下载 / Runtime 安装的区间必然重叠。
     /// </remarks>
     [MviReduce(typeof(UpdatesIntent.CheckUpdates))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdates(
@@ -37,9 +35,7 @@ public sealed partial class UpdatesReducer
     /// </summary>
     /// <remarks>
     /// 只发起检查与刷新，<b>不碰 PendingOperation</b>：本意图有两个来源（用户按钮 / 启动期后台静默检查），
-    /// 与进行中的 Desktop 下载 / Runtime 安装 / 插件更新的区间必然重叠；它过去兼任「插件更新终态」，
-    /// 使在飞检查的完成回流与终态清空互相踩踏（2026-09-21 v0.1.8 实机：遮罩永久卡死 / 遮罩被提前释放）；
-    /// 终态清空已收口到 <see cref="HandlePluginOperationFinished"/>（候选 3 后该 handler 也不再触碰 PendingOperation）。
+    /// 与进行中的 Desktop 下载 / Runtime 安装的区间必然重叠。
     /// </remarks>
     [MviReduce(typeof(UpdatesIntent.CheckUpdatesCompleted))]
     private MviReduceResult<UpdatesState, UpdatesEffect> HandleCheckUpdatesCompleted(
@@ -52,7 +48,6 @@ public sealed partial class UpdatesReducer
             LatestDshVersion = result.LatestDshVersion,
             CurrentDshVersion = result.CurrentDshVersion,
             Runtimes = result.Runtimes,
-            PluginUpdates = result.PluginUpdates,
             LatestDesktopVersion = result.LatestDesktopVersion,
             LastError = null,
         };
@@ -60,47 +55,6 @@ public sealed partial class UpdatesReducer
         {
             Status = refreshed.AvailableCount > 0 ? UpdateStatus.Available : UpdateStatus.Idle,
         });
-    }
-
-    /// <summary>
-    /// 处理插件事务终态意图（组合根订阅 <c>IPluginOrchestrator.OperationChanged</c> 后在 Completed 阶段发布）：
-    /// 按名摘除该插件的可更新行（乐观刷新，不等慢网络检查回来，§23），并回流一次检查以对账。
-    /// </summary>
-    /// <remarks>
-    /// 候选 3（消除"在飞操作"双轨）：插件更新的在飞与文案改由 <c>PluginsState.Operation</c> 单一承载，
-    /// 本 handler <b>完全不触碰 <see cref="UpdatesState.PendingOperation"/></b>——它只覆盖 UpdatesStore 自有操作
-    /// （Desktop 下载 / Runtime 安装 / 激活）。任何插件事务（更新 / 卸载 / 启停）的 Completed 终态都走这里，
-    /// 按名摘行 + 回流检查对卸载/启停终态同样安全：Desktop 下载进行中抵达的插件终态仅保留其自有待办，
-    /// 不会被误清（§22）。
-    /// </remarks>
-    [MviReduce(typeof(UpdatesIntent.PluginOperationFinished))]
-    private MviReduceResult<UpdatesState, UpdatesEffect> HandlePluginOperationFinished(
-        UpdatesState state,
-        UpdatesIntent.PluginOperationFinished intent)
-    {
-        return WithEffect(
-            state with
-            {
-                Status = UpdateStatus.Checking,
-                PluginUpdates = RemoveByName(state.PluginUpdates, intent.PluginName),
-                LastError = null,
-            },
-            new UpdatesEffect.CheckUpdates());
-    }
-
-    /// <summary>
-    /// 按包名摘除可更新行；无匹配（或包名未知）时原样返回同一引用，避免无谓的状态重发。
-    /// </summary>
-    private static IReadOnlyList<PluginUpdateInfo> RemoveByName(
-        IReadOnlyList<PluginUpdateInfo> updates,
-        string? name)
-    {
-        if (name is null || !updates.Any(u => string.Equals(u.Name, name, StringComparison.Ordinal)))
-        {
-            return updates;
-        }
-
-        return updates.Where(u => !string.Equals(u.Name, name, StringComparison.Ordinal)).ToArray();
     }
 
     /// <summary>
@@ -179,24 +133,6 @@ public sealed partial class UpdatesReducer
                 LastError = null,
             },
             new UpdatesEffect.ActivateDshRuntime(intent.Version));
-    }
-
-    /// <summary>
-    /// 处理更新插件意图（走 §19 安装事务）。
-    /// </summary>
-    [MviReduce(typeof(UpdatesIntent.UpdatePlugin))]
-    private MviReduceResult<UpdatesState, UpdatesEffect> HandleUpdatePlugin(
-        UpdatesState state,
-        UpdatesIntent.UpdatePlugin intent)
-    {
-        // 候选 3：消除"在飞操作"双轨。插件更新的在飞与文案改由 PluginsState.Operation 单一承载，
-        // 故此处<b>不写</b> UpdatesState.PendingOperation（只发 UpdatePlugin effect 启动事务）；其余逻辑不变。
-        return WithEffect(
-            state with
-            {
-                LastError = null,
-            },
-            new UpdatesEffect.UpdatePlugin(intent.Name));
     }
 
     /// <summary>

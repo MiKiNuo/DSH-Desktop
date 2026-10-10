@@ -127,16 +127,12 @@ public sealed class DashboardReducerTests
     }
 
     [Test]
-    public async Task PluginAndUpdatesProjections_UpdateStatCards()
+    public async Task UpdatesProjection_UpdatesStatCard()
     {
-        DashboardState state = _reducer.Reduce(
-            DashboardState.Initial, new DashboardIntent.PluginsProjectionChanged(6)).State;
         var result = _reducer.Reduce(
-            state, new DashboardIntent.UpdatesProjectionChanged("0.1.0-rc.12", 1));
+            DashboardState.Initial, new DashboardIntent.UpdatesProjectionChanged("0.1.0-rc.12"));
 
-        await Assert.That(result.State.PluginCount).IsEqualTo(6);
         await Assert.That(result.State.DshVersion).IsEqualTo("0.1.0-rc.12");
-        await Assert.That(result.State.UpdatablePluginCount).IsEqualTo(1);
     }
 
     [Test]

@@ -96,15 +96,6 @@
                         <Border Classes="nav-rule" />
 
                         <Button
-                            x:Name="NavPlugins"
-                            Classes="nav-btn"
-                            Command="{Binding ShowPluginsCommand}">
-                            <Grid ColumnDefinitions="20,*">
-                                <Path Classes="icon" Data="{DynamicResource IconPackage}" HorizontalAlignment="Center" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center" Text="插件管理" />
-                            </Grid>
-                        </Button>
-                        <Button
                             x:Name="NavRuntime"
                             Classes="nav-btn"
                             Command="{Binding ShowRuntimeCommand}">

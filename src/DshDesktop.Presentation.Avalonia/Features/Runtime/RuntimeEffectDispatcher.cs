@@ -1,4 +1,3 @@
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using MiKiNuo.Mvi.Application.MVI.Effect;
 using MiKiNuo.Mvi.Application.MVI.Mediator;
 using MiKiNuo.Mvi.Domain.MVI.Effect;
@@ -110,8 +109,7 @@ public sealed partial class RuntimeEffectDispatcher
     }
 
     /// <summary>
-    /// 处理编排恢复 Runtime 副作用（ADR-0004 第一段）：经 Mediator 复用 Plugins 路由
-    /// 禁用全部第三方插件；成功回流 RecoverPluginsDisabled（Reducer 迁移 Starting 并复用启动链路），
+    /// 处理编排恢复 Runtime 副作用（ADR-0004 第一段）：经 Mediator 禁用全部第三方插件；成功回流 RecoverPluginsDisabled（Reducer 迁移 Starting 并复用启动链路），
     /// 失败回流 RuntimeFailed。
     /// </summary>
     [MviEffect(typeof(RuntimeEffect.RecoverRuntime))]

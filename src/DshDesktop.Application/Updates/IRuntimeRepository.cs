@@ -27,11 +27,4 @@ public interface IRuntimeRepository
     /// <param name="version">目标版本。</param>
     /// <param name="cancellationToken">取消标记。</param>
     Task InstallAsync(string version, CancellationToken cancellationToken);
-
-    /// <summary>
-    /// 查询插件的最新版本。
-    /// </summary>
-    /// <param name="name">插件包名。</param>
-    /// <param name="cancellationToken">取消标记。</param>
-    Task<string?> GetLatestPluginVersionAsync(string name, CancellationToken cancellationToken);
 }

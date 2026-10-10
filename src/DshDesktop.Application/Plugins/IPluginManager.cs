@@ -23,14 +23,6 @@ public interface IPluginManager
     Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 卸载第三方插件（复刻 Electron detachLegacyPlugin 四步：
-    /// 改 package.json → 清 cordis.patch.yml 条目 → 删实目录 → 重建 lockfile）。
-    /// </summary>
-    /// <param name="name">插件包名。</param>
-    /// <param name="cancellationToken">取消标记。</param>
-    Task UninstallAsync(string name, CancellationToken cancellationToken);
-
-    /// <summary>
     /// 安装插件（pnpm add + reconcile bundles）。
     /// </summary>
     /// <param name="source">npm 包名（可带版本）、GitHub 源（owner/repo 简写或 URL；git 协议需系统 PATH 上的 git）或本地 .tgz/目录路径。</param>

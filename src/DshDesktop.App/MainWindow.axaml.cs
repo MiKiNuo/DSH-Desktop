@@ -10,7 +10,6 @@ using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Dashboard;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Settings;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
@@ -128,7 +127,6 @@ public sealed partial class MainWindow : Window
         {
             [ShellPage.Dashboard] = FindRequiredControl<Button>("NavDashboard"),
             [ShellPage.Workbench] = FindRequiredControl<Button>("NavWorkbench"),
-            [ShellPage.Plugins] = FindRequiredControl<Button>("NavPlugins"),
             [ShellPage.Runtime] = FindRequiredControl<Button>("NavRuntime"),
             [ShellPage.Updates] = FindRequiredControl<Button>("NavUpdates"),
             [ShellPage.Diagnostics] = FindRequiredControl<Button>("NavDiagnostics"),
@@ -246,7 +244,7 @@ public sealed partial class MainWindow : Window
     /// <param name="text">提示文本。</param>
     public void ShowToast(string text)
     {
-        // 三个 toast 场景（插件终态 / 更新徽标 / Runtime 恢复）都在此处收口编组：已在 UI 线程同步执行，
+        // 两个 toast 场景（更新徽标 / Runtime 恢复）都在此处收口编组：已在 UI 线程同步执行，
         // 否则投递后返回（2026-09-14 实机崩溃回归；当时为壳直订 Store 回调跑在派发线程。
         // 2026-09-15 C3 起直订已下沉 AppShellViewModel，VM 通知经 IMviUiDispatcher 编组——
         // 本防御性编组仍保留，与各处 OnUiThread 收口方式一致）。
@@ -374,7 +372,7 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// 接线 toast 场景：订阅壳 VM 的 <see cref="AppShellViewModel.ToastRequested"/>，收口到 <see cref="ShowToast"/>。
-    /// 判定（徽标上升沿 / Runtime 恢复 / 插件终态引用去重）全部在 VM 完成。
+    /// 判定（徽标上升沿 / Runtime 恢复）全部在 VM 完成。
     /// </summary>
     private void WireToastScenarios()
     {
@@ -547,7 +545,7 @@ public sealed partial class MainWindow : Window
     /// （2026-09-15 实机投诉「每次点顶部按钮都要重新加载一次」）。
     /// 工作台因此创建一次后常驻；隐藏时原生窗口不再盖住其它页（原生窗口永远渲染在
     /// Avalonia 内容之上，所以「只切可见性」是必须的，不能靠 z 序遮挡）。
-    /// 其余 6 页保持每次重建：纯 Avalonia 视图重建廉价，也不需要保留页内状态。
+    /// 其余 5 页保持每次重建：纯 Avalonia 视图重建廉价，也不需要保留页内状态。
     /// </remarks>
     private void RenderCurrentPage()
     {
@@ -567,7 +565,6 @@ public sealed partial class MainWindow : Window
         {
             ShellPage.Dashboard => CreateView<DashboardView, DashboardViewModel>(),
             ShellPage.Diagnostics => CreateView<DiagnosticsView, DiagnosticsViewModel>(),
-            ShellPage.Plugins => CreateView<PluginsView, PluginsViewModel>(),
             ShellPage.Updates => CreateView<UpdatesView, UpdatesViewModel>(),
             ShellPage.Settings => CreateView<SettingsView, SettingsViewModel>(),
             _ => CreateView<RuntimeView, RuntimeViewModel>(),

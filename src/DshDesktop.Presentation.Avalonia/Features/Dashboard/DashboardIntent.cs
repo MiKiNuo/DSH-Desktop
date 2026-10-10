@@ -33,19 +33,10 @@ public abstract partial record DashboardIntent : IMviIntent
     public sealed partial record MetricsSampled(double? CpuPercent, long WorkingSetBytes) : DashboardIntent;
 
     /// <summary>
-    /// 表示插件数投影变化的回流意图（BindSiblingState 自 PluginsStore，§11.2）。
-    /// </summary>
-    /// <param name="PluginCount">已安装插件数。</param>
-    public sealed partial record PluginsProjectionChanged(int PluginCount) : DashboardIntent;
-
-    /// <summary>
     /// 表示更新投影变化的回流意图（BindSiblingState 自 UpdatesStore，§11.2）。
     /// </summary>
     /// <param name="DshVersion">当前 DSH 版本；未知为 null。</param>
-    /// <param name="UpdatablePluginCount">可更新插件数。</param>
-    public sealed partial record UpdatesProjectionChanged(
-        string? DshVersion,
-        int UpdatablePluginCount) : DashboardIntent;
+    public sealed partial record UpdatesProjectionChanged(string? DshVersion) : DashboardIntent;
 
     /// <summary>
     /// 表示环境信息已加载回流意图（组合根启动时一次性输入：通道 / 上次启动耗时；

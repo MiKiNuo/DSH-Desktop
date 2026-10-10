@@ -62,9 +62,9 @@
                 </Grid>
             </Border>
 
-            <!-- ===== 指标条：Border.statbar 容器 + 4×Border.stat 发丝线分隔 ===== -->
+            <!-- ===== 指标条：Border.statbar 容器 + 3×Border.stat 发丝线分隔 ===== -->
             <Border Classes="statbar">
-                <Grid ColumnDefinitions="1*,1*,1*,1*">
+                <Grid ColumnDefinitions="1*,1*,1*">
                     <Border Classes="stat" Grid.Column="0" BorderThickness="0">
                         <StackPanel>
                             <TextBlock Classes="stat-key" Text="Desktop 版本" />
@@ -82,13 +82,6 @@
                         </StackPanel>
                     </Border>
                     <Border Classes="stat" Grid.Column="2">
-                        <StackPanel>
-                            <TextBlock Classes="stat-key" Text="已安装插件" />
-                            <TextBlock Classes="stat-value" Text="{Binding PluginCount}" />
-                            <TextBlock Classes="stat-foot" Text="{Binding PluginsFooterText}" />
-                        </StackPanel>
-                    </Border>
-                    <Border Classes="stat" Grid.Column="3">
                         <StackPanel>
                             <TextBlock Classes="stat-key" Text="最近启动" />
                             <TextBlock Classes="stat-value" Text="{Binding StartupElapsedText}" />
@@ -221,19 +214,6 @@
                                             Classes="kv-value"
                                             Grid.Column="2"
                                             Text="{Binding StartupElapsedText}" />
-                                    </Grid>
-                                </Border>
-                                <Border Classes="kv-row">
-                                    <Grid ColumnDefinitions="56,*,52">
-                                        <TextBlock Classes="kv-key" Text="插件" />
-                                        <ProgressBar
-                                            Classes="bar"
-                                            Grid.Column="1"
-                                            Value="{Binding PluginBarValue}" />
-                                        <TextBlock
-                                            Classes="kv-value"
-                                            Grid.Column="2"
-                                            Text="{Binding PluginCount}" />
                                     </Grid>
                                 </Border>
                                 <Button

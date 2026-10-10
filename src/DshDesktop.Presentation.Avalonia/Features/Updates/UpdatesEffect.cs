@@ -25,12 +25,6 @@ public abstract partial record UpdatesEffect : IMviEffect
     public sealed partial record ActivateDshRuntime(string Version) : UpdatesEffect;
 
     /// <summary>
-    /// 表示更新插件副作用（走 §19 安装事务）。
-    /// </summary>
-    /// <param name="Name">插件包名。</param>
-    public sealed partial record UpdatePlugin(string Name) : UpdatesEffect;
-
-    /// <summary>
     /// 表示下载并应用 Desktop 更新副作用。
     /// </summary>
     /// <param name="Version">下载操作的目标版本。</param>

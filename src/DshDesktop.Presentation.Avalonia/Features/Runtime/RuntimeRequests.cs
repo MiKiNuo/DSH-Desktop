@@ -1,3 +1,4 @@
+using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using MiKiNuo.Mvi.Domain.MVI.Mediator;
 
@@ -42,3 +43,9 @@ public sealed record SetAutoSafeModeOnFailureRequest(bool Enabled) : IMviRequest
 /// </summary>
 /// <param name="Enabled">目标开关状态。</param>
 public sealed record SetCheckUpdatesOnStartupRequest(bool Enabled) : IMviRequest<bool>;
+
+/// <summary>
+/// 表示禁用全部第三方插件的跨层请求（Q6 恢复动作）；响应为变更后的最新清单。
+/// </summary>
+public sealed record DisableAllThirdPartyRequest
+    : IMviRequest<IReadOnlyList<PluginInfo>>;

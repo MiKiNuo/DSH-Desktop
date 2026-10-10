@@ -2,7 +2,6 @@ using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Diagnostics;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Command;
@@ -24,7 +23,7 @@ public sealed record DashboardActivityItem(string Title, string TimeText);
 /// 表示 Dashboard ViewModel（Phase 8 Issue 03：独立 MVI 三元组 + BindSiblingState 投影）。
 /// </summary>
 /// <remarks>
-/// Runtime / Updates / Plugins / Diagnostics 状态经
+/// Runtime / Updates / Diagnostics 状态经
 /// <see cref="MviViewModelBase{TState, TIntent, TEffect}.BindSiblingState"/> 只读投影（§11.2），
 /// 变化时回流意图进入自身 Store；派生投影（文案 / 条形 / 活动项）跟随状态属性联动刷新。
 /// </remarks>
@@ -37,39 +36,31 @@ public sealed partial class DashboardViewModel
     /// <summary>启动耗时条形的视觉参考刻度（10s；仅为条形比例，非超时语义）。</summary>
     private static readonly TimeSpan StartupBarReference = TimeSpan.FromSeconds(10);
 
-    /// <summary>插件数条形的视觉参考刻度（10 个；仅为条形比例）。</summary>
-    private const int PluginBarReferenceCount = 10;
-
     /// <summary>
     /// 初始化 Dashboard ViewModel。
     /// </summary>
     /// <param name="store">Dashboard 状态存储。</param>
     /// <param name="runtimeStore">Runtime 状态存储（兄弟 Store，只读订阅）。</param>
     /// <param name="updatesStore">Updates 状态存储（兄弟 Store，只读订阅）。</param>
-    /// <param name="pluginsStore">Plugins 状态存储（兄弟 Store，只读订阅）。</param>
     /// <param name="diagnosticsStore">Diagnostics 状态存储（兄弟 Store，只读订阅）。</param>
     /// <param name="uiDispatcher">UI 调度器。</param>
     public DashboardViewModel(
         IMviStore<DashboardState, DashboardIntent, DashboardEffect> store,
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore,
         IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore,
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore,
         IMviStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect> diagnosticsStore,
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
         ArgumentNullException.ThrowIfNull(runtimeStore);
         ArgumentNullException.ThrowIfNull(updatesStore);
-        ArgumentNullException.ThrowIfNull(pluginsStore);
         ArgumentNullException.ThrowIfNull(diagnosticsStore);
 
         _ = BindSiblingState(runtimeStore, ApplyRuntimeState);
         _ = BindSiblingState(updatesStore, ApplyUpdatesState);
-        _ = BindSiblingState(pluginsStore, ApplyPluginsState);
         _ = BindSiblingState(diagnosticsStore, ApplyDiagnosticsState);
         ApplyRuntimeState(runtimeStore.CurrentState);
         ApplyUpdatesState(updatesStore.CurrentState);
-        ApplyPluginsState(pluginsStore.CurrentState);
         ApplyDiagnosticsState(diagnosticsStore.CurrentState);
 
         // 派生投影（hero 文案 / 条形值 / footer / timeline 行 / 活动项）跟随状态投影联动刷新。
@@ -102,12 +93,6 @@ public sealed partial class DashboardViewModel
                     break;
                 case nameof(PreviousStartupElapsedMs):
                     OnPropertyChanged(nameof(StartupComparisonText));
-                    break;
-                case nameof(PluginCount):
-                    OnPropertyChanged(nameof(PluginBarValue));
-                    break;
-                case nameof(UpdatablePluginCount):
-                    OnPropertyChanged(nameof(PluginsFooterText));
                     break;
                 case nameof(NodeVersion):
                     OnPropertyChanged(nameof(NodeVersionFooter));
@@ -162,18 +147,6 @@ public sealed partial class DashboardViewModel
     /// </summary>
     [MviBind(nameof(DashboardState.MemoryBytes), BindingMode = MviBindingMode.OneWay)]
     public partial long? MemoryBytes { get; private set; }
-
-    /// <summary>
-    /// 获取已安装插件数投影。
-    /// </summary>
-    [MviBind(nameof(DashboardState.PluginCount), BindingMode = MviBindingMode.OneWay)]
-    public partial int PluginCount { get; private set; }
-
-    /// <summary>
-    /// 获取可更新插件数投影。
-    /// </summary>
-    [MviBind(nameof(DashboardState.UpdatablePluginCount), BindingMode = MviBindingMode.OneWay)]
-    public partial int UpdatablePluginCount { get; private set; }
 
     /// <summary>
     /// 获取当前 DSH 版本投影。
@@ -246,16 +219,9 @@ public sealed partial class DashboardViewModel
         ? Math.Clamp(elapsed / StartupBarReference * 100.0, 0, 100)
         : 0;
 
-    /// <summary>获取插件数条形值（10 个视觉参考刻度，0-100）。</summary>
-    public double PluginBarValue =>
-        Math.Clamp(PluginCount / (double)PluginBarReferenceCount * 100.0, 0, 100);
-
     /// <summary>获取启动耗时对比文本（统计卡 footer）。</summary>
     public string StartupComparisonText =>
         DashboardText.FormatStartupComparison(StartupElapsed, PreviousStartupElapsedMs);
-
-    /// <summary>获取插件统计卡 footer。</summary>
-    public string PluginsFooterText => DashboardText.PluginsFooter(UpdatablePluginCount);
 
     /// <summary>获取 Node 版本 footer。</summary>
     public string NodeVersionFooter => NodeVersion is { } version ? $"Node {version}" : "—";
@@ -335,20 +301,9 @@ public sealed partial class DashboardViewModel
     private void ApplyUpdatesState(UpdatesState updatesState)
     {
         DashboardState current = Store.CurrentState;
-        if (updatesState.CurrentDshVersion != current.DshVersion
-            || updatesState.PluginUpdates.Count != current.UpdatablePluginCount)
+        if (updatesState.CurrentDshVersion != current.DshVersion)
         {
-            _ = DispatchAsync(new DashboardIntent.UpdatesProjectionChanged(
-                updatesState.CurrentDshVersion,
-                updatesState.PluginUpdates.Count));
-        }
-    }
-
-    private void ApplyPluginsState(PluginsState pluginsState)
-    {
-        if (pluginsState.Plugins.Count != Store.CurrentState.PluginCount)
-        {
-            _ = DispatchAsync(new DashboardIntent.PluginsProjectionChanged(pluginsState.Plugins.Count));
+            _ = DispatchAsync(new DashboardIntent.UpdatesProjectionChanged(updatesState.CurrentDshVersion));
         }
     }
 

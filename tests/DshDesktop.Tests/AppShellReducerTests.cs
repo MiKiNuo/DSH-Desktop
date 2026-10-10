@@ -1,4 +1,3 @@
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 
@@ -24,7 +23,7 @@ public sealed class AppShellReducerTests
     [Test]
     public async Task ShowRuntime_NavigatesToRuntime()
     {
-        var result = _reducer.Reduce(AppShellState.Initial with { CurrentPage = ShellPage.Plugins }, new AppShellIntent.ShowRuntime());
+        var result = _reducer.Reduce(AppShellState.Initial with { CurrentPage = ShellPage.Dashboard }, new AppShellIntent.ShowRuntime());
 
         await Assert.That(result.State.CurrentPage).IsEqualTo(ShellPage.Runtime);
     }
@@ -51,14 +50,6 @@ public sealed class AppShellReducerTests
         var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.ShowDiagnostics());
 
         await Assert.That(result.State.CurrentPage).IsEqualTo(ShellPage.Diagnostics);
-    }
-
-    [Test]
-    public async Task ShowPlugins_NavigatesToPlugins()
-    {
-        var result = _reducer.Reduce(AppShellState.Initial, new AppShellIntent.ShowPlugins());
-
-        await Assert.That(result.State.CurrentPage).IsEqualTo(ShellPage.Plugins);
     }
 
     [Test]
@@ -157,21 +148,7 @@ public sealed class AppShellReducerTests
         await Assert.That(idle.State.UpdateInProgress).IsFalse();
     }
 
-    // ===== 2026-09-15 架构审查 C3：壳直订 Plugins/Updates Store 的投影下沉进 AppShell =====
-
-    [Test]
-    public async Task PluginOperationChanged_ProjectsOperation()
-    {
-        // 壳 toast（插件安装事务终态）的数据源：自 PluginsStore.Operation 投影回流。
-        var operation = new PluginOperation(PluginOperationStage.Completed, "demo-plugin", null);
-
-        var result = _reducer.Reduce(
-            AppShellState.Initial,
-            new AppShellIntent.PluginOperationChanged(operation));
-
-        await Assert.That(result.State.PluginOperation).IsSameReferenceAs(operation);
-        await Assert.That(result.Effects.Count).IsEqualTo(0);
-    }
+    // ===== 2026-09-15 架构审查 C3：壳直订 Updates Store 的投影下沉进 AppShell =====
 
     [Test]
     public async Task UpdateDownloadChanged_ProjectsPercentAndText()

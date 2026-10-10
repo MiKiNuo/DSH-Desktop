@@ -1,6 +1,4 @@
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Command;
@@ -23,14 +21,9 @@ public sealed partial class AppShellViewModel
     : MviViewModelBase<AppShellState, AppShellIntent, UnitEffect>
 {
     /// <summary>
-    /// 最近一次投影的 Updates 状态（壳文案合成的数据源之一）。
+    /// 最近一次投影的 Updates 状态（壳文案合成的数据源）。
     /// </summary>
     private UpdatesState? _updatesProjection;
-
-    /// <summary>
-    /// 最近一次投影的 Plugins 状态（壳文案合成的兜底数据源：Updates.PendingOperation ?? Plugins.PendingOperation）。
-    /// </summary>
-    private PluginsState? _pluginsProjection;
 
     /// <summary>
     /// UI 调度器（候选 5：ToastRequested 事件经其编组到 UI 线程触发；null = 同步触发，兼容测试）。
@@ -44,8 +37,6 @@ public sealed partial class AppShellViewModel
 
     private RuntimeLifecycle _lastLifecycle = RuntimeLifecycle.Stopped;
 
-    private PluginOperation? _notifiedPluginOperation;
-
     /// <summary>
     /// 壳 toast 请求事件（候选 5：边沿判定下沉 VM；命中即经 UI 调度器在 UI 线程触发）。
     /// MainWindow 订阅后收口到 <c>ShowToast</c>，文案/时长/样式不变。
@@ -58,19 +49,16 @@ public sealed partial class AppShellViewModel
     /// <param name="store">应用壳状态存储。</param>
     /// <param name="runtimeStore">Runtime 状态存储（兄弟 Store，只读订阅）。</param>
     /// <param name="updatesStore">Updates 状态存储（兄弟 Store，只读订阅）。</param>
-    /// <param name="pluginsStore">Plugins 状态存储（兄弟 Store，只读订阅；2026-09-15 审查 C3：壳 toast 投影自 MainWindow 直订下沉）。</param>
     /// <param name="uiDispatcher">UI 调度器。</param>
     public AppShellViewModel(
         IMviStore<AppShellState, AppShellIntent, UnitEffect> store,
         IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore,
         IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore,
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore,
         IMviUiDispatcher? uiDispatcher = null)
         : base(store, uiDispatcher)
     {
         ArgumentNullException.ThrowIfNull(runtimeStore);
         ArgumentNullException.ThrowIfNull(updatesStore);
-        ArgumentNullException.ThrowIfNull(pluginsStore);
 
         _uiDispatcher = uiDispatcher;
 
@@ -78,14 +66,11 @@ public sealed partial class AppShellViewModel
         // 使初次投影 previous==current，不触发上升沿/迁移/去重误弹。
         _lastUpdateBadge = updatesStore.CurrentState.AvailableCount;
         _lastLifecycle = runtimeStore.CurrentState.Lifecycle;
-        _notifiedPluginOperation = pluginsStore.CurrentState.Operation;
 
         _ = BindSiblingState(runtimeStore, ApplyRuntimeState);
         _ = BindSiblingState(updatesStore, ApplyUpdatesState);
-        _ = BindSiblingState(pluginsStore, ApplyPluginsState);
         ApplyRuntimeState(runtimeStore.CurrentState);
         ApplyUpdatesState(updatesStore.CurrentState);
-        ApplyPluginsState(pluginsStore.CurrentState);
 
         // 派生投影（状态文本）跟随状态投影属性联动刷新。
         PropertyChanged += (_, args) =>
@@ -140,12 +125,6 @@ public sealed partial class AppShellViewModel
     public partial bool UpdateInProgress { get; private set; }
 
     /// <summary>
-    /// 获取插件安装事务投影（壳 toast 数据源；无事务为 null）。
-    /// </summary>
-    [MviBind(nameof(AppShellState.PluginOperation), BindingMode = MviBindingMode.OneWay)]
-    public partial PluginOperation? PluginOperation { get; private set; }
-
-    /// <summary>
     /// 获取 Desktop 更新下载进度投影（更新遮罩「旋转图标 ↔ 确定进度条」互斥依据；无真实进度为 null）。
     /// </summary>
     [MviBind(nameof(AppShellState.UpdateDownloadPercent), BindingMode = MviBindingMode.OneWay)]
@@ -191,12 +170,6 @@ public sealed partial class AppShellViewModel
     /// </summary>
     [MviCommand(typeof(AppShellIntent.ShowDiagnostics))]
     public partial IMviAsyncCommand ShowDiagnosticsCommand { get; private set; }
-
-    /// <summary>
-    /// 获取导航到 Plugins 页命令。
-    /// </summary>
-    [MviCommand(typeof(AppShellIntent.ShowPlugins))]
-    public partial IMviAsyncCommand ShowPluginsCommand { get; private set; }
 
     /// <summary>
     /// 获取导航到 Updates 页命令。
@@ -268,47 +241,14 @@ public sealed partial class AppShellViewModel
         SyncUpdateOperationTextProjection();
     }
 
-    private void ApplyPluginsState(PluginsState pluginsState)
-    {
-        _pluginsProjection = pluginsState;
-
-        // Operation 引用在阶段推进时整体替换，以引用判等（MainWindow 据此做终态 toast 去重）。
-        if (!ReferenceEquals(pluginsState.Operation, Store.CurrentState.PluginOperation))
-        {
-            _ = DispatchAsync(new AppShellIntent.PluginOperationChanged(pluginsState.Operation));
-        }
-
-        // 插件页行内"更新"只写 PluginsStore，遮罩必须据此分量独立判定，
-        // 否则该入口的更新全程没有任何进度反馈（2026-09-17 定位）。
-        bool pluginInProgress = pluginsState.Operation?.IsInProgress == true;
-        if (pluginInProgress != Store.CurrentState.PluginOperationInProgress)
-        {
-            _ = DispatchAsync(new AppShellIntent.PluginOperationInProgressChanged(pluginInProgress));
-        }
-
-        // 候选 5：插件事务终态 toast（引用去重，仅 Completed/Failed 命中且引用不同）。
-        // 仅当命中（去重通过后）才标记已通知，非终态新引用不污染去重前序值。
-        string? toast = ShellToastProjector.ProjectPluginOperationDone(_notifiedPluginOperation, pluginsState.Operation);
-        if (toast is not null)
-        {
-            _notifiedPluginOperation = pluginsState.Operation;
-        }
-        EmitToast(toast);
-
-        // 插件事务在飞时壳副标题须回退到 Plugins.PendingOperation（候选 3：壳文案合成
-        // = Updates.PendingOperation ?? Plugins.PendingOperation）。
-        SyncUpdateOperationTextProjection();
-    }
-
     /// <summary>
-    /// 同步壳遮罩副标题文案：<c>Updates.PendingOperation ?? Plugins.PendingOperation</c>
-    /// （候选 3 消除"在飞操作"双轨后，Updates 自有操作优先，Plugins 的"{stage}：{name}"兜底）。
-    /// 进度百分比仅来自 UpdatesStore.DesktopDownloadProgress。两兄弟 Store 任一变化都会触发本合成。
+    /// 同步壳遮罩副标题文案：<c>Updates.PendingOperation</c>（进度百分比仅来自
+    /// UpdatesStore.DesktopDownloadProgress；兄弟 Store 变化触发本合成）。
     /// </summary>
     private void SyncUpdateOperationTextProjection()
     {
         int? percent = _updatesProjection?.DesktopDownloadProgress;
-        string? text = _updatesProjection?.PendingOperation ?? _pluginsProjection?.PendingOperation;
+        string? text = _updatesProjection?.PendingOperation;
         if (percent != Store.CurrentState.UpdateDownloadPercent
             || text != Store.CurrentState.UpdateOperationText)
         {

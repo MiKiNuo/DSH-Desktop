@@ -166,69 +166,6 @@ public sealed class PluginProfileRepositoryTests : IDisposable
     }
 
     [Test]
-    public async Task UninstallAsync_WithoutPnpm_FailsAfterFirstThreeSteps()
-    {
-        SeedProfile(dependencies: ["dsh-foo"], bundles: ["dsh-foo"]);
-        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-foo"));
-        File.WriteAllText(
-            Path.Combine(ProfileDir, "cordis.patch.yml"),
-            "- id: base\n  name: dsh-foo\n- insert:\n  - name: dsh-foo\n  - name: dsh-foo2\n");
-        var repository = new PluginProfileRepository(ProfileDir, "node", null);
-
-        // 第 ④ 步（lockfile 重建）无 pnpm → 诚实失败。
-        await Assert.That(async () => await repository.UninstallAsync("dsh-foo", CancellationToken.None))
-            .Throws<InvalidOperationException>();
-
-        // 但前三步已生效：manifest 清理 + 目录删除 + patch 条目清理。
-        IReadOnlyList<PluginInfo> plugins = await repository.ListPluginsAsync(CancellationToken.None);
-        await Assert.That(plugins.Count).IsEqualTo(0);
-        await Assert.That(Directory.Exists(Path.Combine(ProfileDir, "node_modules", "dsh-foo"))).IsFalse();
-        string patch = File.ReadAllText(Path.Combine(ProfileDir, "cordis.patch.yml"));
-        await Assert.That(patch.Contains("dsh-foo2")).IsTrue();  // 无关条目保留
-        await Assert.That(patch.Contains("name: dsh-foo\n")).IsFalse(); // 该插件条目已清（注意 dsh-foo2 是不同条目）
-    }
-
-    [Test]
-    public async Task UninstallAsync_DanglingOverrides_AreStrippedBeforeLockfileRebuild()
-    {
-        // 回归（2026-09-19 实机）：旧 harness 种子 profile 的 pnpm.overrides 全是指向
-        // .generations 的悬空 link:，卸载第④步重建 lockfile 未做归一化 ⇒ pnpm 必失败，
-        // 且①-③已生效留下半卸载现场。归一化收口在 RebuildLockfileAsync（卸载/安装修复共用）。
-        Directory.CreateDirectory(Path.Combine(ProfileDir, "node_modules", "dsh-foo"));
-        File.WriteAllText(
-            Path.Combine(ProfileDir, "package.json"),
-            """
-            {
-              "dependencies": { "dsh-foo": "*" },
-              "dsh": { "profile": { "bundles": ["dsh-foo"] } },
-              "pnpm": { "overrides": { "dsh-foo": "link:../.generations/live/gen1/node_modules/dsh-foo" } }
-            }
-            """);
-
-        // 需要一个存在的 pnpm 路径以通过前置检查（真实执行被 runOnce 桩拦截）；
-        // 桩内读取清单快照，直接断言「pnpm 执行时刻 overrides 已剥离」这一真实不变量。
-        string pnpm = Path.Combine(_root, "pnpm.cjs");
-        File.WriteAllText(pnpm, "");
-        bool? overridesPresentAtRebuild = null;
-        Func<string, string, string, string[], CancellationToken, Task<(int, string)>> runOnce =
-            (_, _, _, _, _) =>
-            {
-                string manifestAtCall = File.ReadAllText(Path.Combine(ProfileDir, "package.json"));
-                overridesPresentAtRebuild = manifestAtCall.Contains("overrides", StringComparison.Ordinal);
-                return Task.FromResult((0, string.Empty));
-            };
-        var repository = new PluginProfileRepository(ProfileDir, "node", pnpm, runOnce);
-
-        await repository.UninstallAsync("dsh-foo", CancellationToken.None);
-
-        await Assert.That(overridesPresentAtRebuild).IsNotNull(); // 重建确实执行了
-        await Assert.That(overridesPresentAtRebuild!.Value).IsFalse(); // pnpm 运行时 overrides 已剥离
-        string manifest = File.ReadAllText(Path.Combine(ProfileDir, "package.json"));
-        await Assert.That(manifest.Contains("dsh-foo", StringComparison.Ordinal)).IsFalse(); // 卸载本体仍生效
-        await Assert.That(manifest.Contains("pnpm", StringComparison.Ordinal)).IsFalse(); // pnpm 变空整体移除
-    }
-
-    [Test]
     public async Task InstallAsync_StaleBundleDeclaration_IsPrunedAndInstallSucceeds()
     {
         // 2026-10-10 实机：bundles 残留「既不在 dependencies、磁盘也不存在」的声明

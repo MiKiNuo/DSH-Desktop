@@ -111,22 +111,6 @@ public sealed class RuntimeRepository : IRuntimeRepository
         }
     }
 
-    /// <inheritdoc />
-    public async Task<string?> GetLatestPluginVersionAsync(string name, CancellationToken cancellationToken)
-    {
-        if (_npmCjsPath is null)
-        {
-            return null;
-        }
-
-        (int exitCode, string stdout) = await NodeJsToolRunner.RunCaptureAsync(
-            _nodePath, _npmCjsPath, _runtimeRootDir,
-            ["view", name, "version"], cancellationToken).ConfigureAwait(false);
-        return exitCode == 0 && !string.IsNullOrWhiteSpace(stdout)
-            ? stdout.Split('\n')[0].Trim()
-            : null;
-    }
-
     private string RequireNpm()
     {
         if (string.IsNullOrWhiteSpace(_npmCjsPath) || !File.Exists(_npmCjsPath))

@@ -10,7 +10,7 @@ namespace DshDesktop.Tests;
 ///
 /// 因此 View code-behind 的 <c>PropertyChanged</c> 回调若触碰控件，必须自行
 /// <c>Dispatcher.UIThread.CheckAccess()</c> + <c>Post</c> 编组（MainWindow.axaml.cs 已是范本）。
-/// 本测试对需加固的 3 个视图（Dashboard / Workbench / Plugins）逐一钉死：其 <c>PropertyChanged</c>
+/// 本测试对需加固的 2 个视图（Dashboard / Workbench）逐一钉死：其 <c>PropertyChanged</c>
 /// 处理必须抽成命名方法 <c>OnViewModelPropertyChanged</c> 并在入口编组。
 ///
 /// 测试项目不引用 <c>DshDesktop.App</c>，无法运行时断言，故按仓内既有惯例
@@ -43,20 +43,6 @@ public sealed class ViewUiThreadGuardTests
     {
         var body = await ExtractHandlerBodyAsync(
             "DshDesktop.Presentation.Avalonia", "Features", "Workbench", "WorkbenchView.axaml.cs");
-
-        await Assert.That(body).Contains("Dispatcher.UIThread.CheckAccess()");
-        await Assert.That(body).Contains("Dispatcher.UIThread.Post(");
-    }
-
-    /// <summary>
-    /// Plugins 视图订阅 Plugins / UpdatablePlugins（后者回流），回调读 _searchInput.Text 并改行/计数/空态，
-    /// 必须编组。
-    /// </summary>
-    [Test]
-    public async Task PluginsView_PropertyChangedHandler_IsMarshaledToUiThread()
-    {
-        var body = await ExtractHandlerBodyAsync(
-            "DshDesktop.Presentation.Avalonia", "Features", "Plugins", "PluginsView.axaml.cs");
 
         await Assert.That(body).Contains("Dispatcher.UIThread.CheckAccess()");
         await Assert.That(body).Contains("Dispatcher.UIThread.Post(");

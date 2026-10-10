@@ -53,14 +53,3 @@ public sealed record DshRuntimeInfo(
     string Version,
     bool IsActive,
     bool IsBorrowed);
-
-/// <summary>
-/// 表示一个插件的可用更新。
-/// </summary>
-/// <param name="Name">插件包名。</param>
-/// <param name="CurrentVersion">当前安装版本。</param>
-/// <param name="LatestVersion">npm 最新版本。</param>
-public sealed record PluginUpdateInfo(
-    string Name,
-    string CurrentVersion,
-    string LatestVersion);

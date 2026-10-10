@@ -1,8 +1,6 @@
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 using DshDesktop.Domain.Updates;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Effect;
@@ -18,7 +16,7 @@ namespace DshDesktop.Tests;
 /// <summary>
 /// AppShell ViewModel 测试（§14 Phase 6 修订：RuntimeIndicator / UpdateBadge 经 BindSiblingState
 /// 从兄弟 Store 只读投影，AppShell 不持有 Runtime/Updates 业务状态本体）。
-/// 2026-09-15 架构审查 C3：壳直订 Plugins/Updates Store 的投影（插件事务 / 更新下载）也收进 AppShell，
+/// 2026-09-15 架构审查 C3：壳直订 Updates Store 的投影（更新下载）也收进 AppShell，
 /// MainWindow 只订阅 VM 的 PropertyChanged。
 /// </summary>
 public sealed class AppShellViewModelTests
@@ -30,9 +28,8 @@ public sealed class AppShellViewModelTests
         // 页标题/副标题投影已随页标题条一并移除，此处只守页面投影本身。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.CurrentPage).IsEqualTo(ShellPage.Workbench);
 
@@ -47,9 +44,8 @@ public sealed class AppShellViewModelTests
         // Phase 8 Issue 02：状态栏 PID / Port 经 BindSiblingState 投影（§11.2）。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.RuntimeProcessId).IsNull();
         await Assert.That(viewModel.RuntimePort).IsNull();
@@ -73,9 +69,8 @@ public sealed class AppShellViewModelTests
         // 状态栏 DSH 版本段的投影自 UpdatesStore.CurrentDshVersion。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.DshVersion).IsNull();
 
@@ -90,9 +85,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.RuntimeLifecycleText).IsEqualTo("已停止");
 
@@ -106,9 +100,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.RuntimeIndicator).IsEqualTo(RuntimeLifecycle.Stopped);
 
@@ -119,13 +112,12 @@ public sealed class AppShellViewModelTests
     }
 
     [Test]
-    public async Task UpdateBadge_CountsDesktopDshAndPluginUpdates()
+    public async Task UpdateBadge_CountsDesktopAndDshUpdates()
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.UpdateBadge).IsEqualTo(0);
 
@@ -134,15 +126,10 @@ public sealed class AppShellViewModelTests
             LatestDesktopVersion = "0.6.0",
             LatestDshVersion = "rc.13",
             CurrentDshVersion = "rc.12",
-            PluginUpdates =
-            [
-                new PluginUpdateInfo("plugin-a", "1.0.0", "1.1.0"),
-                new PluginUpdateInfo("plugin-b", "2.0.0", "2.1.0"),
-            ],
         });
 
-        await Assert.That(viewModel.UpdateBadge).IsEqualTo(4);
-        await Assert.That(shellStore.CurrentState.UpdateBadge).IsEqualTo(4);
+        await Assert.That(viewModel.UpdateBadge).IsEqualTo(2);
+        await Assert.That(shellStore.CurrentState.UpdateBadge).IsEqualTo(2);
     }
 
     [Test]
@@ -150,9 +137,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         updatesStore.Push(UpdatesState.Initial with
         {
@@ -164,67 +150,14 @@ public sealed class AppShellViewModelTests
     }
 
     [Test]
-    [Arguments(false, false)]
-    [Arguments(false, true)]
-    [Arguments(true, false)]
-    [Arguments(true, true)]
-    public async Task OverlappingOperations_KeepMaskUntilBothFinish(bool pluginStartsFirst, bool pluginEndsFirst)
-    {
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-        void Plugin(bool active) => pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(active ? PluginOperationStage.Preparing : PluginOperationStage.Completed, "demo", null),
-        });
-        void Update(bool active) => updatesStore.Push(UpdatesState.Initial with
-        {
-            Operation = active ? new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0") : null,
-        });
-        if (pluginStartsFirst) { Plugin(true); Update(true); }
-        else { Update(true); Plugin(true); }
-        await Assert.That(shellStore.CurrentState.UpdatesInProgress).IsTrue();
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        if (pluginEndsFirst) Plugin(false); else Update(false);
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        if (pluginEndsFirst) Update(false); else Plugin(false);
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-    }
-
-    [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task InitialOverlappingOperations_KeepMaskUntilBothFinish(bool pluginEndsFirst)
-    {
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(
-            UpdatesState.Initial with { Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0") });
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(
-            PluginsState.Initial with { Operation = new PluginOperation(PluginOperationStage.Preparing, "demo", null) });
-        using var shellStore = CreateShellStore();
-        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        await Assert.That(shellStore.CurrentState.UpdatesInProgress).IsTrue();
-        if (pluginEndsFirst) pluginsStore.Push(PluginsState.Initial);
-        else updatesStore.Push(UpdatesState.Initial);
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        if (pluginEndsFirst) updatesStore.Push(UpdatesState.Initial);
-        else pluginsStore.Push(PluginsState.Initial);
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-    }
-
-    [Test]
     public async Task UpdateInProgress_ProjectsFromOwnOperation()
     {
         // §11.2：壳经 BindSiblingState 投影 UpdatesStore.PendingOperation（非空 = 更新中），
         // 驱动全屏遮罩 + 导航锁定（NavigationBlocked 决策的单一真值源）。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.UpdateInProgress).IsFalse();
 
@@ -245,124 +178,7 @@ public sealed class AppShellViewModelTests
         await Assert.That(shellStore.CurrentState.UpdateInProgress).IsFalse();
     }
 
-    [Test]
-    public async Task UpdateInProgress_AlsoTracksPluginTransaction()
-    {
-        // 插件页入口只写 PluginsStore（UpdatesStore 的待办始终为空），若遮罩只认
-        // UpdatesStore.PendingOperation，插件更新全程（停 Runtime → pnpm add → 重启 Runtime）
-        // 就没有任何全局进度指示（2026-09-17 定位）。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-
-        pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(PluginOperationStage.Installing, "dsh-foo", null),
-        });
-
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
-
-        pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(PluginOperationStage.Completed, "dsh-foo", null),
-        });
-
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsFalse();
-    }
-
-    [Test]
-    public async Task PluginUpdate_PreparingStage_LocksMaskFromEntry()
-    {
-        // 🟡2：组合根在调用编排器前同步预置 Preparing 阶段（非终态），使壳遮罩自入口即锁定，
-        // 消除"UpdatePlugin 意图 → 编排器首个 OperationChanged(Preparing) 回流"前的遮罩锁定窗口。
-        // 此处锁定预置阶段的值类型（Preparing 非 Completed/Failed）确实拉起遮罩。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-
-        // 入口预置的 Preparing 阶段：遮罩立即锁定（不依赖编排器回流）。
-        pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(PluginOperationStage.Preparing, "dsh-foo", null, PluginOperationKind.Update),
-        });
-
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
-
-        // 终态回流后释放。
-        pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(PluginOperationStage.Completed, "dsh-foo", null, PluginOperationKind.Update),
-        });
-
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsFalse();
-    }
-
-    [Test]
-    public async Task PluginUpdate_InFlight_MaskNotReleasedByCheckUpdatesReflow()
-    {
-        // 🟡4（与 🟡2 协同）：插件更新在飞（PluginsState.Operation 非终态）时，UpdatesStore 的一次检查回流
-        // （PluginOperationFinished 自带的那次 CheckUpdates 完成）不得释放壳遮罩——在飞事实只看 PluginsState.Operation，
-        // 与 UpdatesStore 的检查回流无关。落点从"UpdatesState.PendingOperation"改到"PluginsState.Operation / 壳在飞投影"。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        await Assert.That(viewModel.UpdateInProgress).IsFalse();
-
-        // 插件事务在飞（Preparing，正是 🟡2 入口预置的阶段）。
-        pluginsStore.Push(PluginsState.Initial with
-        {
-            Operation = new PluginOperation(PluginOperationStage.Preparing, "dsh-foo", null, PluginOperationKind.Update),
-        });
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
-
-        // 检查回流（PluginOperationFinished 自带的那次 CheckUpdates 完成，落在 UpdatesStore）。
-        updatesStore.Push(UpdatesState.Initial with
-        {
-            Status = UpdateStatus.Checking,
-            PluginUpdates = [new PluginUpdateInfo("dsh-foo", "1.0.0", "1.1.0")],
-        });
-
-        // 遮罩不释放：在飞事实归因 PluginsState.Operation，与 UpdatesStore 的检查回流无关。
-        await Assert.That(viewModel.UpdateInProgress).IsTrue();
-        await Assert.That(shellStore.CurrentState.PluginOperationInProgress).IsTrue();
-    }
-
-    // ===== 2026-09-15 架构审查 C3：插件事务 / 更新下载投影收进 AppShell =====
-
-    [Test]
-    public async Task PluginOperation_TracksPluginsStore()
-    {
-        // 壳 toast（插件安装事务终态）的数据源：投影必须回流自身 Store（§11.2 同四先例）。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        await Assert.That(viewModel.PluginOperation).IsNull();
-
-        var operation = new PluginOperation(PluginOperationStage.Completed, "demo-plugin", null);
-        pluginsStore.Push(PluginsState.Initial with { Operation = operation });
-
-        await Assert.That(viewModel.PluginOperation).IsSameReferenceAs(operation);
-        await Assert.That(shellStore.CurrentState.PluginOperation).IsSameReferenceAs(operation);
-    }
+    // ===== 2026-09-15 架构审查 C3：更新下载投影收进 AppShell =====
 
     [Test]
     public async Task UpdateDownload_TracksUpdatesStore()
@@ -370,9 +186,8 @@ public sealed class AppShellViewModelTests
         // 更新遮罩的「旋转图标 ↔ 确定进度条」互斥与副标题：投影必须回流自身 Store。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         await Assert.That(viewModel.UpdateDownloadPercent).IsNull();
         await Assert.That(viewModel.UpdateOperationText).IsNull();
@@ -385,46 +200,6 @@ public sealed class AppShellViewModelTests
         await Assert.That(viewModel.UpdateDownloadPercent).IsEqualTo(42);
         await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0（42%）…");
         await Assert.That(shellStore.CurrentState.UpdateDownloadPercent).IsEqualTo(42);
-    }
-
-    [Test]
-    public async Task UpdateOperationText_FallsBackToPluginsPendingOperation()
-    {
-        // 候选 3 壳文案合成：Updates.PendingOperation ?? Plugins.PendingOperation。
-        // 仅 Plugins 有在飞（插件页行内"更新"只写 PluginsStore，Updates 待办为空）时，
-        // 壳遮罩副标题须回退到 Plugins.PendingOperation（"{stage}：{name}" 兜底）。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        await Assert.That(viewModel.UpdateOperationText).IsNull();
-
-        pluginsStore.Push(PluginsState.Initial with { PendingOperation = "卸载 dsh-foo…" });
-
-        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("卸载 dsh-foo…");
-        await Assert.That(shellStore.CurrentState.UpdateOperationText).IsEqualTo("卸载 dsh-foo…");
-    }
-
-    [Test]
-    public async Task UpdateOperationText_UpdatesPriorityOverPlugins()
-    {
-        // 壳文案合成优先序：两源皆在时 Updates.PendingOperation 优先（自有操作优先于兜底）。
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        pluginsStore.Push(PluginsState.Initial with { PendingOperation = "卸载 dsh-foo…" });
-        updatesStore.Push(UpdatesState.Initial with
-        {
-            Operation = new UpdatesOperation(UpdatesOperationKind.DesktopDownload, "0.2.0"),
-        });
-
-        await Assert.That(viewModel.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");
-        await Assert.That(shellStore.CurrentState.UpdateOperationText).IsEqualTo("下载 Desktop 更新 0.2.0…");
     }
 
     /// <summary>
@@ -442,9 +217,8 @@ public sealed class AppShellViewModelTests
         var dispatcher = new RecordingUiDispatcher();
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore, dispatcher);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, dispatcher);
 
         // 记录 RuntimeIndicator 通知发生时的上下文（是否位于 Post 内、所在线程）。
         var indicatorEvents = new List<(bool InsidePost, int ThreadId)>();
@@ -493,9 +267,8 @@ public sealed class AppShellViewModelTests
         var dispatcher = new RecordingUiDispatcher();
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore, dispatcher);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, dispatcher);
 
         var currentPageEvents = new List<(bool InsidePost, int ThreadId)>();
         viewModel.PropertyChanged += (_, args) =>
@@ -533,11 +306,10 @@ public sealed class AppShellViewModelTests
         // 首帧（构造期初始投影）不弹：构造 VM 期间不得触发任何 ToastRequested。
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
 
         var raised = false;
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
         viewModel.ToastRequested += (_, _) => raised = true;
 
         // 构造已结束并订阅，首帧不应漏弹。
@@ -549,17 +321,16 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         string? captured = null;
         viewModel.ToastRequested += (_, text) => captured = text;
 
-        // 徽标 0 → 1（1 条插件更新）：上升沿弹一条。
+        // 徽标 0 → 1（Desktop 有可用更新）：上升沿弹一条。
         updatesStore.Push(UpdatesState.Initial with
         {
-            PluginUpdates = [new PluginUpdateInfo("plugin-a", "1.0.0", "1.1.0")],
+            LatestDesktopVersion = "0.6.0",
         });
 
         await Assert.That(captured).IsEqualTo("发现 1 项可用更新");
@@ -572,9 +343,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
         var messages = new List<string>();
         viewModel.ToastRequested += (_, text) => messages.Add(text);
         var reducer = new RuntimeReducer();
@@ -605,9 +375,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        using var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
         var messages = new List<string>();
         viewModel.ToastRequested += (_, text) => messages.Add(text);
         var reducer = new RuntimeReducer();
@@ -634,9 +403,8 @@ public sealed class AppShellViewModelTests
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
+        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore);
 
         string? captured = null;
         viewModel.ToastRequested += (_, text) => captured = text;
@@ -646,24 +414,6 @@ public sealed class AppShellViewModelTests
         runtimeStore.Push(RuntimeState.Initial with { Lifecycle = RuntimeLifecycle.Running });
 
         await Assert.That(captured).IsEqualTo("Runtime 已恢复运行");
-    }
-
-    [Test]
-    public async Task ToastRequested_RaisedOnPluginOperationCompleted()
-    {
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
-        using var shellStore = CreateShellStore();
-        var viewModel = new AppShellViewModel(shellStore, runtimeStore, updatesStore, pluginsStore);
-
-        string? captured = null;
-        viewModel.ToastRequested += (_, text) => captured = text;
-
-        var operation = new PluginOperation(PluginOperationStage.Completed, "demo-plugin", null);
-        pluginsStore.Push(PluginsState.Initial with { Operation = operation });
-
-        await Assert.That(captured).IsEqualTo("插件 demo-plugin 安装完成");
     }
 
     private static MviStore<AppShellState, AppShellIntent, UnitEffect> CreateShellStore()

@@ -1,10 +1,9 @@
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
 
 namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 
 /// <summary>
-/// 壳 toast 三判定的纯函数投影器（候选 5：边沿判定自 MainWindow 下沉）。
+/// 壳 toast 判定的纯函数投影器（候选 5：边沿判定自 MainWindow 下沉）。
 /// 全部方法无副作用、可单测；文案逐字沿用 MainWindow 现状，不得自行改写。
 /// </summary>
 public static class ShellToastProjector
@@ -31,33 +30,6 @@ public static class ShellToastProjector
         if (previous is RuntimeLifecycle.Recovering && current is RuntimeLifecycle.Running)
         {
             return "Runtime 已恢复运行";
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// 插件终态引用去重：current 与 alreadyNotified 引用不同且 current 为 Completed/Failed 时返回对应文案，否则 null。
-    /// Completed→"插件 {name} {verb}完成"；Failed→"插件 {name} {verb}失败：{Error}"。
-    /// verb 来自 <see cref="PluginOperationText.Verb"/>，逐字沿用 MainWindow。
-    /// 非终态新引用返回 null（不应据此标记为已通知，见 <see cref="AppShellViewModel"/> 的调用约定）。
-    /// </summary>
-    public static string? ProjectPluginOperationDone(PluginOperation? alreadyNotified, PluginOperation? current)
-    {
-        if (current is null || ReferenceEquals(current, alreadyNotified))
-        {
-            return null;
-        }
-
-        string verb = PluginOperationText.Verb(current.Kind);
-        if (current.Stage is PluginOperationStage.Completed)
-        {
-            return $"插件 {current.PluginName} {verb}完成";
-        }
-
-        if (current.Stage is PluginOperationStage.Failed)
-        {
-            return $"插件 {current.PluginName} {verb}失败：{current.Error}";
         }
 
         return null;

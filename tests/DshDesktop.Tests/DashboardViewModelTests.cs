@@ -1,12 +1,9 @@
 using DshDesktop.Application.Runtime;
 using DshDesktop.Domain.Diagnostics;
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
-using DshDesktop.Domain.Updates;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Dashboard;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
 using MiKiNuo.Mvi.Application.MVI.Mediator;
@@ -20,7 +17,7 @@ namespace DshDesktop.Tests;
 
 /// <summary>
 /// Dashboard ViewModel 测试（Phase 8 Issue 03）：独立 MVI 三元组 + BindSiblingState
-/// 投影 Runtime / Updates / Plugins / Diagnostics 四个兄弟 Store 只读投影（§11.2）。
+/// 投影 Runtime / Updates / Diagnostics 三个兄弟 Store 只读投影（§11.2）。
 /// </summary>
 public sealed class DashboardViewModelTests
 {
@@ -49,7 +46,7 @@ public sealed class DashboardViewModelTests
     }
 
     [Test]
-    public async Task UpdatesProjection_DshVersionAndUpdatableCount()
+    public async Task UpdatesProjection_DshVersion()
     {
         var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
         using var harness = CreateViewModel(runtimeStore);
@@ -57,33 +54,9 @@ public sealed class DashboardViewModelTests
         harness.UpdatesStore.Push(UpdatesState.Initial with
         {
             CurrentDshVersion = "0.1.0-rc.12",
-            PluginUpdates = [new PluginUpdateInfo("plugin-a", "1.0.0", "1.1.0")],
         });
 
         await Assert.That(harness.ViewModel.DshVersion).IsEqualTo("0.1.0-rc.12");
-        await Assert.That(harness.ViewModel.UpdatablePluginCount).IsEqualTo(1);
-        await Assert.That(harness.ViewModel.PluginsFooterText).IsEqualTo("1 个可更新");
-    }
-
-    [Test]
-    public async Task PluginsProjection_PluginCount()
-    {
-        var runtimeStore = new FakeStore<RuntimeState, RuntimeIntent, RuntimeEffect>(RuntimeState.Initial);
-        using var harness = CreateViewModel(runtimeStore);
-
-        await Assert.That(harness.ViewModel.PluginCount).IsEqualTo(0);
-
-        harness.PluginsStore.Push(PluginsState.Initial with
-        {
-            Plugins =
-            [
-                new PluginInfo("a", "1.0.0", false, true, ""),
-                new PluginInfo("b", "2.0.0", false, false, ""),
-            ],
-        });
-
-        await Assert.That(harness.ViewModel.PluginCount).IsEqualTo(2);
-        await Assert.That(harness.ViewModel.PluginsFooterText).IsEqualTo("全部最新");
     }
 
     [Test]
@@ -182,10 +155,9 @@ public sealed class DashboardViewModelTests
             new DashboardEffectDispatcher(mediator),
             []);
         var updatesStore = new FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect>(UpdatesState.Initial);
-        var pluginsStore = new FakeStore<PluginsState, PluginsIntent, PluginsEffect>(PluginsState.Initial);
         var diagnosticsStore = new FakeStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect>(DiagnosticsState.Initial);
-        var viewModel = new DashboardViewModel(store, runtimeStore, updatesStore, pluginsStore, diagnosticsStore);
-        return new Harness(store, viewModel, updatesStore, pluginsStore, diagnosticsStore, mediator);
+        var viewModel = new DashboardViewModel(store, runtimeStore, updatesStore, diagnosticsStore);
+        return new Harness(store, viewModel, updatesStore, diagnosticsStore, mediator);
     }
 
     private static async Task WaitForAsync(Func<bool> condition)
@@ -200,7 +172,6 @@ public sealed class DashboardViewModelTests
         MviStore<DashboardState, DashboardIntent, DashboardEffect> store,
         DashboardViewModel viewModel,
         FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore,
-        FakeStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore,
         FakeStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect> diagnosticsStore,
         RecordingMediator mediator)
         : IDisposable
@@ -208,7 +179,6 @@ public sealed class DashboardViewModelTests
         public MviStore<DashboardState, DashboardIntent, DashboardEffect> Store { get; } = store;
         public DashboardViewModel ViewModel { get; } = viewModel;
         public FakeStore<UpdatesState, UpdatesIntent, UpdatesEffect> UpdatesStore { get; } = updatesStore;
-        public FakeStore<PluginsState, PluginsIntent, PluginsEffect> PluginsStore { get; } = pluginsStore;
         public FakeStore<DiagnosticsState, DiagnosticsIntent, DiagnosticsEffect> DiagnosticsStore { get; } = diagnosticsStore;
         public RecordingMediator Mediator { get; } = mediator;
 

@@ -2,13 +2,11 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using DshDesktop.Application.Plugins;
 using DshDesktop.Domain.Plugins;
-using YamlDotNet.RepresentationModel;
 
 namespace DshDesktop.Infrastructure.Plugins;
 
 /// <summary>
-/// 表示 Profile 文件级插件仓库（§18：DSH 不启动也可管理插件；
-/// 卸载复刻 Electron detachLegacyPlugin 四步，docs/DSH-Plugin-Mechanics.md §5）。
+/// 表示 Profile 文件级插件仓库（§18：DSH 不启动也可管理插件）。
 /// </summary>
 public sealed class PluginProfileRepository(
     string profileDir,
@@ -29,7 +27,6 @@ public sealed class PluginProfileRepository(
     private readonly Func<CancellationToken, Task<bool>> _gitAvailable = gitAvailable ?? ProbeGitOnPathAsync;
 
     private string ManifestPath => Path.Combine(profileDir, "package.json");
-    private string PatchPath => Path.Combine(profileDir, "cordis.patch.yml");
 
     /// <inheritdoc />
     public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
@@ -130,38 +127,6 @@ public sealed class PluginProfileRepository(
         }
 
         return Task.CompletedTask;
-    }
-
-    /// <inheritdoc />
-    public async Task UninstallAsync(string name, CancellationToken cancellationToken)
-    {
-        GuardThirdParty(name);
-
-        // ① package.json：删 dependency + bundles 项。
-        JsonObject manifest = ReadManifest();
-        (manifest["dependencies"] as JsonObject)?.Remove(name);
-        JsonArray bundles = GetOrCreateBundlesArray(manifest);
-        JsonNode? bundleEntry = bundles.FirstOrDefault(
-            node => node is JsonValue value && value.TryGetValue(out string? text) && text == name);
-        if (bundleEntry is not null)
-        {
-            bundles.Remove(bundleEntry);
-        }
-
-        WriteManifest(manifest);
-
-        // ② cordis.patch.yml：清该插件条目（仅在有删除时重写，保住无操作场景的注释）。
-        CleanPatchEntries(name);
-
-        // ③ node_modules/<pkg>：删实目录（hoisted 布局）。
-        string packageDir = Path.Combine(profileDir, "node_modules", name);
-        if (Directory.Exists(packageDir))
-        {
-            Directory.Delete(packageDir, recursive: true);
-        }
-
-        // ④ 重建 lockfile（vendored pnpm，优先 --offline 保 §34）。
-        await RebuildLockfileAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -538,80 +503,6 @@ public sealed class PluginProfileRepository(
             node?["description"]?.GetValue<string>() ?? string.Empty);
     }
 
-    private void CleanPatchEntries(string name)
-    {
-        if (!File.Exists(PatchPath))
-        {
-            return;
-        }
-
-        YamlStream stream = new();
-        using (StreamReader reader = File.OpenText(PatchPath))
-        {
-            stream.Load(reader);
-        }
-
-        if (stream.Documents.Count == 0
-            || stream.Documents[0].RootNode is not YamlSequenceNode root)
-        {
-            return;
-        }
-
-        int removed = 0;
-        List<YamlNode> toRemove = [];
-        foreach (YamlNode entry in root.Children)
-        {
-            if (entry is not YamlMappingNode mapping)
-            {
-                continue;
-            }
-
-            if (GetScalar(mapping, "name") == name)
-            {
-                toRemove.Add(entry);
-                removed++;
-                continue;
-            }
-
-            if (mapping.Children.TryGetValue(new YamlScalarNode("insert"), out YamlNode? insertNode)
-                && insertNode is YamlSequenceNode insertList)
-            {
-                List<YamlNode> insertToRemove = insertList.Children
-                    .Where(child => child is YamlMappingNode childMapping && GetScalar(childMapping, "name") == name)
-                    .ToList();
-                foreach (YamlNode child in insertToRemove)
-                {
-                    insertList.Children.Remove(child);
-                    removed++;
-                }
-
-                if (insertList.Children.Count == 0 && GetScalar(mapping, "id") is null)
-                {
-                    toRemove.Add(entry);
-                }
-            }
-        }
-
-        foreach (YamlNode entry in toRemove)
-        {
-            root.Children.Remove(entry);
-        }
-
-        if (removed > 0)
-        {
-            using StreamWriter writer = File.CreateText(PatchPath);
-            stream.Save(writer, assignAnchors: false);
-        }
-    }
-
-    private static string? GetScalar(YamlMappingNode mapping, string key)
-    {
-        return mapping.Children.TryGetValue(new YamlScalarNode(key), out YamlNode? value)
-            && value is YamlScalarNode scalar
-                ? scalar.Value
-                : null;
-    }
-
     private async Task RebuildLockfileAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(pnpmCjsPath) || !File.Exists(pnpmCjsPath))
@@ -620,7 +511,7 @@ public sealed class PluginProfileRepository(
                 "找不到 vendored pnpm（pnpmCjsPath），无法重建 lockfile。请检查 dsh-desktop.config.json。");
         }
 
-        // pnpm 写入前归一化清单（剥 BOM/代际投影/悬空 overrides）——卸载链路在此收口
+        // pnpm 写入前归一化清单（剥 BOM/代际投影/悬空 overrides）——lockfile 重建在此收口
         // （2026-09-19 实机：种子 profile 带指向 .generations 的悬空 link: overrides，
         // 卸载第④步未归一化直接 pnpm install 必失败，且①-③已生效留下半卸载现场）。
         ProfileManifestFixups.NormalizeToFlatModel(profileDir);

@@ -12,7 +12,6 @@ public sealed class ShellPageTextTests
     [Test]
     [Arguments(ShellPage.Dashboard, "概览")]
     [Arguments(ShellPage.Workbench, "DSH 工作台")]
-    [Arguments(ShellPage.Plugins, "插件管理")]
     [Arguments(ShellPage.Runtime, "运行环境")]
     [Arguments(ShellPage.Updates, "更新中心")]
     [Arguments(ShellPage.Diagnostics, "诊断中心")]

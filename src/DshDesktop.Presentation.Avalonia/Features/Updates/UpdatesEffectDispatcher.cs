@@ -98,28 +98,6 @@ public sealed partial class UpdatesEffectDispatcher
     }
 
     /// <summary>
-    /// 处理更新插件副作用。成功后的清单刷新不在此处发起——事务 Completed 由组合根统一广播
-    /// 两侧刷新（见 DshCompositionRoot），否则同一入口会连发两次网络检查。
-    /// </summary>
-    [MviEffect(typeof(UpdatesEffect.UpdatePlugin))]
-    private async ValueTask HandleUpdatePlugin(
-        UpdatesEffect.UpdatePlugin effect,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _ = await _mediator
-                .SendAsync(new UpdatePluginRequest(effect.Name), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception exception)
-        {
-            await DispatchIntentAsync(new UpdatesIntent.UpdatesOperationFailed(exception.Message), cancellationToken)
-                .ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>
     /// 处理下载并应用 Desktop 更新副作用（应用后进程重启，无完成回流）。
     /// </summary>
     [MviEffect(typeof(UpdatesEffect.DownloadAndApplyDesktopUpdate))]

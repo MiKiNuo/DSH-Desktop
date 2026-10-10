@@ -57,47 +57,6 @@ public sealed class PluginOrchestrator(
     }
 
     /// <inheritdoc />
-    public async Task UninstallAsync(string name, CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-
-        _ = await RunTransactionAsync(
-            PluginOperationKind.Uninstall,
-            pluginName: name,
-            displayName: name,
-            mutateStage: PluginOperationStage.Uninstalling,
-            mutate: async ct =>
-            {
-                await pluginManager.UninstallAsync(name, ct).ConfigureAwait(false);
-                return name;
-            },
-            validate: ValidateUninstalledAsync,
-            cancellationToken).ConfigureAwait(false);
-        _logger.Information("Plugin.Uninstall.Success {PluginName}", name);
-    }
-
-    /// <inheritdoc />
-    public async Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(name);
-
-        PluginOperationKind kind = enabled ? PluginOperationKind.Enable : PluginOperationKind.Disable;
-        _ = await RunTransactionAsync(
-            kind,
-            pluginName: name,
-            displayName: name,
-            mutateStage: PluginOperationStage.Applying,
-            mutate: async ct =>
-            {
-                await pluginManager.SetEnabledAsync(name, enabled, ct).ConfigureAwait(false);
-                return name;
-            },
-            validate: (n, ct) => ValidateEnabledStateAsync(n, enabled, ct),
-            cancellationToken).ConfigureAwait(false);
-        _logger.Information("Plugin.SetEnabled.Success {PluginName} {Enabled}", name, enabled);
-    }
-
-    /// <inheritdoc />
     public async Task DisableAllThirdPartyAsync(CancellationToken cancellationToken)
     {
         await _profileOperationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -199,33 +158,6 @@ public sealed class PluginOrchestrator(
         {
             throw new InvalidOperationException(
                 $"安装后校验失败：{pluginName} 未出现在启用且可解析的插件清单中。");
-        }
-    }
-
-    /// <summary>卸载后校验：清单中不得再出现目标插件（声明残留同样视为失败）。</summary>
-    private async Task ValidateUninstalledAsync(string pluginName, CancellationToken cancellationToken)
-    {
-        IReadOnlyList<PluginInfo> plugins = await pluginManager
-            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-        if (plugins.Any(p => p.Name == pluginName))
-        {
-            throw new InvalidOperationException(
-                $"卸载后校验失败：{pluginName} 仍出现在插件清单中。");
-        }
-    }
-
-    /// <summary>启停后校验：清单中目标插件必须处于目标启用状态。</summary>
-    private async Task ValidateEnabledStateAsync(
-        string pluginName,
-        bool enabled,
-        CancellationToken cancellationToken)
-    {
-        IReadOnlyList<PluginInfo> plugins = await pluginManager
-            .ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-        if (!plugins.Any(p => p.Name == pluginName && p.Enabled == enabled))
-        {
-            throw new InvalidOperationException(
-                $"启用状态校验失败：{pluginName} 未处于目标状态（Enabled={enabled}）。");
         }
     }
 

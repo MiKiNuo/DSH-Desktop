@@ -50,29 +50,14 @@ public sealed partial class DashboardReducer
     }
 
     /// <summary>
-    /// 处理插件数投影回流意图。
-    /// </summary>
-    [MviReduce(typeof(DashboardIntent.PluginsProjectionChanged))]
-    private MviReduceResult<DashboardState, DashboardEffect> HandlePluginsProjectionChanged(
-        DashboardState state,
-        DashboardIntent.PluginsProjectionChanged intent)
-    {
-        return Unchanged(state with { PluginCount = intent.PluginCount });
-    }
-
-    /// <summary>
-    /// 处理更新投影回流意图（DSH 版本 + 可更新插件数）。
+    /// 处理更新投影回流意图（DSH 版本）。
     /// </summary>
     [MviReduce(typeof(DashboardIntent.UpdatesProjectionChanged))]
     private MviReduceResult<DashboardState, DashboardEffect> HandleUpdatesProjectionChanged(
         DashboardState state,
         DashboardIntent.UpdatesProjectionChanged intent)
     {
-        return Unchanged(state with
-        {
-            DshVersion = intent.DshVersion,
-            UpdatablePluginCount = intent.UpdatablePluginCount,
-        });
+        return Unchanged(state with { DshVersion = intent.DshVersion });
     }
 
     /// <summary>

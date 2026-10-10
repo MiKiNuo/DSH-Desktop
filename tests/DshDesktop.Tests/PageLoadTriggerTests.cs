@@ -26,18 +26,6 @@ public sealed class PageLoadTriggerTests
     }
 
     [Test]
-    public async Task PluginsView_TriggersLoadOnBind()
-    {
-        // 每次导航新建 View，OnBind 每次执行 → 每次进页刷新清单（与旧行为一致）。
-        // 断言收窄到 OnBind 方法体内：文件里别处（如点击处理器）出现同名调用不算数。
-        var source = await ReadSourceAsync(
-            "src", "DshDesktop.Presentation.Avalonia", "Features", "Plugins", "PluginsView.axaml.cs");
-
-        var body = await OnBindBodyAsync(source);
-        await Assert.That(body.Contains("LoadPluginsCommand.Execute", StringComparison.Ordinal)).IsTrue();
-    }
-
-    [Test]
     public async Task SettingsView_TriggersLoadOnBind()
     {
         var source = await ReadSourceAsync(

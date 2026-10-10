@@ -174,9 +174,9 @@
                 </Border>
             </Grid>
 
-            <!-- 两栏：可用 Runtime / 插件更新 -->
-            <Grid ColumnDefinitions="*,*">
-                <Border Classes="panel" Grid.Column="0" Margin="0,0,8,0">
+            <!-- 可用 Runtime -->
+            <Grid ColumnDefinitions="*">
+                <Border Classes="panel" Grid.Column="0">
                     <StackPanel>
                         <Border Classes="panel-head">
                             <Grid ColumnDefinitions="*,Auto">
@@ -210,53 +210,6 @@
                                                     Click="OnActivateRuntimeClicked"
                                                     Content="激活"
                                                     IsVisible="{Binding !IsActive}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </Border>
-                    </StackPanel>
-                </Border>
-
-                <Border Classes="panel" Grid.Column="1" Margin="8,0,0,0">
-                    <StackPanel>
-                        <Border Classes="panel-head">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Classes="panel-title" Text="插件更新" />
-                                <Border Classes="tag mono" Grid.Column="1">
-                                    <TextBlock Text="{Binding PluginUpdates.Count}" />
-                                </Border>
-                            </Grid>
-                        </Border>
-                        <Border Classes="panel-body">
-                            <ItemsControl ItemsSource="{Binding PluginUpdates}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate x:DataType="u:PluginUpdateInfo">
-                                        <Border Classes="path-row">
-                                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                                <TextBlock
-                                                    Width="200"
-                                                    Classes="plugin-name"
-                                                    FontSize="{DynamicResource DshFontSizeBodySmall}"
-                                                    Text="{Binding Name}" />
-                                                <TextBlock
-                                                    Width="110"
-                                                    VerticalAlignment="Center"
-                                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
-                                                    Foreground="{DynamicResource DshText3Brush}"
-                                                    Text="{Binding CurrentVersion}" />
-                                                <Path Classes="icon icon-sm" Data="{DynamicResource IconChevronRight}" Stroke="{DynamicResource DshText4Brush}" />
-                                                <TextBlock
-                                                    VerticalAlignment="Center"
-                                                    FontFamily="Geist Mono, Cascadia Code, Consolas"
-                                                    Foreground="{DynamicResource DshAccentHiBrush}"
-                                                    Text="{Binding LatestVersion}" />
-                                                <Button
-                                                    Classes="btn secondary sm"
-                                                    HorizontalAlignment="Right"
-                                                    Click="OnUpdatePluginClicked"
-                                                    Content="更新" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>

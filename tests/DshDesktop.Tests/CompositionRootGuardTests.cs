@@ -105,29 +105,6 @@ public sealed class CompositionRootGuardTests
     }
 
     /// <summary>
-    /// 插件事务终态广播守卫（2026-09-21 v0.1.8 实机回归）：
-    /// 终态必须发显式终态意图 <c>UpdatesIntent.PluginOperationFinished</c>（清待办 + 摘除该插件的可更新行 +
-    /// 回流一次检查），不得再借 <c>CheckUpdates</c> 兼职终态——后者兼任「发起检查」，
-    /// 与在飞检查的完成回流交错时会把来源标记清掉，导致待办永不清空、全屏遮罩永久卡死。
-    /// </summary>
-    [Test]
-    public async Task PluginOperationCompleted_BroadcastsTerminalIntentNotCheckUpdates()
-    {
-        string source = await CompositionRootSourceAsync();
-
-        const string anchor = "private void OnPluginOperationChanged(";
-        int start = source.IndexOf(anchor, StringComparison.Ordinal);
-        await Assert.That(start >= 0).IsTrue();
-
-        int end = source.IndexOf("\n    private ", start + anchor.Length, StringComparison.Ordinal);
-        string body = end < 0 ? source[start..] : source[start..end];
-
-        await Assert.That(body.Contains("PluginsIntent.LoadPlugins()", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(body.Contains("UpdatesIntent.PluginOperationFinished(", StringComparison.Ordinal)).IsTrue();
-        await Assert.That(body.Contains("UpdatesIntent.CheckUpdates()", StringComparison.Ordinal)).IsFalse();
-    }
-
-    /// <summary>
     /// 崩溃漂移自愈胶水守卫（组合根拆分批 1）：<c>TrackStartupAsync</c> 的 catch 必须先把启动失败
     /// 转交给 <c>RuntimeBootstrapper.TryHealIncompatiblePluginCrashAsync</c> 尝试自愈（肇事插件事务化升级），
     /// 自愈成功才 <c>RecordSuccess</c> 并复用 supervisor.Current 返回；自愈未命中/失败则回退

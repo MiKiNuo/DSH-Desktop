@@ -140,13 +140,8 @@ public sealed class UpdatesStateTests
             LatestDesktopVersion = "0.6.0",
             LatestDshVersion = "rc.13",
             CurrentDshVersion = "rc.12",
-            PluginUpdates =
-            [
-                new PluginUpdateInfo("plugin-a", "1.0.0", "1.1.0"),
-                new PluginUpdateInfo("plugin-b", "2.0.0", "2.1.0"),
-            ],
         };
 
-        await Assert.That(state.AvailableCount).IsEqualTo(4);
+        await Assert.That(state.AvailableCount).IsEqualTo(2);
     }
 }

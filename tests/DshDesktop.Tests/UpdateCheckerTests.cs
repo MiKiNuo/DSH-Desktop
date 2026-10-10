@@ -1,6 +1,4 @@
-using DshDesktop.Application.Plugins;
 using DshDesktop.Application.Updates;
-using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Updates;
 using Serilog;
 using Serilog.Core;
@@ -11,30 +9,14 @@ namespace DshDesktop.Tests;
 public sealed class UpdateCheckerTests
 {
     [Test]
-    public async Task Check_ReportsIndependentVersionsAndEnabledResolvablePluginUpdates()
+    public async Task Check_ReportsIndependentVersions()
     {
         var runtimes = new RuntimeRepository
         {
             Runtimes = [new("1.0.0", false, true), new("1.5.0", true, false)],
-            PluginVersions = new()
-            {
-                ["dshmarket"] = "2.0.0",
-                ["dsh-example"] = "1.1.0",
-                ["dsh-current"] = "1.0.0",
-                ["dsh-unknown"] = null,
-            },
         };
-        var plugins = new PluginManager(
-        [
-            new("dshmarket", "1.0.0", true, true, ""),
-            new("dsh-example", "1.0.0", false, true, ""),
-            new("dsh-current", "1.0.0", false, true, ""),
-            new("dsh-unknown", "1.0.0", false, true, ""),
-            new("dsh-disabled", "1.0.0", false, false, ""),
-            new("@deepseek-ai/in-box", "in-box", true, true, "", false),
-        ]);
         var desktop = new DesktopUpdater(new("0.2.0"));
-        var checker = new UpdateChecker(runtimes, plugins, desktop, Logger.None);
+        var checker = new UpdateChecker(runtimes, desktop, Logger.None);
 
         UpdateCheckResult result = await checker.CheckAsync("alpha", () => "1.5.0", () => false);
 
@@ -42,9 +24,6 @@ public sealed class UpdateCheckerTests
         await Assert.That(result.CurrentDshVersion).IsEqualTo("1.5.0");
         await Assert.That(result.LatestDesktopVersion).IsEqualTo("0.2.0");
         await Assert.That(result.Runtimes.Count).IsEqualTo(2);
-        await Assert.That(result.PluginUpdates.Count).IsEqualTo(2);
-        await Assert.That(result.PluginUpdates[0]).IsEqualTo(new PluginUpdateInfo("dshmarket", "1.0.0", "2.0.0"));
-        await Assert.That(result.PluginUpdates[1]).IsEqualTo(new PluginUpdateInfo("dsh-example", "1.0.0", "1.1.0"));
         await Assert.That(runtimes.Channel).IsEqualTo("alpha");
         await Assert.That(runtimes.ActiveRuntime).IsEqualTo("1.5.0");
     }
@@ -61,48 +40,18 @@ public sealed class UpdateCheckerTests
                 ? Task.FromException<string>(new InvalidOperationException("npm unavailable"))
                 : Task.FromResult("1.6.0"),
             Runtimes = [new("1.5.0", true, false)],
-            PluginVersions = new() { ["dshmarket"] = "2.0.0" },
         };
-        var plugins = new PluginManager([new("dshmarket", "1.0.0", true, true, "")]);
         var desktop = new DesktopUpdater(new("0.2.0"))
         {
             CheckFailure = failDesktop ? new InvalidOperationException("GitHub unavailable") : null,
         };
-        var checker = new UpdateChecker(runtimes, plugins, desktop, Logger.None);
+        var checker = new UpdateChecker(runtimes, desktop, Logger.None);
 
         UpdateCheckResult result = await checker.CheckAsync("latest", () => "1.5.0", () => false);
 
         await Assert.That(result.LatestDshVersion).IsEqualTo(failDsh ? null : "1.6.0");
         await Assert.That(result.LatestDesktopVersion).IsEqualTo(failDesktop ? null : "0.2.0");
         await Assert.That(result.CurrentDshVersion).IsEqualTo("1.5.0");
-        await Assert.That(result.PluginUpdates.Count).IsEqualTo(1);
-        await Assert.That(result.PluginUpdates[0]).IsEqualTo(new PluginUpdateInfo("dshmarket", "1.0.0", "2.0.0"));
-    }
-
-    [Test]
-    [Arguments(true)]
-    [Arguments(false)]
-    public async Task Check_PluginFailures_ArePropagated(bool failList)
-    {
-        var failure = new InvalidOperationException("plugin query failed");
-        var runtimes = new RuntimeRepository { PluginQueryFailure = failList ? null : failure };
-        var plugins = new PluginManager([new("dshmarket", "1.0.0", true, true, "")])
-        {
-            ListFailure = failList ? failure : null,
-        };
-        var checker = new UpdateChecker(runtimes, plugins, new DesktopUpdater(new("0.2.0")), Logger.None);
-        Exception? observed = null;
-
-        try
-        {
-            await checker.CheckAsync("latest", () => null, () => false);
-        }
-        catch (InvalidOperationException exception)
-        {
-            observed = exception;
-        }
-
-        await Assert.That(observed).IsEqualTo(failure);
     }
 
     [Test]
@@ -114,7 +63,7 @@ public sealed class UpdateCheckerTests
         bool available, bool enabled, bool shouldDownload)
     {
         var desktop = new DesktopUpdater(available ? new("0.2.0") : null);
-        var checker = new UpdateChecker(new RuntimeRepository(), new PluginManager([]), desktop, Logger.None);
+        var checker = new UpdateChecker(new RuntimeRepository(), desktop, Logger.None);
 
         await checker.CheckAsync("latest", () => null, () => enabled);
 
@@ -128,7 +77,7 @@ public sealed class UpdateCheckerTests
         var lookup = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         var runtimes = new RuntimeRepository { LatestVersionResponse = lookup.Task };
         var desktop = new DesktopUpdater(new("0.2.0"));
-        var checker = new UpdateChecker(runtimes, new PluginManager([]), desktop, Logger.None);
+        var checker = new UpdateChecker(runtimes, desktop, Logger.None);
         string activeRuntime = "1.0.0";
         bool autoDownload = false;
 
@@ -152,7 +101,7 @@ public sealed class UpdateCheckerTests
         var desktop = new DesktopUpdater(new("0.2.0")) { DownloadResponse = download.Task };
         var sink = new LogSink();
         using var logger = new LoggerConfiguration().MinimumLevel.Debug().WriteTo.Sink(sink).CreateLogger();
-        var checker = new UpdateChecker(new RuntimeRepository(), new PluginManager([]), desktop, logger);
+        var checker = new UpdateChecker(new RuntimeRepository(), desktop, logger);
         using var source = new CancellationTokenSource();
 
         try
@@ -186,9 +135,7 @@ public sealed class UpdateCheckerTests
     private sealed class RuntimeRepository : IRuntimeRepository
     {
         public Task<string> LatestVersionResponse { get; init; } = Task.FromResult("1.6.0");
-        public Exception? PluginQueryFailure { get; init; }
         public IReadOnlyList<DshRuntimeInfo> Runtimes { get; init; } = [];
-        public Dictionary<string, string?> PluginVersions { get; init; } = [];
         public string? Channel { get; private set; }
         public string? ActiveRuntime { get; private set; }
 
@@ -198,11 +145,6 @@ public sealed class UpdateCheckerTests
             return LatestVersionResponse;
         }
 
-        public Task<string?> GetLatestPluginVersionAsync(string name, CancellationToken cancellationToken)
-            => PluginQueryFailure is null
-                ? Task.FromResult(PluginVersions[name])
-                : Task.FromException<string?>(PluginQueryFailure);
-
         public Task<IReadOnlyList<DshRuntimeInfo>> ListRuntimesAsync(string? activeRuntime, CancellationToken cancellationToken)
         {
             ActiveRuntime = activeRuntime;
@@ -210,25 +152,6 @@ public sealed class UpdateCheckerTests
         }
 
         public Task InstallAsync(string version, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-    }
-
-    private sealed class PluginManager(IReadOnlyList<PluginInfo> plugins) : IPluginManager
-    {
-        public Exception? ListFailure { get; init; }
-
-        public Task<IReadOnlyList<PluginInfo>> ListPluginsAsync(CancellationToken cancellationToken)
-            => ListFailure is null
-                ? Task.FromResult(plugins)
-                : Task.FromException<IReadOnlyList<PluginInfo>>(ListFailure);
-
-        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task UninstallAsync(string name, CancellationToken cancellationToken)
-            => throw new NotSupportedException();
-
-        public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
             => throw new NotSupportedException();
     }
 

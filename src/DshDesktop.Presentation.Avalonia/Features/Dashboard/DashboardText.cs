@@ -154,18 +154,6 @@ public static class DashboardText
     }
 
     /// <summary>
-    /// 格式化插件 footer（原型 "1 个可更新"；无可更新为"全部最新"）。
-    /// </summary>
-    /// <param name="updatableCount">可更新插件数。</param>
-    /// <returns>footer 文本。</returns>
-    public static string PluginsFooter(int updatableCount)
-    {
-        return updatableCount > 0
-            ? string.Create(CultureInfo.InvariantCulture, $"{updatableCount} 个可更新")
-            : "全部最新";
-    }
-
-    /// <summary>
     /// 格式化相对时间（活动 feed：&lt;1min "刚刚"，&lt;60min "N 分钟前"，当天 "今天 HH:mm"，否则 "MM-dd HH:mm"）。
     /// </summary>
     /// <param name="now">当前时间。</param>

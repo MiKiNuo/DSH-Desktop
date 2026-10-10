@@ -18,7 +18,6 @@ public static class ShellPageText
         {
             ShellPage.Dashboard => "概览",
             ShellPage.Workbench => "DSH 工作台",
-            ShellPage.Plugins => "插件管理",
             ShellPage.Runtime => "运行环境",
             ShellPage.Updates => "更新中心",
             ShellPage.Diagnostics => "诊断中心",

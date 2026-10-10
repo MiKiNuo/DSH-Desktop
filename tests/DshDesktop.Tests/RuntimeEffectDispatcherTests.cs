@@ -1,6 +1,5 @@
 using DshDesktop.Domain.Plugins;
 using DshDesktop.Domain.Runtime;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using MiKiNuo.Mvi.Application.MVI.Mediator;
 using MiKiNuo.Mvi.Application.MVI.Store;

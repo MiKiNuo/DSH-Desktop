@@ -5,9 +5,6 @@ namespace DshDesktop.Presentation.Avalonia.Features.AppShell;
 /// </summary>
 public enum ConfirmAction
 {
-    /// <summary>卸载第三方插件（走插件事务，失败回滚）。</summary>
-    UninstallPlugin,
-
     /// <summary>停止 DSH Runtime（工作台断连）。</summary>
     StopRuntime,
 
@@ -27,7 +24,6 @@ public static class ConfirmDialogText
     /// <summary>弹窗标题。</summary>
     public static string Title(ConfirmAction action) => action switch
     {
-        ConfirmAction.UninstallPlugin => "卸载插件",
         ConfirmAction.StopRuntime => "停止 DSH Runtime",
         ConfirmAction.RestartRuntime => "重启 DSH Runtime",
         ConfirmAction.ActivateRuntime => "切换 Runtime 版本",
@@ -39,9 +35,6 @@ public static class ConfirmDialogText
     /// </summary>
     public static string Body(ConfirmAction action) => action switch
     {
-        ConfirmAction.UninstallPlugin =>
-            "该插件将从 Profile 的 bundles 中移除，并删除 node_modules 中的包文件。"
-            + "事务失败会自动回滚，并重启原 Runtime。",
         ConfirmAction.StopRuntime =>
             "工作台会与 DSH Web UI 断开，正在进行的 Agent 会话随之中断。"
             + "会话内容不会丢失——仅追加日志已落盘，重连后可继续。",
@@ -58,7 +51,6 @@ public static class ConfirmDialogText
     /// <summary>确认按钮文案。用具体动词，不用「确定」——按钮本身要说明后果。</summary>
     public static string ConfirmLabel(ConfirmAction action) => action switch
     {
-        ConfirmAction.UninstallPlugin => "确认卸载",
         ConfirmAction.StopRuntime => "停止 Runtime",
         ConfirmAction.RestartRuntime => "重启 Runtime",
         ConfirmAction.ActivateRuntime => "激活并重启",
@@ -71,7 +63,6 @@ public static class ConfirmDialogText
     /// </summary>
     public static bool IsDangerous(ConfirmAction action) => action switch
     {
-        ConfirmAction.UninstallPlugin => true,
         ConfirmAction.StopRuntime => true,
         ConfirmAction.RestartRuntime => false,
         ConfirmAction.ActivateRuntime => false,

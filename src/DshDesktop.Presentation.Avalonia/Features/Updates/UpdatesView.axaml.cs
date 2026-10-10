@@ -88,14 +88,6 @@ public sealed partial class UpdatesView : MviAvaloniaView<UpdatesViewModel>
             ViewModel.ActivateDshRuntimeCommand.Execute(runtime.IsBorrowed ? string.Empty : runtime.Version);
         }
     }
-
-    private void OnUpdatePluginClicked(object? sender, RoutedEventArgs args)
-    {
-        if (sender is Button { DataContext: PluginUpdateInfo plugin })
-        {
-            ViewModel.UpdatePluginCommand.Execute(plugin.Name);
-        }
-    }
 }
 
 /// <summary>

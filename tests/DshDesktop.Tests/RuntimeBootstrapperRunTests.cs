@@ -535,9 +535,6 @@ public sealed class RuntimeBootstrapperRunTests : IDisposable
         public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
             => Task.CompletedTask;
 
-        public Task UninstallAsync(string name, CancellationToken cancellationToken)
-            => Task.CompletedTask;
-
         public Task<string> InstallAsync(string source, CancellationToken cancellationToken)
             => Task.FromResult(source);
 
@@ -567,12 +564,6 @@ public sealed class RuntimeBootstrapperRunTests : IDisposable
             return Task.FromResult(source);
         }
 
-        public Task UninstallAsync(string name, CancellationToken cancellationToken)
-            => Task.CompletedTask;
-
-        public Task SetEnabledAsync(string name, bool enabled, CancellationToken cancellationToken)
-            => Task.CompletedTask;
-
         public Task DisableAllThirdPartyAsync(CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
@@ -598,9 +589,6 @@ public sealed class RuntimeBootstrapperRunTests : IDisposable
             InstalledVersions.Add(version);
             return Task.CompletedTask;
         }
-
-        public Task<string?> GetLatestPluginVersionAsync(string name, CancellationToken cancellationToken)
-            => Task.FromResult<string?>(null);
     }
 
     private sealed class FakeDesktopUpdater : IDesktopUpdater

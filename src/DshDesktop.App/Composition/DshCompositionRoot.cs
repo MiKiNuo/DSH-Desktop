@@ -21,7 +21,6 @@ using DshDesktop.Presentation.Avalonia.Composition;
 using DshDesktop.Presentation.Avalonia.Features.AppShell;
 using DshDesktop.Presentation.Avalonia.Features.Dashboard;
 using DshDesktop.Presentation.Avalonia.Features.Diagnostics;
-using DshDesktop.Presentation.Avalonia.Features.Plugins;
 using DshDesktop.Presentation.Avalonia.Features.Runtime;
 using DshDesktop.Presentation.Avalonia.Features.Settings;
 using DshDesktop.Presentation.Avalonia.Features.Updates;
@@ -256,11 +255,6 @@ public sealed partial class DshCompositionRoot
                 _config.DesktopChannel,
                 _config.LastStartupElapsedMs),
             cancellationToken);
-
-        // Dashboard 插件数投影预热（与进入 Plugins 页的 LoadPlugins 同一链路，幂等）。
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> pluginsStore =
-            _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
-        _ = pluginsStore.DispatchAsync(new PluginsIntent.LoadPlugins(), cancellationToken);
     }
 
     /// <summary>
@@ -388,15 +382,10 @@ public sealed partial class DshCompositionRoot
         mediator.Register<SetCheckUpdatesOnStartupRequest, bool>((request, ct) =>
             _settings.SetConfigFlagAsync(request, ct, c => c.CheckUpdatesOnStartup = request.Enabled,
                 "Runtime.CheckUpdatesOnStartup {Enabled}", request.Enabled));
-        mediator.Register<GetPluginListRequest, IReadOnlyList<PluginInfo>>(HandleGetPluginListAsync);
-        mediator.Register<SetPluginEnabledRequest, IReadOnlyList<PluginInfo>>(HandleSetPluginEnabledAsync);
-        mediator.Register<UninstallPluginRequest, IReadOnlyList<PluginInfo>>(HandleUninstallPluginAsync);
-        mediator.Register<InstallPluginRequest, IReadOnlyList<PluginInfo>>(HandleInstallPluginAsync);
         mediator.Register<DisableAllThirdPartyRequest, IReadOnlyList<PluginInfo>>(HandleDisableAllThirdPartyAsync);
         mediator.Register<CheckUpdatesRequest, CheckUpdatesResponse>(HandleCheckUpdatesAsync);
         mediator.Register<InstallDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleInstallDshRuntimeAsync);
         mediator.Register<ActivateDshRuntimeRequest, IReadOnlyList<DshRuntimeInfo>>(HandleActivateDshRuntimeAsync);
-        mediator.Register<UpdatePluginRequest, bool>(HandleUpdatePluginAsync);
         mediator.Register<GetSettingsInfoRequest, SettingsInfo>(_settings.HandleGetSettingsInfo);
         mediator.Register<SetDshChannelRequest, bool>((request, ct) =>
             _settings.SetConfigFlagAsync(request, ct, c => c.DshChannel = request.Channel,
@@ -437,7 +426,6 @@ public sealed partial class DshCompositionRoot
         {
             ShellPage.Dashboard => new AppShellIntent.ShowDashboard(),
             ShellPage.Workbench => new AppShellIntent.ShowWorkbench(),
-            ShellPage.Plugins => new AppShellIntent.ShowPlugins(),
             ShellPage.Updates => new AppShellIntent.ShowUpdates(),
             ShellPage.Diagnostics => new AppShellIntent.ShowDiagnostics(),
             ShellPage.Settings => new AppShellIntent.ShowSettings(),
@@ -481,14 +469,14 @@ public sealed partial class DshCompositionRoot
         CancellationToken cancellationToken)
     {
         ThrowIfNotInitialized();
-        var checker = new UpdateChecker(_runtimeRepository!, _pluginRepository!, _desktopUpdater!, Log.Logger);
+        var checker = new UpdateChecker(_runtimeRepository!, _desktopUpdater!, Log.Logger);
         UpdateCheckResult result = await checker.CheckAsync(
             _config!.DshChannel,
             () => _config.ActiveDshRuntime,
             () => _config.AutoDownloadUpdates,
             cancellationToken).ConfigureAwait(false);
         return new CheckUpdatesResponse(result.LatestDshVersion, result.CurrentDshVersion,
-            result.Runtimes, result.PluginUpdates, result.LatestDesktopVersion);
+            result.Runtimes, result.LatestDesktopVersion);
     }
 
     private async ValueTask<IReadOnlyList<DshRuntimeInfo>> HandleInstallDshRuntimeAsync(
@@ -535,38 +523,6 @@ public sealed partial class DshCompositionRoot
             .ConfigureAwait(false);
     }
 
-    private async ValueTask<bool> HandleUpdatePluginAsync(
-        UpdatePluginRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-
-        // 重复更新点击按 Application 的真实事务快照忽略；其它调用者由编排器的 Profile 门串行处理。
-        if (_pluginOrchestrator!.Current?.IsInProgress == true)
-        {
-            Log.Logger.Warning(
-                "Plugin.Update.Ignored.InFlight: 插件事务进行中，忽略重复的更新请求 {Plugin}",
-                request.Name);
-            return true;
-        }
-
-        _ = await _pluginOrchestrator!
-            .InstallAsync($"{request.Name}@latest", PluginOperationKind.Update, cancellationToken)
-            .ConfigureAwait(false);
-        return true;
-    }
-
-    private async ValueTask<IReadOnlyList<PluginInfo>> HandleInstallPluginAsync(
-        InstallPluginRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        _ = await _pluginOrchestrator!
-            .InstallAsync(request.Source, PluginOperationKind.Install, cancellationToken)
-            .ConfigureAwait(false);
-        return await _pluginRepository!.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     private async ValueTask<IReadOnlyList<PluginInfo>> HandleDisableAllThirdPartyAsync(
         DisableAllThirdPartyRequest request,
         CancellationToken cancellationToken)
@@ -584,10 +540,6 @@ public sealed partial class DshCompositionRoot
 
     private void OnPluginOperationChanged(object? sender, PluginOperation operation)
     {
-        IMviStore<PluginsState, PluginsIntent, PluginsEffect> store =
-            _container.Resolve<IMviStore<PluginsState, PluginsIntent, PluginsEffect>>();
-        _ = store.DispatchAsync(new PluginsIntent.PluginOperationChanged(operation));
-
         // 编排停止回流：插件事务在真正 StopAsync 之前就发布 StoppingRuntime（见 PluginOrchestrator），
         // 此处把 MVI 生命周期提前对齐 Stopping，使随后的进程退出（-1）被判定为用户请求的停止而非崩溃。
         if (operation.Stage is PluginOperationStage.StoppingRuntime)
@@ -595,51 +547,6 @@ public sealed partial class DshCompositionRoot
             IMviStore<RuntimeState, RuntimeIntent, RuntimeEffect> runtimeStore = ResolveRuntimeStore();
             _ = runtimeStore.DispatchAsync(new RuntimeIntent.RuntimeStopOrchestrated());
         }
-
-        // 事务成功提交是两侧清单刷新的**唯一发起源**：更新中心入口与插件页入口都收口到这里，
-        // 避免"各入口只刷新本侧 Store"导致对面页面（插件版本号 / 可更新列表 / 顶栏徽标）停在旧值。
-        // 更新侧发显式终态意图（而非 CheckUpdates 兼职终态）：后者兼任"发起检查"，与在飞检查的完成回流
-        // 交错时会互踩来源标记，使待办永不清空 ⇒ 全屏遮罩永久卡死（2026-09-21 v0.1.8 实机）。
-        // 终态意图自带一次检查回流，插件版本仍以检查结果为准；失败分支刻意不广播：Failed 时
-        // PluginOperationFailed 已把真实原因写进页内 LastError，自动 LoadPlugins/CheckUpdates 会把它清掉或覆盖。
-        if (operation.Stage is PluginOperationStage.Completed)
-        {
-            _ = store.DispatchAsync(new PluginsIntent.LoadPlugins());
-
-            IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect> updatesStore =
-                _container.Resolve<IMviStore<UpdatesState, UpdatesIntent, UpdatesEffect>>();
-            _ = updatesStore.DispatchAsync(new UpdatesIntent.PluginOperationFinished(operation.PluginName));
-        }
-    }
-
-    private async ValueTask<IReadOnlyList<PluginInfo>> HandleGetPluginListAsync(
-        GetPluginListRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        return await _pluginRepository!.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask<IReadOnlyList<PluginInfo>> HandleSetPluginEnabledAsync(
-        SetPluginEnabledRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        // A2：启停走插件事务（快照→停→变更→校验→重启→健康检查），失败自动回滚；
-        // 阶段进度经 OnPluginOperationChanged 回流，壳遮罩与终态 toast 随之生效。
-        await _pluginOrchestrator!.SetEnabledAsync(request.Name, request.Enabled, cancellationToken)
-            .ConfigureAwait(false);
-        return await _pluginRepository!.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask<IReadOnlyList<PluginInfo>> HandleUninstallPluginAsync(
-        UninstallPluginRequest request,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfNotInitialized();
-        // A2：卸载走插件事务（同管线），兑现确认弹窗「失败自动回滚，并重启原 Runtime」的承诺。
-        await _pluginOrchestrator!.UninstallAsync(request.Name, cancellationToken).ConfigureAwait(false);
-        return await _pluginRepository.ListPluginsAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<bool> HandleSetSafeModeAsync(

@@ -1,6 +1,6 @@
 namespace DshDesktop.Presentation.Avalonia.Features.Updates;
 
-/// <summary>Updates Store 自有的操作种类；插件事务由 Plugins Store 承载。</summary>
+/// <summary>Updates Store 自有的操作种类。</summary>
 public enum UpdatesOperationKind
 {
     /// <summary>下载 Desktop 更新。</summary>

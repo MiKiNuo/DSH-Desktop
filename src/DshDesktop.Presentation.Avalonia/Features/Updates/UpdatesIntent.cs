@@ -35,18 +35,6 @@ public abstract partial record UpdatesIntent : IMviIntent
     public sealed partial record ActivateDshRuntime(string Version) : UpdatesIntent;
 
     /// <summary>
-    /// 表示更新插件意图（走 §19 安装事务）。
-    /// </summary>
-    /// <param name="Name">插件包名。</param>
-    public sealed partial record UpdatePlugin(string Name) : UpdatesIntent;
-
-    /// <summary>
-    /// 表示插件事务终态意图（组合根订阅 <c>IPluginOrchestrator.OperationChanged</c> 后在 Completed 阶段发布）。
-    /// </summary>
-    /// <param name="PluginName">事务解析出的插件名；未知为 null。</param>
-    public sealed partial record PluginOperationFinished(string? PluginName) : UpdatesIntent;
-
-    /// <summary>
     /// 表示 Runtime 列表变化的回流意图。
     /// </summary>
     /// <param name="Runtimes">最新 Runtime 列表。</param>
@@ -61,7 +49,7 @@ public abstract partial record UpdatesIntent : IMviIntent
     /// 表示更新操作失败的回流意图。
     /// </summary>
     /// <param name="Error">错误信息。</param>
-    /// <param name="OperationKind">失败的自有操作种类；null 表示插件请求失败。</param>
+    /// <param name="OperationKind">失败的自有操作种类；null 表示无归属操作的失败。</param>
     /// <param name="OperationVersion">失败操作的目标版本。</param>
     public sealed partial record UpdatesOperationFailed(
         string Error,

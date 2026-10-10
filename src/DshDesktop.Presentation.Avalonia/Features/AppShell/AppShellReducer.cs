@@ -46,17 +46,6 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
-    /// 处理导航到 Plugins 页意图。
-    /// </summary>
-    [MviReduce(typeof(AppShellIntent.ShowPlugins))]
-    private MviReduceResult<AppShellState, UnitEffect> HandleShowPlugins(
-        AppShellState state,
-        AppShellIntent.ShowPlugins intent)
-    {
-        return Unchanged(state with { CurrentPage = ShellPage.Plugins });
-    }
-
-    /// <summary>
     /// 处理导航到 Updates 页意图。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.ShowUpdates))]
@@ -134,8 +123,7 @@ public sealed partial class AppShellReducer
     }
 
     /// <summary>
-    /// 处理更新操作进行中投影变化回流意图（§14：仅投影字段，壳全屏遮罩 + 导航锁定的数据源；
-    /// 与插件事务分量取或——二者任一未完成即拉遮罩）。
+    /// 处理更新操作进行中投影变化回流意图（§14：仅投影字段，壳全屏遮罩 + 导航锁定的数据源）。
     /// </summary>
     [MviReduce(typeof(AppShellIntent.UpdateInProgressChanged))]
     private MviReduceResult<AppShellState, UnitEffect> HandleUpdateInProgressChanged(
@@ -145,35 +133,8 @@ public sealed partial class AppShellReducer
         return Unchanged(state with
         {
             UpdatesInProgress = intent.InProgress,
-            UpdateInProgress = intent.InProgress || state.PluginOperationInProgress,
+            UpdateInProgress = intent.InProgress,
         });
-    }
-
-    /// <summary>
-    /// 处理插件事务进行中投影变化回流意图（§14：仅投影字段；插件页入口只写 PluginsStore，
-    /// 缺此分量时该入口的更新全程没有遮罩反馈，2026-09-17 定位）。
-    /// </summary>
-    [MviReduce(typeof(AppShellIntent.PluginOperationInProgressChanged))]
-    private MviReduceResult<AppShellState, UnitEffect> HandlePluginOperationInProgressChanged(
-        AppShellState state,
-        AppShellIntent.PluginOperationInProgressChanged intent)
-    {
-        return Unchanged(state with
-        {
-            PluginOperationInProgress = intent.InProgress,
-            UpdateInProgress = state.UpdatesInProgress || intent.InProgress,
-        });
-    }
-
-    /// <summary>
-    /// 处理插件安装事务投影变化回流意图（§14：仅投影字段，壳 toast 的数据源）。
-    /// </summary>
-    [MviReduce(typeof(AppShellIntent.PluginOperationChanged))]
-    private MviReduceResult<AppShellState, UnitEffect> HandlePluginOperationChanged(
-        AppShellState state,
-        AppShellIntent.PluginOperationChanged intent)
-    {
-        return Unchanged(state with { PluginOperation = intent.Operation });
     }
 
     /// <summary>

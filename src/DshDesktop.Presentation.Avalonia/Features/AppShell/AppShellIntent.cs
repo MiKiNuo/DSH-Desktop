@@ -29,11 +29,6 @@ public abstract partial record AppShellIntent : IMviIntent
     public sealed partial record ShowDiagnostics : AppShellIntent;
 
     /// <summary>
-    /// 表示导航到 Plugins 页意图。
-    /// </summary>
-    public sealed partial record ShowPlugins : AppShellIntent;
-
-    /// <summary>
     /// 表示导航到 Updates 页意图。
     /// </summary>
     public sealed partial record ShowUpdates : AppShellIntent;
@@ -76,20 +71,6 @@ public abstract partial record AppShellIntent : IMviIntent
     /// </summary>
     /// <param name="InProgress">是否有更新操作进行中。</param>
     public sealed partial record UpdateInProgressChanged(bool InProgress) : AppShellIntent;
-
-    /// <summary>
-    /// 表示插件事务进行中投影变化的回流意图（壳全屏遮罩 + 导航锁定的第二个分量；
-    /// BindSiblingState 自 PluginsStore.Operation 的非终态阶段，2026-09-17 定位补充）。
-    /// </summary>
-    /// <param name="InProgress">是否有插件事务尚未到终态。</param>
-    public sealed partial record PluginOperationInProgressChanged(bool InProgress) : AppShellIntent;
-
-    /// <summary>
-    /// 表示插件安装事务投影变化的回流意图（壳 toast 数据源；BindSiblingState 自
-    /// PluginsStore.Operation 投影，2026-09-15 审查 C3：自 MainWindow 直订下沉）。
-    /// </summary>
-    /// <param name="Operation">最新事务进度；无事务为 null。</param>
-    public sealed partial record PluginOperationChanged(DshDesktop.Domain.Plugins.PluginOperation? Operation) : AppShellIntent;
 
     /// <summary>
     /// 表示更新下载进度与操作描述投影变化的回流意图（更新遮罩的进度条互斥与副标题；

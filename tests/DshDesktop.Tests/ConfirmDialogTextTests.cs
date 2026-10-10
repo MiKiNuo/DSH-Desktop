@@ -4,15 +4,14 @@ namespace DshDesktop.Tests;
 
 /// <summary>
 /// 破坏性操作二次确认的文案与风险等级映射（视觉基准 docs/DSH-Desktop-UI-Redesign.html）。
-/// 这三处操作在重设计前无任何确认：卸载插件、停止 DSH Runtime、切换 Runtime 版本；
-/// 重启 DSH Runtime 为 2026-09-28「点击重启无反馈」症状补齐的第四处。
+/// 这两处操作在重设计前无任何确认：停止 DSH Runtime、切换 Runtime 版本；
+/// 重启 DSH Runtime 为 2026-09-28「点击重启无反馈」症状补齐的第三处。
 /// </summary>
 public sealed class ConfirmDialogTextTests
 {
     [Test]
-    public async Task Uninstall_And_Stop_AreFlaggedDangerous()
+    public async Task Stop_IsFlaggedDangerous()
     {
-        await Assert.That(ConfirmDialogText.IsDangerous(ConfirmAction.UninstallPlugin)).IsTrue();
         await Assert.That(ConfirmDialogText.IsDangerous(ConfirmAction.StopRuntime)).IsTrue();
     }
 
@@ -40,13 +39,6 @@ public sealed class ConfirmDialogTextTests
         // 防复制粘贴事故：三个动作的标题不能雷同。
         var titles = Enum.GetValues<ConfirmAction>().Select(ConfirmDialogText.Title).ToList();
         await Assert.That(titles.Distinct().Count()).IsEqualTo(titles.Count);
-    }
-
-    [Test]
-    public async Task Uninstall_Body_PromisesRollback()
-    {
-        // 卸载走插件事务，失败会回滚并重启原 Runtime——这是用户点确认前必须知道的信息。
-        await Assert.That(ConfirmDialogText.Body(ConfirmAction.UninstallPlugin)).Contains("回滚");
     }
 
     [Test]
