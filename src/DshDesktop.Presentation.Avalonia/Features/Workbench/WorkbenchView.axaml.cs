@@ -51,6 +51,17 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 
     private bool _webViewReadyLogged;
 
+    /// <summary>
+    /// 本次会话是否已用过「首次导航失败即重试」的机会（单次上限）。
+    /// dsh 认证的 303 Cookie 兑换可能未在首次导航时落定，重试一次即可恢复；
+    /// 但 Runtime 真挂时重试无意义，故只给一次机会。
+    /// <para>
+    /// 换 Runtime 时必须复位：新端口 ⇒ 新 authority ⇒ 旧 Cookie 全部失效，
+    /// 新一轮冷启动又要重新兑换，不复位则第二轮起重试机会已耗尽、直接判死。
+    /// </para>
+    /// </summary>
+    private bool _unauthorizedRetryUsed;
+
     private void OnNavigationStarted(WebViewNavigationStartingEventArgs args)
     {
         ViewModel.NotifyNavigationStarted(args.Request?.ToString() ?? string.Empty);
@@ -74,7 +85,27 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         }
         else
         {
-            // 导航失败：撤下原生 WebView、遮罩保留并换成失败文案。
+            // 首次导航失败时先原地重试一次，再判死。
+            //
+            // dsh 的浏览器认证是「一次性 query token → 303 兑换 → 落 authority 绑定的签名 Cookie
+            // → 带 Cookie 复访才 200」。Cookie 名 = sha256(authority)，authority 含端口
+            // （dsh-client-connection 的 cookieName/requestAuthority），而宿主每次启动端口都变，
+            // 所以旧 Cookie 永远不可复用，每次冷启动都必须当场完成兑换。
+            // 2026-10-12 实机：宿主更新到 0.2.2 后连开三次，每次都 Navigation.Failed——
+            // 首次导航时兑换尚未落定。重试命中已落地的 Cookie 即可恢复（干净环境下 8/8 返回 200）。
+            //
+            // 判据只能是「首次失败」：Avalonia 12.1.0 的 WebViewNavigationCompletedEventArgs
+            // 只有 IsSuccess / Request，不暴露 HTTP 状态码，无法按 401 精确重试。
+            // 单次上限避免「Runtime 真的挂了」时无限重试。
+            if (!_unauthorizedRetryUsed && _navigatedUrl is not null)
+            {
+                _unauthorizedRetryUsed = true;
+                Serilog.Log.Warning("Workbench.Navigation.Retry Url={Url}", SessionUrlRedactor.Redact(url));
+                NavigateTo(_navigatedUrl);
+                return;
+            }
+
+            // 重试仍失败：撤下原生 WebView、遮罩保留并换成失败文案。
             // 页内错误条已移除（§21 Phase 6 修订注），但也不能直接撤掉遮罩——原生 WebView
             // 会盖住任何 Avalonia 文案，撤掉只会露出它未渲染的黑底（airspace 约束）。
             // 仍要结束 Loading，否则状态机会停在加载中；错误详情留在 Serilog / 诊断中心。
@@ -217,6 +248,9 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 
     private void NavigateTo(string url)
     {
+        // 换 URL = 换 Runtime（新端口 ⇒ 新 authority ⇒ 旧 Cookie 失效），
+        // 是一次全新的冷启动，重试机会随之重置。
+        _unauthorizedRetryUsed = false;
         _webViewHost.Navigate(new Uri(url, UriKind.Absolute));
         _navigatedUrl = url;
     }
