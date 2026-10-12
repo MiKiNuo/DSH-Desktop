@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform.Storage;
@@ -82,6 +83,12 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
 
             ViewModel.NotifyNavigationCompleted(url);
             _ = InstallBridgeAsync();
+
+            // 导航成功即清理陈旧 dsh 会话 Cookie（见 DshSessionCookie 的根因说明）：
+            // 每次启动换端口 ⇒ 每个旧 Cookie 名永不复用，只会无界累积，累积过头会让
+            // dsh 因请求头越过 16KB 而回 431。此刻 CookieManager 才可用，且工作台已可用，
+            // 清理不影响用户当前会话。
+            _ = PurgeStaleSessionCookiesAsync();
         }
         else
         {
@@ -91,17 +98,18 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
             // → 带 Cookie 复访才 200」。Cookie 名 = sha256(authority)，authority 含端口
             // （dsh-client-connection 的 cookieName/requestAuthority），而宿主每次启动端口都变，
             // 所以旧 Cookie 永远不可复用，每次冷启动都必须当场完成兑换。
-            // 2026-10-12 实机：宿主更新到 0.2.2 后连开三次，每次都 Navigation.Failed——
-            // 首次导航时兑换尚未落定。重试命中已落地的 Cookie 即可恢复（干净环境下 8/8 返回 200）。
+            //
+            // ⚠ 重试必须直发 Navigate，**不可走 NavigateTo**：NavigateTo 会复位本闸门
+            // （换 URL 才复位），走它等于每次重试都把闸门清零 ⇒ 无限重试刷屏。
+            // 2026-10-12 实机已踩：日志在 6 秒内刷出数千条 Workbench.Navigation.Retry。
             //
             // 判据只能是「首次失败」：Avalonia 12.1.0 的 WebViewNavigationCompletedEventArgs
             // 只有 IsSuccess / Request，不暴露 HTTP 状态码，无法按 401 精确重试。
-            // 单次上限避免「Runtime 真的挂了」时无限重试。
-            if (!_unauthorizedRetryUsed && _navigatedUrl is not null)
+            if (!_unauthorizedRetryUsed && _navigatedUrl is { } retryUrl)
             {
                 _unauthorizedRetryUsed = true;
                 Serilog.Log.Warning("Workbench.Navigation.Retry Url={Url}", SessionUrlRedactor.Redact(url));
-                NavigateTo(_navigatedUrl);
+                _webViewHost.Navigate(new Uri(retryUrl, UriKind.Absolute));
                 return;
             }
 
@@ -127,8 +135,66 @@ public sealed partial class WorkbenchView : MviAvaloniaView<WorkbenchViewModel>
         }
     }
 
-    // ---- Desktop Bridge（ADR-0006，§21 修订注扩展点：仅 dshDesktopDirectoryPicker.pick 一方法）----
+    /// <summary>
+    /// 删除陈旧的 dsh 会话 Cookie（根因修复，见 <see cref="DshSessionCookie"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 每次启动换端口 ⇒ 每个旧 Cookie 名（sha256(authority)）永不复用，只会无界累积。
+    /// 实机 70 条 / 25883 字节即让请求头越过 Node 16KB 上限、dsh 回 431，页面变 Edge 错误页。
+    /// 此刻工作台已加载成功、当前 authority 的 Cookie 正在被使用，故<b>除最新一条外全删</b>。
+    /// 用 WebView2 自带 <c>TryGetCookieManager()</c>（<c>System.Net.Cookie</c>，无新依赖），
+    /// 失败只记日志——维护动作绝不能影响已可用的工作台。
+    /// </remarks>
+    private async Task PurgeStaleSessionCookiesAsync()
+    {
+        try
+        {
+            // TryGetCookieManager 直接返回管理器（WebView 未就绪时为 null），不是 Try 模式。
+            NativeWebViewCookieManager? manager = _webViewHost.TryGetCookieManager();
+            if (manager is null)
+            {
+                return;
+            }
 
+            IReadOnlyList<Cookie> cookies = await manager.GetCookiesAsync().ConfigureAwait(true);
+            List<Cookie> sessions = cookies
+                .Where(c => DshSessionCookie.IsDshSessionCookie(c.Name))
+                .ToList();
+            if (!DshSessionCookie.NeedsPurge(sessions.Count))
+            {
+                return;
+            }
+
+            // 最新一条 = 最后写入的（WebView2 按创建序枚举）；它对应当前 authority，必须留下。
+            HashSet<string> stale = DshSessionCookie
+                .SelectStaleNames(sessions.Select(c => c.Name).ToList(), sessions[^1].Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            int removed = 0;
+            foreach (Cookie cookie in sessions)
+            {
+                if (stale.Contains(cookie.Name))
+                {
+                    manager.DeleteCookie(cookie);
+                    removed++;
+                }
+            }
+
+            if (removed > 0)
+            {
+                Serilog.Log.Information(
+                    "Workbench.SessionCookie.Purged Removed={Removed} Kept={Kept}",
+                    removed,
+                    sessions.Count - removed);
+            }
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning("Workbench.SessionCookie.PurgeFailed Error={Error}", ex.Message);
+        }
+    }
+
+    // ---- Desktop Bridge（ADR-0006，§21 修订注扩展点：仅 dshDesktopDirectoryPicker.pick 一方法）----
     private async Task InstallBridgeAsync()
     {
         // 每次导航完成重装：页面上下文重建后 shim 序号归零，挂起表同步清空。

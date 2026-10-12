@@ -105,18 +105,15 @@ public sealed partial class WorkbenchLoadingOverlayTests
     /// <summary>
     /// 导航失败必须**先原地重试一次**再判死，且重试机会全会话仅一次。
     /// <para>
-    /// dsh 的浏览器认证是「一次性 query token → 303 兑换 → 落 authority 绑定的签名 Cookie →
-    /// 带 Cookie 复访才 200」。Cookie 名 = <c>sha256(authority)</c>，authority 含端口
-    /// （<c>dsh-client-connection</c> 的 <c>cookieName</c>/<c>requestAuthority</c>），
-    /// 而宿主每次启动端口都变 ⇒ 每次冷启动都必须当场完成兑换，跨启动复用旧 Cookie 必然 401。
+    /// 2026-10-12 实机：宿主更新后工作台加载失败。dsh 的认证是「一次性 query token → 303 兑换
+    /// → 落 authority 绑定的签名 Cookie → 带 Cookie 复访才 200」，首次导航时兑换可能未落定，
+    /// 重试一次即可恢复。
+    /// </para>
     /// <para>
-    /// 2026-10-12 实机：宿主更新到 0.2.2 后连开三次，每次都 <c>Workbench.Navigation.Failed</c>。
-    /// 根因即首次导航时兑换未落定；重试命中已落地的 Cookie 即恢复（干净环境 8/8 返回 200）。
-    /// </para>
-    /// </para>
     /// 判据只能是「首次失败」——Avalonia 12.1.0 的
     /// <c>WebViewNavigationCompletedEventArgs</c> 只有 <c>IsSuccess</c>/<c>Request</c>，
     /// 不暴露 HTTP 状态码，无法按 401 精确重试；单次上限同时避免 Runtime 真挂时无限重试。
+    /// </para>
     /// </summary>
     [Test]
     public async Task ViewCode_RetriesOnceWhenNavigationFails()
@@ -128,7 +125,7 @@ public sealed partial class WorkbenchLoadingOverlayTests
 
         // 重试闸门与重试动作都必须落在失败分支（IsSuccess 之后）里。
         var gate = text.IndexOf("!_unauthorizedRetryUsed", isSuccess, StringComparison.Ordinal);
-        var retry = text.IndexOf("NavigateTo(_navigatedUrl)", gate, StringComparison.Ordinal);
+        var retry = text.IndexOf("_webViewHost.Navigate(", gate, StringComparison.Ordinal);
         var failed = text.IndexOf("Workbench.Navigation.Failed", StringComparison.Ordinal);
 
         await Assert.That(gate).IsGreaterThan(isSuccess);
@@ -137,6 +134,30 @@ public sealed partial class WorkbenchLoadingOverlayTests
         await Assert.That(retry).IsLessThan(failed);
         await Assert.That(text.IndexOf("return;", retry, StringComparison.Ordinal))
             .IsLessThan(failed);
+    }
+
+    /// <summary>
+    /// 重试**必须直发 <c>_webViewHost.Navigate</c>，绝不可走 <c>NavigateTo</c>**。
+    /// <para>
+    /// <c>NavigateTo</c> 会复位重试闸门（换 URL 才复位），而重试调用的正是它 ⇒
+    /// 每次重试都把闸门清零，形成无限重试。2026-10-12 实机已踩：日志刷出
+    /// <b>24592 条</b> <c>Workbench.Navigation.Retry</c>、堆积 <b>3992 个</b> WebView2 进程。
+    /// </para>
+    /// </summary>
+    [Test]
+    public async Task ViewCode_RetryDoesNotGoThroughNavigateTo()
+    {
+        var text = await ReadCodeBehindAsync();
+
+        var gate = text.IndexOf("!_unauthorizedRetryUsed", StringComparison.Ordinal);
+        await Assert.That(gate).IsGreaterThan(-1);
+
+        // 重试闸门到判死之间的这一段里不得出现 NavigateTo 调用。
+        var failed = text.IndexOf("Workbench.Navigation.Failed", gate, StringComparison.Ordinal);
+        await Assert.That(failed).IsGreaterThan(gate);
+
+        var segment = text[gate..failed];
+        await Assert.That(segment.Contains("NavigateTo(", StringComparison.Ordinal)).IsFalse();
     }
 
     /// <summary>
