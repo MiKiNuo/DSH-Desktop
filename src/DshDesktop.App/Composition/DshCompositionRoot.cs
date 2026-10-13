@@ -656,7 +656,7 @@ public sealed partial class DshCompositionRoot
     }
 
     /// <summary>
-    /// 确保工具垫片（&lt;dshHome&gt;\.desktop-bin 的 pnpm.cmd / node.cmd）存在并返回其目录。
+    /// 确保工具垫片（&lt;dshHome&gt;\.desktop-bin 的 pnpm.cmd）存在并返回其目录。
     /// </summary>
     /// <remarks>
     /// 工作台内的 dsh-market 与其拉起的 dsh CLI 按【名字】调用 pnpm，而 vendored pnpm 只是

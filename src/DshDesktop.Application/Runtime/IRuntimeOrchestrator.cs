@@ -17,7 +17,7 @@ namespace DshDesktop.Application.Runtime;
 /// <param name="Port">监听端口；0 表示启动时探测空闲端口。</param>
 /// <param name="StartupTimeout">启动 + 就绪等待的超时时长。</param>
 /// <param name="ToolBinDirectory">
-/// 工具垫片目录（&lt;dshHome&gt;\.desktop-bin，内含 pnpm.cmd / node.cmd）。非空时前置进 DSH 进程的 PATH：
+/// 工具垫片目录（&lt;dshHome&gt;\.desktop-bin，内含 pnpm.cmd）。非空时前置进 DSH 进程的 PATH：
 /// 工作台内的 dsh-market 与其拉起的 dsh CLI 都按【名字】调用 pnpm，垫片不进 PATH 就找不到
 /// （市场探针失败 → 顶部常驻「安装插件前需要先配置 pnpm 环境」、安装被拦）。null 表示不注入（旧配置/垫片生成失败）。
 /// </param>
