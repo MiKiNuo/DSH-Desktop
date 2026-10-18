@@ -157,7 +157,7 @@ public sealed partial class SettingsViewModel
     public partial IMviAsyncCommand ToggleNotificationsCommand { get; private set; }
 
     /// <summary>
-    /// 获取修改 DSH 更新通道命令（载荷：latest / alpha）。
+    /// 获取修改 DSH 更新通道命令（载荷：ADR-0011 的 stable / prerelease）。
     /// </summary>
     [MviCommand(typeof(SettingsIntent.ChangeChannel), PayloadType = typeof(string))]
     public partial IMviAsyncCommand ChangeChannelCommand { get; private set; }

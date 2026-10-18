@@ -1,3 +1,4 @@
+using DshDesktop.Application.Updates;
 using DshDesktop.Domain.Updates;
 using DshDesktop.Infrastructure.Updates;
 
@@ -102,5 +103,123 @@ public sealed class RuntimeRepositoryTests
         Directory.CreateDirectory(dshDir);
         File.WriteAllText(Path.Combine(dshDir, "package.json"), $"{{\"version\":\"{version}\"}}");
         return runtimeRoot;
+    }
+
+    /// <summary>
+    /// GitHub 版本发现优先：命中后不得再走 npm dist-tag（ADR-0011 的核心修复——
+    /// dist-tag 停在 0.2.0-rc.2 而 tag 已到 0.2.1-rc.2）。
+    /// </summary>
+    [Test]
+    public async Task GetLatestVersionAsync_SourceResolves_PrefersItOverNpm()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var source = new StubVersionSource { Result = "0.2.1-rc.2" };
+            bool npmQueried = false;
+            var repository = new RuntimeRepository(
+                root, "node", null, string.Empty, source,
+                (_, _) => { npmQueried = true; return Task.FromResult("0.2.0-rc.2"); });
+
+            string version = await repository.GetLatestVersionAsync(
+                RuntimeChannel.PrereleaseLiteral, CancellationToken.None);
+
+            await Assert.That(version).IsEqualTo("0.2.1-rc.2");
+            await Assert.That(npmQueried).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>源不可用（限流 / 断网 / 仓库改名）时 fail-open 回退 dist-tag 查询。</summary>
+    [Test]
+    public async Task GetLatestVersionAsync_SourceUnavailable_FallsBackToNpm()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string? queriedTag = null;
+            var repository = new RuntimeRepository(
+                root, "node", null, string.Empty,
+                new StubVersionSource { Result = null },
+                (tag, _) => { queriedTag = tag; return Task.FromResult("0.2.1-rc.2"); });
+
+            string version = await repository.GetLatestVersionAsync(
+                RuntimeChannel.PrereleaseLiteral, CancellationToken.None);
+
+            await Assert.That(version).IsEqualTo("0.2.1-rc.2");
+            await Assert.That(queriedTag).IsEqualTo("next");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>旧 dist-tag 字面必须先归一化再进源与回退查询，否则迁移后的用户仍停在旧通道上。</summary>
+    [Test]
+    public async Task GetLatestVersionAsync_LegacyChannelLiteral_NormalizesToPrerelease()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var source = new StubVersionSource { Result = null };
+            string? queriedTag = null;
+            var repository = new RuntimeRepository(
+                root, "node", null, string.Empty, source,
+                (tag, _) => { queriedTag = tag; return Task.FromResult("0.2.1-rc.2"); });
+
+            await repository.GetLatestVersionAsync("latest", CancellationToken.None);
+
+            await Assert.That(source.ObservedChannel).IsEqualTo(RuntimeReleaseChannel.Prerelease);
+            await Assert.That(queriedTag).IsEqualTo("next");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>显式 stable 档回退到 latest（而非默认档的 next）。</summary>
+    [Test]
+    public async Task GetLatestVersionAsync_StableChannel_FallsBackToLatestDistTag()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dsh-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string? queriedTag = null;
+            var repository = new RuntimeRepository(
+                root, "node", null, string.Empty,
+                new StubVersionSource { Result = null },
+                (tag, _) => { queriedTag = tag; return Task.FromResult("0.2.0-rc.2"); });
+
+            await repository.GetLatestVersionAsync(RuntimeChannel.StableLiteral, CancellationToken.None);
+
+            await Assert.That(queriedTag).IsEqualTo("latest");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    /// <summary>版本发现源桩：记录收到的通道，按预设返回版本或 null（null = 源不可用）。</summary>
+    private sealed class StubVersionSource : IRuntimeVersionSource
+    {
+        /// <summary>待返回的版本；null 表示源不可用。</summary>
+        public string? Result { get; init; }
+
+        /// <summary>最近一次查询收到的通道。</summary>
+        public RuntimeReleaseChannel? ObservedChannel { get; private set; }
+
+        public Task<string?> TryGetLatestAsync(
+            RuntimeReleaseChannel channel,
+            CancellationToken cancellationToken)
+        {
+            ObservedChannel = channel;
+            return Task.FromResult(Result);
+        }
     }
 }

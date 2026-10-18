@@ -7,7 +7,7 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// </summary>
 /// <param name="SafeMode">是否处于安全模式（权威来源为 config，此处为投影）。</param>
 /// <param name="NotificationsEnabled">是否启用 Windows 通知（权威来源为 config，此处为投影）。</param>
-/// <param name="Channel">DSH 更新通道（npm dist-tag：latest / alpha）。</param>
+/// <param name="Channel">DSH 更新通道（ADR-0011：stable 仅正式版 / prerelease 含 rc）。</param>
 /// <param name="NodePath">node.exe 路径（只读）。</param>
 /// <param name="DshHome">DSH_HOME 数据根目录（只读）。</param>
 /// <param name="DataDirectory">Desktop 数据根目录（只读）。</param>

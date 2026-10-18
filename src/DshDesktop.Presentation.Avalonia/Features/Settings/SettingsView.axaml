@@ -250,7 +250,7 @@
                                         <Grid ColumnDefinitions="*,Auto">
                                             <StackPanel>
                                                 <TextBlock Classes="switch-title" Text="DSH 更新通道" />
-                                                <TextBlock Classes="switch-desc" Text="npm dist-tag：latest 稳定 / alpha 尝鲜" />
+                                                <TextBlock Classes="switch-desc" Text="stable 仅正式版 / prerelease 含 rc 预发布（GitHub Releases）" />
                                             </StackPanel>
                                             <ComboBox
                                                 x:Name="ChannelBox"

@@ -30,6 +30,6 @@ public interface IRuntimeConfig : IRuntimeBootstrapConfig
     /// <summary>Profile 种子来源 harness 数据目录；null 时跳过。</summary>
     string? SeedProfileFrom { get; }
 
-    /// <summary>DSH 更新通道（npm dist-tag）。</summary>
+    /// <summary>DSH 更新通道（ADR-0011：stable / prerelease）。</summary>
     string DshChannel { get; }
 }

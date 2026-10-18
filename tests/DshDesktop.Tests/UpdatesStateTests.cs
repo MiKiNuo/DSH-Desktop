@@ -144,4 +144,35 @@ public sealed class UpdatesStateTests
 
         await Assert.That(state.AvailableCount).IsEqualTo(2);
     }
+
+    /// <summary>
+    /// ADR-0011：版本发现源可能落后于本机已装版本（如本机已装 rc 而上游 tag 回退）。
+    /// 此时必须判「已是最新」，不能把「装回旧版」提示成有可用更新。
+    /// </summary>
+    [Test]
+    public async Task DshStage_LatestOlderThanCurrent_UpToDate()
+    {
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "0.2.0-rc.2",
+            CurrentDshVersion = "0.2.1-rc.2",
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.UpToDate);
+        await Assert.That(state.AvailableCount).IsEqualTo(0);
+    }
+
+    /// <summary>rc.10 必须压过 rc.2（ADR-0011 前按字符串判等会恒显示有更新）。</summary>
+    [Test]
+    public async Task DshStage_RcTenNewerThanRcTwo_Available()
+    {
+        UpdatesState state = UpdatesState.Initial with
+        {
+            LatestDshVersion = "0.2.1-rc.10",
+            CurrentDshVersion = "0.2.1-rc.2",
+        };
+
+        await Assert.That(state.DshStage).IsEqualTo(DshRuntimeStage.Available);
+        await Assert.That(state.AvailableCount).IsEqualTo(1);
+    }
 }

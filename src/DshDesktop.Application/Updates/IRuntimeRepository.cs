@@ -15,9 +15,9 @@ public interface IRuntimeRepository
     Task<IReadOnlyList<DshRuntimeInfo>> ListRuntimesAsync(string? activeRuntime, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 查询指定通道的最新 DSH 版本。
+    /// 查询指定通道的最新 DSH 版本（ADR-0011：GitHub Releases 优先，dist-tag 回退）。
     /// </summary>
-    /// <param name="channel">npm dist-tag（latest / alpha）。</param>
+    /// <param name="channel">通道字面量（stable / prerelease；ADR-0011 前的 dist-tag 字面按默认档归一化）。</param>
     /// <param name="cancellationToken">取消标记。</param>
     Task<string> GetLatestVersionAsync(string channel, CancellationToken cancellationToken);
 

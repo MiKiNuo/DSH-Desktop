@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
+using DshDesktop.Application.Updates;
 using MiKiNuo.Mvi.Platforms.Avalonia.Views;
 using MiKiNuo.Mvi.Presentation.Disposables;
 
@@ -13,7 +14,8 @@ namespace DshDesktop.Presentation.Avalonia.Features.Settings;
 /// </summary>
 public sealed partial class SettingsView : MviAvaloniaView<SettingsViewModel>
 {
-    private static readonly string[] Channels = ["latest", "alpha"];
+    /// <summary>DSH 通道可选项（ADR-0011：字面量单源于 <see cref="RuntimeChannel.Literals"/>）。</summary>
+    private static readonly IReadOnlyList<string> Channels = RuntimeChannel.Literals;
 
     private readonly List<Button> _navButtons = new(5);
 

@@ -41,7 +41,7 @@ public sealed record GetSettingsInfoRequest : IMviRequest<SettingsInfo>;
 /// <summary>
 /// 表示修改 DSH 更新通道的跨层请求。
 /// </summary>
-/// <param name="Channel">目标通道（latest / alpha）。</param>
+/// <param name="Channel">目标通道（ADR-0011：stable / prerelease）。</param>
 public sealed record SetDshChannelRequest(string Channel) : IMviRequest<bool>;
 
 /// <summary>

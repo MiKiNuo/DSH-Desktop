@@ -336,9 +336,17 @@ public sealed class GitHubDesktopUpdater : IDesktopUpdater
 /// </summary>
 internal sealed class GitHubReleaseResponse
 {
-    /// <summary>Release tag（如 v0.1.3）。</summary>
+    /// <summary>Release tag（如 v0.1.3；DSH Runtime 为 dsh-v0.2.1-rc.2）。</summary>
     [JsonPropertyName("tag_name")]
     public string? TagName { get; set; }
+
+    /// <summary>是否为预发布（ADR-0011：Runtime 通道过滤依据；上游 0.2.x 全部为 true）。</summary>
+    [JsonPropertyName("prerelease")]
+    public bool Prerelease { get; set; }
+
+    /// <summary>是否为草稿（草稿不对外发布，必须排除）。</summary>
+    [JsonPropertyName("draft")]
+    public bool Draft { get; set; }
 
     /// <summary>资产列表。</summary>
     [JsonPropertyName("assets")]
@@ -369,6 +377,8 @@ internal sealed class GitHubReleaseAsset
 
 /// <summary>
 /// GitHub Releases JSON 源生成上下文（AOT 兼容，与 DshConfigJsonContext 同一先例）。
+/// 数组形态供 Runtime 版本发现（<see cref="GitHubRuntimeVersionSource"/>）走 releases 列表接口。
 /// </summary>
 [JsonSerializable(typeof(GitHubReleaseResponse))]
+[JsonSerializable(typeof(GitHubReleaseResponse[]))]
 internal sealed partial class GitHubReleaseJsonContext : JsonSerializerContext;

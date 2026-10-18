@@ -50,8 +50,12 @@ public sealed class DshDesktopConfig
     /// <summary>是否启用 Windows 通知（默认开；关闭时崩溃 / 插件回滚事件不发气泡）。</summary>
     public bool NotificationsEnabled { get; set; } = true;
 
-    /// <summary>DSH 更新通道（npm dist-tag：latest / alpha）。</summary>
-    public string DshChannel { get; set; } = "latest";
+    /// <summary>
+    /// DSH 更新通道（ADR-0011：stable 仅正式版 / prerelease 含 rc；默认 prerelease——
+    /// 上游 0.2.x 至今全为预发布，默认走稳定档会让所有用户看不到更新）。
+    /// 旧值 latest / alpha 按 <c>RuntimeChannel.Normalize</c> 归入默认档。
+    /// </summary>
+    public string DshChannel { get; set; } = "prerelease";
 
     /// <summary>Desktop 更新通道（ADR-0003/Q7-A：首期单通道预留字段，UI 不暴露，机制待启用）。</summary>
     public string DesktopChannel { get; set; } = "stable";

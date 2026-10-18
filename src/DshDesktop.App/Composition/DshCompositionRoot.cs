@@ -938,7 +938,7 @@ public sealed partial class DshCompositionRoot
             string runtimeRootDir = Path.Combine(
                 Directory.GetParent(config.DshHome)!.FullName, "runtime", "dsh");
             var runtimeRepository = new RuntimeRepository(
-                runtimeRootDir, config.NodePath, config.NpmCjsPath, config.DshEntryPath);
+                runtimeRootDir, config.NodePath, config.NpmCjsPath, config.DshEntryPath, Log.Logger);
             return new ToolchainBoundStack(pluginRepository, orchestrator, runtimeRepository);
         }
     }

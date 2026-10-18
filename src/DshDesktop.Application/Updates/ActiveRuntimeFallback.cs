@@ -42,109 +42,12 @@ public static class ActiveRuntimeFallback
         string best = selfBuiltVersions[0];
         for (int i = 1; i < selfBuiltVersions.Count; i++)
         {
-            if (CompareVersionDirectories(selfBuiltVersions[i], best) > 0)
+            if (RuntimeVersion.Compare(selfBuiltVersions[i], best) > 0)
             {
                 best = selfBuiltVersions[i];
             }
         }
 
         return best;
-    }
-
-    /// <summary>
-    /// 版本目录名比较：数值版本优先（"0.1.10" &gt; "0.1.9"，字典序会误判）；
-    /// 数值相同按 semver 约定正式版高于预发布；不可解析按序数兜底，保证确定性。
-    /// </summary>
-    private static int CompareVersionDirectories(string left, string right)
-    {
-        (Version? leftVersion, string leftPreRelease) = Parse(left);
-        (Version? rightVersion, string rightPreRelease) = Parse(right);
-
-        if (leftVersion is not null && rightVersion is not null)
-        {
-            int numeric = leftVersion.CompareTo(rightVersion);
-            if (numeric != 0)
-            {
-                return numeric;
-            }
-
-            // 数值相同：正式版（无预发布标记）高于预发布；都带预发布标记按段比较（rc.10 > rc.2，字典序会误判）。
-            bool leftIsStable = leftPreRelease.Length == 0;
-            bool rightIsStable = rightPreRelease.Length == 0;
-            if (leftIsStable != rightIsStable)
-            {
-                return leftIsStable ? 1 : -1;
-            }
-
-            int preRelease = ComparePreRelease(leftPreRelease, rightPreRelease);
-            if (preRelease != 0)
-            {
-                return preRelease;
-            }
-        }
-
-        return string.Compare(left, right, StringComparison.Ordinal);
-    }
-
-    /// <summary>semver 预发布段比较：按 "." 分段，数值段按数值、文本段按序数、段多者高。</summary>
-    private static int ComparePreRelease(string left, string right)
-    {
-        string[] leftSegments = left.Split('.');
-        string[] rightSegments = right.Split('.');
-        for (int i = 0; i < Math.Max(leftSegments.Length, rightSegments.Length); i++)
-        {
-            if (i >= leftSegments.Length)
-            {
-                return -1;
-            }
-
-            if (i >= rightSegments.Length)
-            {
-                return 1;
-            }
-
-            bool leftNumeric = int.TryParse(leftSegments[i], out int leftNumber);
-            bool rightNumeric = int.TryParse(rightSegments[i], out int rightNumber);
-            if (leftNumeric && rightNumeric)
-            {
-                int numeric = leftNumber.CompareTo(rightNumber);
-                if (numeric != 0)
-                {
-                    return numeric;
-                }
-
-                continue;
-            }
-
-            // semver：数值段低于文本段。
-            if (leftNumeric != rightNumeric)
-            {
-                return leftNumeric ? -1 : 1;
-            }
-
-            int text = string.Compare(leftSegments[i], rightSegments[i], StringComparison.Ordinal);
-            if (text != 0)
-            {
-                return text;
-            }
-        }
-
-        return 0;
-    }
-
-    private static (Version? version, string preRelease) Parse(string directoryName)
-    {
-        string numericPart = directoryName;
-        string preRelease = string.Empty;
-        int dashIndex = directoryName.IndexOf('-');
-        if (dashIndex >= 0)
-        {
-            numericPart = directoryName[..dashIndex];
-            preRelease = directoryName[(dashIndex + 1)..];
-        }
-
-        return Version.TryParse(numericPart, out Version? version)
-            ? (version, preRelease)
-            : (null, preRelease);
     }
 }

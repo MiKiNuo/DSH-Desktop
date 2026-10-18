@@ -25,7 +25,7 @@ public abstract partial record SettingsIntent : IMviIntent
     /// <summary>
     /// 表示修改 DSH 更新通道意图（乐观更新）。
     /// </summary>
-    /// <param name="Channel">目标通道（latest / alpha）。</param>
+    /// <param name="Channel">目标通道（ADR-0011：stable / prerelease）。</param>
     public sealed partial record ChangeChannel(string Channel) : SettingsIntent;
 
     /// <summary>
